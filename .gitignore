@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Video recordings (large media files)
+recordings/*.mp4
+recordings/*.mov
+recordings/*.mkv
+!recordings/.gitkeep
+test_*.mp4
+
+# IDE & Editor
+.vscode/
+.idea/
