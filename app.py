@@ -15,6 +15,7 @@ import os
 import subprocess
 import threading
 import time
+from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
@@ -35,8 +36,8 @@ class LiteRecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("輕量桌面錄影 (Lite Screen Recorder)")
-        self.root.geometry("470x590")
-        self.root.minsize(450, 530)
+        self.root.geometry("480x680")
+        self.root.minsize(460, 600)
         self.root.configure(bg="#1E1E24")
 
         # 跨平台字型
@@ -64,8 +65,9 @@ class LiteRecorderApp:
         self._build_main_ui()
         self._bind_shortcuts()
 
-        # 載入硬體設備
+        # 載入硬體設備與最近錄影
         self._refresh_devices()
+        self.refresh_recent_list()
 
         # 註冊關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -228,7 +230,20 @@ class LiteRecorderApp:
             command=self.toggle_recording,
             pady=10
         )
-        self.record_btn.pack(fill=tk.X, pady=(0, 12))
+        self.record_btn.pack(fill=tk.X, pady=(0, 10))
+
+        # 最近錄影列表卡片 (Recent Recordings Gallery)
+        self.recent_card = tk.Frame(self.main_container, bg="#262630", highlightbackground="#363644", highlightthickness=1)
+        self.recent_card.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        recent_header = tk.Frame(self.recent_card, bg="#262630")
+        recent_header.pack(fill=tk.X, padx=12, pady=(6, 2))
+        tk.Label(recent_header, text="📜 最近錄影檔案", font=self.fonts["bold"], fg="#FFFFFF", bg="#262630").pack(side=tk.LEFT)
+        btn_refresh = tk.Button(recent_header, text="🔄 重新整理", font=self.fonts["body"], bg="#2E2E3A", fg="#A0A0B0", relief=tk.FLAT, command=self.refresh_recent_list, padx=4)
+        btn_refresh.pack(side=tk.RIGHT)
+
+        self.recent_list_frame = tk.Frame(self.recent_card, bg="#262630")
+        self.recent_list_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
 
         # 底部快捷工具列 (開啟資料夾、剪輯影片、播放最新、變更目錄)
         footer_frame = tk.Frame(self.main_container, bg="#1E1E24")
@@ -387,7 +402,7 @@ class LiteRecorderApp:
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
-        self.root.geometry(f"470x590+{prev_x}+{prev_y}")
+        self.root.geometry(f"480x680+{prev_x}+{prev_y}")
         self.root.resizable(True, True)
         self.root.attributes("-topmost", False)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
@@ -474,6 +489,7 @@ class LiteRecorderApp:
             self._switch_to_normal_mode()
 
         self._update_ui_state(recording=False)
+        self.refresh_recent_list()
 
         if ok:
             self.btn_play_last.config(state=tk.NORMAL)
@@ -558,6 +574,54 @@ class LiteRecorderApp:
         """開啟獲獎級 Web 錄製與剪輯工作站"""
         studio_path = Path(__file__).resolve().parent / "web_studio" / "index.html"
         open_file_or_dir(str(studio_path))
+
+    def refresh_recent_list(self):
+        """重新整理最近錄影檔案列表"""
+        for widget in self.recent_list_frame.winfo_children():
+            widget.destroy()
+
+        try:
+            files = sorted(
+                list(self.recorder.output_dir.glob("*.mp4")) + list(self.recorder.output_dir.glob("*.mov")),
+                key=lambda x: x.stat().st_mtime,
+                reverse=True
+            )[:3]
+        except Exception:
+            files = []
+
+        if not files:
+            lbl = tk.Label(self.recent_list_frame, text="尚無錄影記錄，點擊上方按鈕開始錄影", font=self.fonts["body"], fg="#6E6E78", bg="#262630")
+            lbl.pack(pady=10)
+            return
+
+        for p in files:
+            row = tk.Frame(self.recent_list_frame, bg="#1E1E26", highlightbackground="#2E2E38", highlightthickness=1)
+            row.pack(fill=tk.X, pady=2, padx=2, ipady=2)
+
+            sz = round(p.stat().st_size / (1024 * 1024), 1)
+            time_str = datetime.fromtimestamp(p.stat().st_mtime).strftime("%m/%d %H:%M")
+            display_name = p.name if len(p.name) <= 16 else (p.name[:14] + "..")
+
+            tk.Label(row, text=f"📹 {display_name}", font=self.fonts["body"], fg="#D1D1D6", bg="#1E1E26").pack(side=tk.LEFT, padx=6)
+            tk.Label(row, text=f"{sz}MB", font=self.fonts["body"], fg="#6E6E78", bg="#1E1E26").pack(side=tk.LEFT, padx=2)
+
+            btn_del = tk.Button(row, text="🗑", font=self.fonts["bold"], bg="#2E2E3A", fg="#FF453A", relief=tk.FLAT, command=lambda f=p: self._delete_recording(f), padx=4)
+            btn_del.pack(side=tk.RIGHT, padx=2)
+
+            btn_trim = tk.Button(row, text="✂", font=self.fonts["bold"], bg="#2E2E3A", fg="#0A84FF", relief=tk.FLAT, command=lambda f=p: self.open_editor(str(f)), padx=4)
+            btn_trim.pack(side=tk.RIGHT, padx=2)
+
+            btn_play = tk.Button(row, text="▶", font=self.fonts["bold"], bg="#2E2E3A", fg="#30D158", relief=tk.FLAT, command=lambda f=p: open_file_or_dir(str(f)), padx=4)
+            btn_play.pack(side=tk.RIGHT, padx=2)
+
+    def _delete_recording(self, file_path):
+        """刪除單一錄影檔"""
+        if messagebox.askyesno("確認刪除", f"確定要刪除錄影檔案嗎？\n{file_path.name}"):
+            try:
+                file_path.unlink()
+                self.refresh_recent_list()
+            except Exception as e:
+                messagebox.showerror("刪除失敗", str(e))
 
     def _on_close(self):
         if self.recorder.is_recording:
