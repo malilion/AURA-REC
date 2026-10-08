@@ -250,11 +250,33 @@ class VideoEditorWindow:
         )
         rb4.pack(anchor="w", pady=2)
 
+        # 進階設定列 (倍速、比例、濾鏡)
+        adv_frame = tk.Frame(export_card, bg="#262630")
+        adv_frame.pack(fill=tk.X, padx=12, pady=(4, 6))
+
+        tk.Label(adv_frame, text="速度:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        self.speed_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=6)
+        self.speed_combo["values"] = ["1.0x", "0.5x", "1.5x", "2.0x"]
+        self.speed_combo.current(0)
+        self.speed_combo.pack(side=tk.LEFT, padx=(4, 10))
+
+        tk.Label(adv_frame, text="比例:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        self.ratio_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=9)
+        self.ratio_combo["values"] = ["原始比例", "9:16 短片", "16:9 橫向", "1:1 方形"]
+        self.ratio_combo.current(0)
+        self.ratio_combo.pack(side=tk.LEFT, padx=(4, 10))
+
+        tk.Label(adv_frame, text="色彩:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        self.color_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=8)
+        self.color_combo["values"] = ["原色", "鮮豔", "高對比"]
+        self.color_combo.current(0)
+        self.color_combo.pack(side=tk.LEFT, padx=(4, 8))
+
         cb_mute = tk.Checkbutton(
-            export_card, text="🔇 移除聲音 (靜音剪輯)", variable=self.mute_var,
+            adv_frame, text="🔇 靜音", variable=self.mute_var,
             font=self.fonts["body"], fg="#A0A0B0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
-        cb_mute.pack(anchor="w", padx=12, pady=(4, 0))
+        cb_mute.pack(side=tk.LEFT)
 
         # 匯出執行大按鈕
         self.btn_export = tk.Button(
@@ -465,11 +487,34 @@ class VideoEditorWindow:
             ok = False
             msg = ""
 
+            # 讀取進階參數
+            spd = 1.0
+            try:
+                spd = float(self.speed_combo.get().replace("x", ""))
+            except Exception:
+                pass
+
+            rat_str = self.ratio_combo.get()
+            rat = "9:16" if "9:16" in rat_str else ("16:9" if "16:9" in rat_str else ("1:1" if "1:1" in rat_str else "original"))
+
+            col_str = self.color_combo.get()
+            br, ct, sat = 0.0, 1.0, 1.0
+            if "鮮豔" in col_str:
+                sat = 1.3
+                ct = 1.05
+            elif "高對比" in col_str:
+                ct = 1.25
+                br = -0.02
+
             try:
                 if mode == "lossless":
                     ok, msg = self.editor.trim_lossless(self.current_file, out_path, self.start_sec, self.end_sec)
                 elif mode == "precise":
-                    ok, msg = self.editor.trim_precise(self.current_file, out_path, self.start_sec, self.end_sec, mute_audio=mute)
+                    ok, msg = self.editor.trim_advanced(
+                        self.current_file, out_path, self.start_sec, self.end_sec,
+                        speed=spd, aspect_ratio=rat, brightness=br, contrast=ct, saturation=sat,
+                        mute_audio=mute
+                    )
                 elif mode == "gif":
                     ok, msg = self.editor.export_gif(self.current_file, out_path, self.start_sec, self.end_sec)
                 elif mode == "audio":

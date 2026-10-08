@@ -2,8 +2,17 @@
 # -*- coding: utf-8 -*-
 
 """
-VideoEditor - 輕量影片剪輯核心 (macOS & Windows 跨平台支援)
-支援時長獲取、畫面影格提取 (PPM in-memory)、無損極速裁剪、精確重編碼、GIF 導出、純音訊提取與靜音輸出
+VideoEditor - 頂級跨平台影片剪輯核心
+支援：
+- 時長、解析度、編碼與檔案大小資訊提取
+- 記憶體串流影格即時渲染 (PPM to PhotoImage)
+- 0.5秒無損極速裁剪 (Stream Copy)
+- 精準幀裁切與重編碼 (硬體加速)
+- 影片倍速調整 (0.5x, 1.0x, 1.5x, 2.0x)
+- 比例裁切 (16:9 橫向, 9:16 直向短影音 Shorts/Reels/TikTok, 1:1 正方形)
+- 色彩調整 (亮度、對比度、飽和度微調)
+- 雙遍調色盤超高清 GIF 導出
+- 純音訊分離提取 (MP3/M4A)
 """
 
 import json
@@ -133,9 +142,22 @@ class VideoEditor:
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
 
-    def trim_precise(self, input_file, output_file, start_sec, end_sec, mute_audio=False, use_hardware_accel=True):
+    def trim_advanced(
+        self,
+        input_file,
+        output_file,
+        start_sec,
+        end_sec,
+        speed=1.0,
+        aspect_ratio="original",
+        brightness=0.0,
+        contrast=1.0,
+        saturation=1.0,
+        mute_audio=False,
+        use_hardware_accel=True
+    ):
         """
-        精確幀裁剪 (重新編碼，精準至特定毫秒幀，支援靜音)
+        高級精準幀剪輯 (支援倍速、比例裁切、色彩增強、硬體加速)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -151,10 +173,34 @@ class VideoEditor:
             "-t", f"{duration:.3f}",
         ]
 
+        # 構建視訊濾鏡
+        vf_list = []
+
+        # 1. 比例裁切
+        if aspect_ratio == "9:16":
+            vf_list.append("crop=ih*9/16:ih:(iw-ih*9/16)/2:0")
+        elif aspect_ratio == "1:1":
+            vf_list.append("crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2")
+        elif aspect_ratio == "16:9":
+            vf_list.append("crop=iw:iw*9/16:0:(ih-iw*9/16)/2")
+
+        # 2. 視訊倍速
+        if speed != 1.0:
+            pts_factor = 1.0 / speed
+            vf_list.append(f"setpts={pts_factor:.4f}*PTS")
+
+        # 3. 色彩調整
+        if brightness != 0.0 or contrast != 1.0 or saturation != 1.0:
+            vf_list.append(f"eq=brightness={brightness:.2f}:contrast={contrast:.2f}:saturation={saturation:.2f}")
+
+        if vf_list:
+            cmd.extend(["-vf", ",".join(vf_list)])
+
+        # 影像編碼
         if use_hardware_accel:
             enc = detect_best_video_encoder(self.ffmpeg_bin)
             if enc == "h264_videotoolbox":
-                cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "8000k"])
+                cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "9000k"])
             elif enc == "h264_nvenc":
                 cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22"])
             elif enc == "h264_qsv":
@@ -164,9 +210,23 @@ class VideoEditor:
         else:
             cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20"])
 
+        # 音訊處理與倍速
         if mute_audio:
             cmd.append("-an")
         else:
+            af_list = []
+            if speed != 1.0:
+                # atempo 支援 0.5 到 2.0
+                if 0.5 <= speed <= 2.0:
+                    af_list.append(f"atempo={speed:.2f}")
+                elif speed > 2.0:
+                    af_list.append("atempo=2.0,atempo=" + str(speed / 2.0))
+                elif speed < 0.5:
+                    af_list.append("atempo=0.5,atempo=" + str(speed / 0.5))
+
+            if af_list:
+                cmd.extend(["-af", ",".join(af_list)])
+
             cmd.extend(["-c:a", "aac", "-b:a", "192k"])
 
         cmd.extend(["-movflags", "+faststart", output_file])
@@ -175,9 +235,9 @@ class VideoEditor:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if res.returncode == 0 and os.path.exists(output_file):
                 return True, output_file
-            return False, f"精準剪輯失敗: {res.stderr}"
+            return False, f"剪輯失敗: {res.stderr}"
         except Exception as e:
-            return False, f"精準剪輯發生異常: {str(e)}"
+            return False, f"剪輯發生異常: {str(e)}"
 
     def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640):
         """

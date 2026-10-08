@@ -6,14 +6,18 @@
 
 ## ✨ 核心特色
 
-1. **🌐 AURA REC // 獲獎級 Web 沈浸式全螢幕錄製與剪輯工作站 (新增)**
+1. **🌐 AURA REC // 獲獎級 Web 沈浸式全螢幕錄製與剪輯工作站**
    - **Awwwards / Webby / FWA 標準**：採用深邃黑曜石科技奢華風（Dark Neo-Brutalist & Cyber Elegance），具備 1px 賽博微光邊界與細緻毛玻璃材質。
+   - **即時螢幕標註與畫筆系統**：支援自由畫筆、矩形框、霓虹色系切換與一鍵清空，教學與演示無往不利。
+   - **電影級色彩濾鏡與倍速播放**：內建原色、賽博極光 (Cyberpunk)、黑白底片 (Noir)、暖調膠片 (Warm Film) 與 0.5x~2.0x 倍速。
+   - **自由拖曳視訊鏡頭 (Draggable Facecam PiP)**：鏡頭視窗可隨意拖放於舞台任何位置。
    - **劇院級環境光自適應背光 (Dynamic Ambient Glow)**：即時採樣視訊主色調並柔化擴散至監視窗背景，營造極致劇院沈浸感。
    - **雙軌非線性時間軸 (Non-linear Dual Track)**：包含影像膠卷影格條 (V1) 與 60 FPS 實時跳動的 Web Audio 音訊波形頻譜 (A1)。
    - **合成器微互動音效**：使用純 Web Audio API 合成機械阻尼點擊音、完成弦音與倒數嗶聲。
-   - **全鍵盤快捷鍵**：支援 `Space` 播放/錄影、`I/O` 標記起止點、`S` 切片、`J/L` 快退快進、`F` 全螢幕。
    - **雙擊即開**：macOS 雙擊 `open_studio.command`、Windows 雙擊 `open_studio.bat` 即刻在瀏覽器中暢享！
 2. **🌐 macOS & Windows 雙平台桌面客戶端支援**
+   - **📜 最近錄影管理藝廊 (Recent Recordings Gallery)**：主面板即時列出最近錄製檔案，支援一鍵播放 (▶)、一鍵剪輯 (✂)、檔案定位與安全刪除 (🗑)。
+   - **⚡ 進階剪輯與社群比例裁切**：支援 0.5x~2.0x 倍速調整、9:16 短影音 (Shorts/Reels/TikTok) / 16:9 / 1:1 比例裁切與色彩增強。
    - **macOS**：原生整合 `AVFoundation` 螢幕音訊捕獲與 Apple Silicon `VideoToolbox` 硬體編碼。
    - **Windows**：原生支援 `GDI Grab` 全螢幕擷取、DirectShow 麥克風與立體聲混音，支援 NVIDIA NVENC / Intel QSV / AMD AMF 硬體加速。
    - **High-DPI 高解析度優化**：Windows 4K/2K 縮放不模糊、macOS Retina 超清晰字體。

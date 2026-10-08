@@ -42,7 +42,6 @@
           animation: {
             'pulse-glow': 'pulseGlow 2.5s infinite ease-in-out',
             'border-flow': 'borderFlow 4s linear infinite',
-            'shimmer': 'shimmer 2s linear infinite',
           },
           keyframes: {
             pulseGlow: {
@@ -52,10 +51,6 @@
             borderFlow: {
               '0%': { backgroundPosition: '0% 50%' },
               '100%': { backgroundPosition: '200% 50%' },
-            },
-            shimmer: {
-              '0%': { transform: 'translateX(-100%)' },
-              '100%': { transform: 'translateX(100%)' },
             }
           }
         }
@@ -64,7 +59,6 @@
   </script>
 
   <style>
-    /* 核心美學與排版細節 */
     :root {
       --glow-color: rgba(0, 240, 255, 0.25);
     }
@@ -84,7 +78,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 自訂捲軸 */
     ::-webkit-scrollbar {
       width: 4px;
       height: 4px;
@@ -100,26 +93,24 @@
       background: #00F0FF;
     }
 
-    /* 劇院級環境光背光畫布 */
     #ambient-canvas {
       position: absolute;
       top: -15%;
       left: -15%;
       width: 130%;
       height: 130%;
-      filter: blur(70px) saturate(220%);
-      opacity: 0.55;
+      filter: blur(75px) saturate(240%);
+      opacity: 0.6;
       pointer-events: none;
       z-index: 0;
       transition: opacity 0.8s ease;
     }
 
-    /* 1px 高級賽博邊界 */
     .cyber-card {
       background: rgba(15, 18, 24, 0.75);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      backdrop-filter: blur(20px);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(24px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
       position: relative;
     }
     .cyber-card::after {
@@ -128,14 +119,13 @@
       inset: -1px;
       border-radius: inherit;
       padding: 1px;
-      background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0) 60%, rgba(0,240,255,0.2));
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0) 60%, rgba(0,240,255,0.25));
       -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
       -webkit-mask-composite: xor;
       mask-composite: exclude;
       pointer-events: none;
     }
 
-    /* 磁吸按鈕微互動與觸發阻尼 */
     .magnetic-btn {
       transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.2s ease, background-color 0.2s ease;
     }
@@ -143,7 +133,6 @@
       transform: scale(0.96) !important;
     }
 
-    /* 時間軸時間把手 */
     .timeline-handle {
       cursor: ew-resize;
       transition: transform 0.1s ease, background-color 0.15s ease;
@@ -152,23 +141,31 @@
       transform: scale(1.15);
     }
 
-    /* 播放頭游標 (Playhead) */
     .timeline-playhead {
       pointer-events: none;
       transition: left 0.05s linear;
     }
 
-    /* 雜訊質感疊層 (Grain texture) */
     .bg-grain {
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+    }
+
+    /* 電影級濾鏡樣式 */
+    .filter-cyberpunk {
+      filter: saturate(160%) contrast(115%) hue-rotate(15deg);
+    }
+    .filter-noir {
+      filter: grayscale(100%) contrast(140%) brightness(95%);
+    }
+    .filter-warm {
+      filter: sepia(35%) saturate(120%) contrast(105%);
     }
   </style>
 </head>
 <body class="min-h-screen bg-obsidian-950 flex flex-col justify-between relative bg-grain selection:bg-aura-cyan selection:text-black">
 
   <!-- ======================== 頂部導航狀態條 (Status & Nav Deck) ======================== -->
-  <header class="w-full z-40 px-6 py-4 border-b border-white/5 backdrop-blur-xl bg-obsidian-950/80 sticky top-0 flex items-center justify-between">
-    <!-- 品牌標識與獲獎徽章 -->
+  <header class="w-full z-40 px-6 py-3.5 border-b border-white/5 backdrop-blur-xl bg-obsidian-950/80 sticky top-0 flex items-center justify-between">
     <div class="flex items-center gap-4">
       <div class="flex items-center gap-2.5 group cursor-pointer" onclick="audioSynth.playChime()">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-aura-cyan via-aura-violet to-aura-rose p-[1px] shadow-lg shadow-aura-cyan/20">
@@ -178,19 +175,19 @@
         </div>
         <div class="flex flex-col">
           <span class="font-display font-extrabold text-base tracking-widest text-white leading-none flex items-center gap-2">
-            AURA REC <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-aura-cyan/10 text-aura-cyan border border-aura-cyan/20">v2.0 PRO</span>
+            AURA REC <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-aura-cyan/10 text-aura-cyan border border-aura-cyan/20">PRO MASTER</span>
           </span>
-          <span class="text-[10px] text-slate-400 font-mono tracking-wider">IMMERSIVE STUDIO</span>
+          <span class="text-[10px] text-slate-400 font-mono tracking-wider">AWARD-WINNING WEB STUDIO</span>
         </div>
       </div>
 
       <div class="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-obsidian-850 border border-white/5 text-[11px] text-slate-400 font-mono">
         <span class="w-1.5 h-1.5 rounded-full bg-aura-emerald animate-ping"></span>
-        <span id="spec-indicator">4K UHD / 60 FPS / WEBRTC READY</span>
+        <span id="spec-indicator">4K UHD / 60 FPS / WEBRTC MASTER</span>
       </div>
     </div>
 
-    <!-- 即時狀態指示器 (REC STATUS PILL) -->
+    <!-- 即時狀態指示器 (REC STATUS PILL) 與頂部工具 -->
     <div class="flex items-center gap-3">
       <div id="status-pill" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-obsidian-850 border border-white/10 shadow-inner">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-aura-emerald"></span>
@@ -198,12 +195,10 @@
         <span id="status-timer" class="text-xs font-mono font-bold text-aura-cyan pl-1 border-l border-white/10 hidden">00:00:00</span>
       </div>
 
-      <!-- 快捷鍵說明視窗切換按鈕 -->
       <button onclick="toggleModal('modal-hotkeys')" class="w-8 h-8 rounded-lg bg-obsidian-850 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-aura-cyan/40 transition-colors" title="鍵盤快捷鍵 (Hotkeys)">
         <i data-lucide="keyboard" class="w-4 h-4"></i>
       </button>
 
-      <!-- 全螢幕切換 -->
       <button onclick="toggleFullScreen()" class="w-8 h-8 rounded-lg bg-obsidian-850 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-aura-cyan/40 transition-colors" title="全螢幕模式">
         <i data-lucide="maximize-2" class="w-4 h-4"></i>
       </button>
@@ -211,17 +206,60 @@
   </header>
 
   <!-- ======================== 中央主舞台 (Theater Stage) ======================== -->
-  <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col items-center justify-center relative z-10">
+  <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col items-center justify-center relative z-10">
 
     <!-- 舞台外框與環境光光暈容器 -->
-    <div class="relative w-full aspect-video max-h-[58vh] cyber-card rounded-2xl overflow-hidden flex items-center justify-center group shadow-2xl">
+    <div id="stage-wrapper" class="relative w-full aspect-video max-h-[57vh] cyber-card rounded-2xl overflow-hidden flex items-center justify-center group shadow-2xl">
       <!-- 即時環境光擴散畫布 -->
       <canvas id="ambient-canvas"></canvas>
 
       <!-- 影片預覽本體 (Video element) -->
       <video id="stage-video" class="relative z-10 w-full h-full object-contain bg-black/60 rounded-2xl" playsinline muted></video>
 
-      <!-- 空白待機狀態引導面板 (Empty Placeholder) -->
+      <!-- 即時畫筆標註畫布 (Annotation Canvas) -->
+      <canvas id="annotation-canvas" class="absolute inset-0 z-20 w-full h-full pointer-events-none"></canvas>
+
+      <!-- 標註懸浮工具列 (Annotation Dock) -->
+      <div id="annotation-dock" class="absolute top-4 left-4 z-30 flex items-center gap-1.5 p-1.5 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl shadow-xl">
+        <button id="btn-tool-select" onclick="setAnnotationTool('select')" class="p-1.5 rounded-lg bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40" title="選取模式 (指標)">
+          <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
+        </button>
+        <button id="btn-tool-pen" onclick="setAnnotationTool('pen')" class="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/5" title="畫筆標註 (自由塗鴉)">
+          <i data-lucide="pencil" class="w-4 h-4"></i>
+        </button>
+        <button id="btn-tool-rect" onclick="setAnnotationTool('rect')" class="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/5" title="矩形標註框">
+          <i data-lucide="square" class="w-4 h-4"></i>
+        </button>
+        <div class="w-[1px] h-4 bg-white/10 mx-0.5"></div>
+        <!-- 顏色切換 -->
+        <button onclick="setAnnotationColor('#00F0FF')" class="w-4 h-4 rounded-full bg-aura-cyan ring-1 ring-white/20 hover:scale-125 transition-transform"></button>
+        <button onclick="setAnnotationColor('#FF2A6D')" class="w-4 h-4 rounded-full bg-aura-rose ring-1 ring-white/20 hover:scale-125 transition-transform"></button>
+        <button onclick="setAnnotationColor('#00FF9D')" class="w-4 h-4 rounded-full bg-aura-emerald ring-1 ring-white/20 hover:scale-125 transition-transform"></button>
+        <button onclick="clearAnnotationCanvas()" class="p-1.5 rounded-lg text-slate-400 hover:text-aura-rose hover:bg-white/5" title="清空標註 (Clear)">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- 電影濾鏡與倍速控制列 (Filters & Speed Dock) -->
+      <div class="absolute top-4 right-4 z-30 flex items-center gap-2">
+        <div class="flex items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-[11px] font-mono">
+          <span class="text-slate-500 px-1.5">濾鏡:</span>
+          <button onclick="setFilter('none')" class="filter-tag px-2 py-0.5 rounded bg-white/10 text-white font-bold">原色</button>
+          <button onclick="setFilter('cyberpunk')" class="filter-tag px-2 py-0.5 rounded text-slate-400 hover:text-white">賽博</button>
+          <button onclick="setFilter('noir')" class="filter-tag px-2 py-0.5 rounded text-slate-400 hover:text-white">黑白</button>
+          <button onclick="setFilter('warm')" class="filter-tag px-2 py-0.5 rounded text-slate-400 hover:text-white">暖調</button>
+        </div>
+
+        <div class="flex items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-[11px] font-mono">
+          <span class="text-slate-500 px-1.5">倍速:</span>
+          <button onclick="setPlaybackSpeed(0.5)" class="speed-tag px-1.5 py-0.5 rounded text-slate-400 hover:text-white">0.5x</button>
+          <button onclick="setPlaybackSpeed(1.0)" class="speed-tag px-1.5 py-0.5 rounded bg-aura-cyan/20 text-aura-cyan font-bold">1x</button>
+          <button onclick="setPlaybackSpeed(1.5)" class="speed-tag px-1.5 py-0.5 rounded text-slate-400 hover:text-white">1.5x</button>
+          <button onclick="setPlaybackSpeed(2.0)" class="speed-tag px-1.5 py-0.5 rounded text-slate-400 hover:text-white">2x</button>
+        </div>
+      </div>
+
+      <!-- 空白待機引導面板 -->
       <div id="standby-overlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-obsidian-950/70 backdrop-blur-md transition-all duration-500">
         <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-obsidian-800 to-obsidian-900 border border-white/10 flex items-center justify-center mb-5 shadow-2xl relative group-hover:border-aura-cyan/40 transition-colors">
           <i data-lucide="monitor-play" class="w-9 h-9 text-aura-cyan animate-pulse"></i>
@@ -247,22 +285,22 @@
         </div>
       </div>
 
-      <!-- 3秒倒數計時遮罩 (Countdown Overlay) -->
+      <!-- 3秒倒數計時遮罩 -->
       <div id="countdown-overlay" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-obsidian-950/80 backdrop-blur-xl hidden">
         <span id="countdown-number" class="font-display font-black text-9xl text-transparent bg-clip-text bg-gradient-to-r from-aura-cyan via-white to-aura-rose animate-bounce">3</span>
         <span class="text-sm font-mono text-slate-400 tracking-widest uppercase mt-4">PREPARING CAPTURE...</span>
       </div>
 
-      <!-- 懸浮浮動工具膠囊 (Floating Live Pill inside Stage) -->
-      <div id="live-floating-pill" class="absolute top-4 right-4 z-20 flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-obsidian-900/80 border border-white/10 backdrop-blur-xl hidden">
+      <!-- 懸浮浮動工具膠囊 -->
+      <div id="live-floating-pill" class="absolute bottom-6 right-6 z-30 flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-obsidian-900/90 border border-white/15 backdrop-blur-2xl shadow-2xl hidden">
         <span class="w-2.5 h-2.5 rounded-full bg-aura-rose animate-ping"></span>
         <span id="live-floating-time" class="text-xs font-mono font-bold text-white tracking-widest">00:00:00</span>
-        <button onclick="stopRecording()" class="ml-1 px-2.5 py-1 rounded-md bg-aura-rose text-white text-[11px] font-bold font-sans hover:bg-rose-600 transition-colors">
+        <button onclick="stopRecording()" class="ml-1 px-3 py-1 rounded-full bg-aura-rose text-white text-xs font-bold font-sans hover:bg-rose-600 transition-colors">
           停止錄製
         </button>
       </div>
 
-      <!-- 視訊鏡頭畫中畫 (Facecam PiP - 可拖曳) -->
+      <!-- 視訊鏡頭畫中畫 (Facecam PiP - 自由拖曳) -->
       <div id="pip-container" class="absolute bottom-4 left-4 z-20 w-36 h-36 rounded-full overflow-hidden border-2 border-aura-cyan/60 shadow-2xl bg-black hidden cursor-move">
         <video id="pip-video" class="w-full h-full object-cover transform scale-x-[-1]" autoplay playsinline muted></video>
       </div>
@@ -314,8 +352,7 @@
 
       <!-- ================= 雙軌非線性時間軸畫布 (Dual Track Timeline) ================= -->
       <div id="timeline-container" class="relative w-full h-24 bg-obsidian-950 rounded-xl border border-white/10 overflow-hidden cursor-crosshair select-none">
-        
-        <!-- 時間刻度頂條 (Ruler Bar) -->
+        <!-- 時間刻度頂條 -->
         <div id="timeline-ruler" class="w-full h-4 bg-obsidian-900/90 border-b border-white/5 flex items-center text-[9px] font-mono text-slate-500 px-2 justify-between pointer-events-none">
           <span>00:00</span>
           <span>25%</span>
@@ -324,48 +361,46 @@
           <span>END</span>
         </div>
 
-        <!-- 軌道 1: 影像膠卷影格條 (Video Filmstrip Track) -->
+        <!-- 軌道 1: 影像膠卷影格條 (V1) -->
         <div id="track-video" class="w-full h-10 relative bg-obsidian-850/60 border-b border-white/5 flex items-center overflow-hidden">
           <canvas id="filmstrip-canvas" class="w-full h-full object-cover opacity-80"></canvas>
           <div class="absolute left-2 top-1 text-[9px] font-mono px-1 rounded bg-black/60 text-slate-400 pointer-events-none">VIDEO V1</div>
         </div>
 
-        <!-- 軌道 2: 雙聲道音訊跳動波形條 (Audio Waveform Track) -->
+        <!-- 軌道 2: 雙聲道音訊跳動波形條 (A1) -->
         <div id="track-audio" class="w-full h-10 relative bg-obsidian-850/80 flex items-center overflow-hidden">
           <canvas id="waveform-canvas" class="w-full h-full object-cover"></canvas>
           <div class="absolute left-2 top-1 text-[9px] font-mono px-1 rounded bg-black/60 text-aura-cyan pointer-events-none">AUDIO A1 (VU)</div>
         </div>
 
-        <!-- 選取裁切範圍高亮遮罩 (Active Selection Range Highlight) -->
+        <!-- 選取裁切範圍高亮遮罩 -->
         <div id="selection-range-highlight" class="absolute top-4 bottom-0 bg-aura-cyan/15 border-t-2 border-b-2 border-aura-cyan/80 pointer-events-none transition-all duration-75" style="left: 0%; width: 100%;"></div>
 
-        <!-- 起點拖曳柄 (In Handle) -->
+        <!-- 起點拖曳柄 -->
         <div id="handle-in" class="timeline-handle absolute top-4 bottom-0 w-3 bg-aura-emerald rounded-l-sm cursor-ew-resize flex items-center justify-center shadow-lg shadow-aura-emerald/30 z-20" style="left: 0%;" title="起點 (In-Point)">
           <div class="w-0.5 h-6 bg-black rounded-full"></div>
         </div>
 
-        <!-- 終點拖曳柄 (Out Handle) -->
+        <!-- 終點拖曳柄 -->
         <div id="handle-out" class="timeline-handle absolute top-4 bottom-0 w-3 bg-aura-rose rounded-r-sm cursor-ew-resize flex items-center justify-center shadow-lg shadow-aura-rose/30 z-20" style="left: calc(100% - 12px);" title="終點 (Out-Point)">
           <div class="w-0.5 h-6 bg-black rounded-full"></div>
         </div>
 
-        <!-- 播放頭游標 (Playhead Scrubber) -->
+        <!-- 播放頭游標 -->
         <div id="timeline-playhead" class="timeline-playhead absolute top-0 bottom-0 w-0.5 bg-white z-30 shadow-[0_0_10px_#fff]" style="left: 0%;">
           <div class="w-3.5 h-3.5 rounded-full bg-white -ml-1.5 -mt-1 shadow-md border-2 border-aura-cyan flex items-center justify-center">
             <div class="w-1 h-1 bg-obsidian-950 rounded-full"></div>
           </div>
         </div>
-
       </div>
 
-      <!-- ================= 底部導出與配置工具島 (Export & Config Island) ================= -->
+      <!-- ================= 底部導出與配置工具島 ================= -->
       <div class="flex items-center justify-between flex-wrap gap-3 pt-1 border-t border-white/5">
-        <!-- 音訊設備配置選單 -->
         <div class="flex items-center gap-3">
           <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-obsidian-800 border border-white/5 text-xs text-slate-300">
             <i data-lucide="mic" class="w-3.5 h-3.5 text-aura-cyan"></i>
             <span class="font-sans">麥克風收音:</span>
-            <input type="checkbox" id="chk-mic" class="rounded bg-obsidian-900 border-white/20 text-aura-cyan focus:ring-0 cursor-pointer" onchange="toggleMicConfig(event)">
+            <input type="checkbox" id="chk-mic" class="rounded bg-obsidian-900 border-white/20 text-aura-cyan focus:ring-0 cursor-pointer">
           </div>
 
           <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-obsidian-800 border border-white/5 text-xs text-slate-300">
@@ -381,24 +416,20 @@
           </div>
         </div>
 
-        <!-- 導出動作按鈕排 (Export Buttons) -->
         <div class="flex items-center gap-2.5">
-          <!-- 導出選取 MP4 / WebM -->
           <button id="btn-export-video" onclick="exportSelectedClip()" class="magnetic-btn flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-aura-emerald to-teal-500 text-black font-display font-bold text-xs tracking-wider shadow-lg shadow-aura-emerald/20 hover:scale-[1.02]">
             <i data-lucide="download" class="w-3.5 h-3.5 text-black"></i>
-            無損匯出片段 (MP4/WebM)
+            無損匯出片段 (WebM)
           </button>
 
-          <!-- 匯出為 GIF -->
           <button id="btn-export-gif" onclick="exportAsGif()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-cyan/40 hover:text-white">
             <i data-lucide="image" class="w-3.5 h-3.5 text-aura-cyan"></i>
-            轉為 GIF 動畫
+            導出精華截圖
           </button>
 
-          <!-- 提取純音訊 MP3/WAV -->
           <button onclick="exportAudioOnly()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-violet/40 hover:text-white">
             <i data-lucide="music" class="w-3.5 h-3.5 text-aura-violet"></i>
-            提取音訊 (WAV)
+            提取音訊 (WebM)
           </button>
         </div>
       </div>
@@ -406,7 +437,7 @@
     </div>
   </footer>
 
-  <!-- ======================== 快捷鍵模態視窗 (Hotkeys Modal) ======================== -->
+  <!-- ======================== 快捷鍵模態視窗 ======================== -->
   <div id="modal-hotkeys" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden" onclick="toggleModal('modal-hotkeys')">
     <div class="cyber-card rounded-2xl max-w-md w-full p-6" onclick="event.stopPropagation()">
       <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
@@ -457,11 +488,10 @@
 
   <!-- ======================== 核心互動與引擎邏輯 (Core Engine Script) ======================== -->
   <script>
-    // 初始化 Lucide 圖標
     lucide.createIcons();
 
     // ==========================================
-    // 1. Web Audio API 頂級合成器音效引擎
+    // 1. Web Audio API 合成器音效引擎
     // ==========================================
     class SoundSynthesizer {
       constructor() {
@@ -581,9 +611,154 @@
     const filmstripCtx = filmstripCanvas.getContext('2d');
     const waveformCanvas = document.getElementById('waveform-canvas');
     const waveformCtx = waveformCanvas.getContext('2d');
+    const annotationCanvas = document.getElementById('annotation-canvas');
+    const annotationCtx = annotationCanvas.getContext('2d');
 
     // ==========================================
-    // 3. 環境光自適應引擎 (Ambient Lighting Glow)
+    // 3. 即時螢幕標註畫布系統 (Annotation System)
+    // ==========================================
+    let currentAnnotationTool = 'select'; // 'select', 'pen', 'rect'
+    let currentAnnotationColor = '#00F0FF';
+    let isDrawing = false;
+    let startX = 0, startY = 0;
+
+    function resizeAnnotationCanvas() {
+      const rect = stageVideo.getBoundingClientRect();
+      annotationCanvas.width = stageVideo.clientWidth || 800;
+      annotationCanvas.height = stageVideo.clientHeight || 450;
+    }
+    window.addEventListener('resize', resizeAnnotationCanvas);
+
+    function setAnnotationTool(tool) {
+      audioSynth.playClick();
+      currentAnnotationTool = tool;
+      document.querySelectorAll('#annotation-dock button').forEach(b => {
+        b.classList.remove('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40');
+      });
+
+      if (tool === 'select') {
+        document.getElementById('btn-tool-select').classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40');
+        annotationCanvas.classList.add('pointer-events-none');
+      } else {
+        annotationCanvas.classList.remove('pointer-events-none');
+        if (tool === 'pen') document.getElementById('btn-tool-pen').classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40');
+        if (tool === 'rect') document.getElementById('btn-tool-rect').classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40');
+      }
+    }
+
+    function setAnnotationColor(color) {
+      audioSynth.playClick();
+      currentAnnotationColor = color;
+    }
+
+    function clearAnnotationCanvas() {
+      audioSynth.playClick();
+      annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+    }
+
+    annotationCanvas.addEventListener('mousedown', (e) => {
+      if (currentAnnotationTool === 'select') return;
+      isDrawing = true;
+      const rect = annotationCanvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+
+      annotationCtx.beginPath();
+      annotationCtx.moveTo(startX, startY);
+      annotationCtx.strokeStyle = currentAnnotationColor;
+      annotationCtx.lineWidth = 3;
+      annotationCtx.lineCap = 'round';
+      annotationCtx.lineJoin = 'round';
+    });
+
+    annotationCanvas.addEventListener('mousemove', (e) => {
+      if (!isDrawing) return;
+      const rect = annotationCanvas.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+
+      if (currentAnnotationTool === 'pen') {
+        annotationCtx.lineTo(curX, curY);
+        annotationCtx.stroke();
+      }
+    });
+
+    annotationCanvas.addEventListener('mouseup', (e) => {
+      if (!isDrawing) return;
+      isDrawing = false;
+      const rect = annotationCanvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+
+      if (currentAnnotationTool === 'rect') {
+        annotationCtx.strokeStyle = currentAnnotationColor;
+        annotationCtx.lineWidth = 3;
+        annotationCtx.strokeRect(startX, startY, endX - startX, endY - startY);
+      }
+    });
+
+    // ==========================================
+    // 4. 電影濾鏡與播放倍速引擎 (Filters & Speed)
+    // ==========================================
+    function setFilter(type) {
+      audioSynth.playClick();
+      stageVideo.classList.remove('filter-cyberpunk', 'filter-noir', 'filter-warm');
+      document.querySelectorAll('.filter-tag').forEach(b => {
+        b.classList.remove('bg-white/10', 'text-white', 'font-bold');
+        b.classList.add('text-slate-400');
+      });
+
+      if (type !== 'none') {
+        stageVideo.classList.add(`filter-${type}`);
+      }
+      event.target.classList.add('bg-white/10', 'text-white', 'font-bold');
+      event.target.classList.remove('text-slate-400');
+    }
+
+    function setPlaybackSpeed(speed) {
+      audioSynth.playClick();
+      stageVideo.playbackRate = speed;
+      document.querySelectorAll('.speed-tag').forEach(b => {
+        b.classList.remove('bg-aura-cyan/20', 'text-aura-cyan', 'font-bold');
+        b.classList.add('text-slate-400');
+      });
+      event.target.classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'font-bold');
+      event.target.classList.remove('text-slate-400');
+    }
+
+    // ==========================================
+    // 5. 可拖曳視訊鏡頭 (Draggable Facecam PiP)
+    // ==========================================
+    let isDraggingPip = false;
+    let pipStartX = 0, pipStartY = 0;
+
+    pipContainer.addEventListener('mousedown', (e) => {
+      isDraggingPip = true;
+      pipStartX = e.clientX - pipContainer.offsetLeft;
+      pipStartY = e.clientY - pipContainer.offsetTop;
+      audioSynth.playClick();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingPip) return;
+      const stageRect = document.getElementById('stage-wrapper').getBoundingClientRect();
+      let newLeft = e.clientX - stageRect.left - (pipContainer.offsetWidth / 2);
+      let newTop = e.clientY - stageRect.top - (pipContainer.offsetHeight / 2);
+
+      newLeft = Math.max(8, Math.min(stageRect.width - pipContainer.offsetWidth - 8, newLeft));
+      newTop = Math.max(8, Math.min(stageRect.height - pipContainer.offsetHeight - 8, newTop));
+
+      pipContainer.style.left = `${newLeft}px`;
+      pipContainer.style.top = `${newTop}px`;
+      pipContainer.style.bottom = 'auto';
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDraggingPip = false;
+    });
+
+    // ==========================================
+    // 6. 環境光自適應引擎 (Ambient Lighting Glow)
     // ==========================================
     function updateAmbientGlow() {
       if (!stageVideo.paused && !stageVideo.ended && stageVideo.videoWidth > 0) {
@@ -598,12 +773,11 @@
     requestAnimationFrame(updateAmbientGlow);
 
     // ==========================================
-    // 4. 錄製工作流 (WebRTC Capture)
+    // 7. 錄製工作流 (WebRTC Capture)
     // ==========================================
     async function startCaptureWorkflow() {
       audioSynth.playClick();
       try {
-        // 請求螢幕錄影 (4K/60FPS 偏好設定)
         const displayStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             displaySurface: 'monitor',
@@ -614,7 +788,6 @@
           audio: true
         });
 
-        // 若勾選麥克風收音，請求音訊並混合
         let finalStream = displayStream;
         const wantMic = document.getElementById('chk-mic').checked;
         if (wantMic) {
@@ -643,17 +816,15 @@
         mediaStream = finalStream;
         setupAudioVisualizer(mediaStream);
 
-        // 綁定視訊預覽
         stageVideo.srcObject = mediaStream;
         stageVideo.play();
         standbyOverlay.classList.add('hidden');
+        resizeAnnotationCanvas();
 
-        // 監聽使用者在系統浮層點擊「停止分享」
         displayStream.getVideoTracks()[0].onended = () => {
           if (isRecording) stopRecording();
         };
 
-        // 執行 3 秒倒數計時
         runCountdown(() => {
           beginMediaRecorder(mediaStream);
         });
@@ -692,7 +863,7 @@
 
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: mimeType,
-        videoBitsPerSecond: 10000000 // 10 Mbps 高清
+        videoBitsPerSecond: 10000000
       });
 
       mediaRecorder.ondataavailable = (e) => {
@@ -706,11 +877,10 @@
         loadVideoToWorkspace(blob);
       };
 
-      mediaRecorder.start(250); // 每 250ms 發送一個 chunk
+      mediaRecorder.start(250);
       isRecording = true;
       recordStartTime = Date.now();
 
-      // UI 更新
       statusDot.className = 'w-2.5 h-2.5 rounded-full bg-aura-rose animate-ping';
       statusText.innerText = 'RECORDING';
       statusText.className = 'text-xs font-mono font-bold text-aura-rose uppercase tracking-wider';
@@ -749,7 +919,7 @@
     }
 
     // ==========================================
-    // 5. 載入影片進工作台與時間軸
+    // 8. 載入影片進工作台與時間軸
     // ==========================================
     function loadVideoToWorkspace(blob) {
       activeVideoBlob = blob;
@@ -769,6 +939,7 @@
         updateTimelineDisplay();
         generateFilmstripThumbnails();
         setupVideoAudioVisualizer();
+        resizeAnnotationCanvas();
       };
     }
 
@@ -781,7 +952,7 @@
     }
 
     // ==========================================
-    // 6. 雙軌非線性時間軸互動系統 (Timeline Interactivity)
+    // 9. 雙軌非線性時間軸互動系統 (Timeline Interactivity)
     // ==========================================
     function formatSecondsToTime(sec) {
       if (isNaN(sec)) return "00:00.00";
@@ -807,7 +978,6 @@
       playhead.style.left = `${curPercent}%`;
     }
 
-    // 時間軸點擊與游標拖曳
     let isDraggingHandleIn = false;
     let isDraggingHandleOut = false;
     let isScrubbing = false;
@@ -866,7 +1036,6 @@
 
     stageVideo.addEventListener('timeupdate', () => {
       if (!isScrubbing) {
-        // 若超出 Out-point 則循環回到 In-point
         if (stageVideo.currentTime > outPoint) {
           stageVideo.currentTime = inPoint;
         }
@@ -905,7 +1074,6 @@
     function splitClipAtCurrent() {
       audioSynth.playBeep(1200, 0.08);
       const splitTime = stageVideo.currentTime;
-      // 視覺提示與自動設定區間
       if (splitTime > inPoint && splitTime < outPoint) {
         outPoint = splitTime;
       }
@@ -913,7 +1081,7 @@
     }
 
     // ==========================================
-    // 7. 膠卷影格渲染引擎 (Filmstrip Canvas)
+    // 10. 膠卷影格渲染引擎 (Filmstrip Canvas)
     // ==========================================
     async function generateFilmstripThumbnails() {
       if (!activeVideoUrl) return;
@@ -925,7 +1093,7 @@
       hiddenVideo.muted = true;
       await new Promise(r => hiddenVideo.onloadedmetadata = r);
 
-      const count = Math.min(12, Math.floor(filmstripCanvas.width / 70));
+      const count = Math.min(14, Math.floor(filmstripCanvas.width / 60));
       const step = hiddenVideo.duration / count;
       const thumbW = filmstripCanvas.width / count;
 
@@ -939,7 +1107,7 @@
     }
 
     // ==========================================
-    // 8. 音訊頻譜視覺化 (Waveform & Spectrum Visualizer)
+    // 11. 音訊頻譜視覺化 (Waveform & Spectrum Visualizer)
     // ==========================================
     function setupAudioVisualizer(stream) {
       if (stream.getAudioTracks().length === 0) return;
@@ -964,9 +1132,7 @@
         audioAnalyser.connect(audioContext.destination);
         audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
         drawWaveformVisualizer();
-      } catch (e) {
-        // 某些瀏覽器限制已連結的 MediaElement
-      }
+      } catch (e) {}
     }
 
     function drawWaveformVisualizer() {
@@ -1003,7 +1169,7 @@
     drawWaveformVisualizer();
 
     // ==========================================
-    // 9. 視訊鏡頭 (Camera PiP) 支援
+    // 12. 視訊鏡頭 (Camera PiP) 支援
     // ==========================================
     async function toggleCameraPip(e) {
       if (e.target.checked) {
@@ -1024,12 +1190,8 @@
       }
     }
 
-    function toggleMicConfig(e) {
-      audioSynth.playClick();
-    }
-
     // ==========================================
-    // 10. 匯出導出系統 (Export Options)
+    // 13. 匯出導出系統 (Export Options)
     // ==========================================
     function exportSelectedClip() {
       if (!activeVideoBlob) {
@@ -1038,7 +1200,6 @@
       }
       audioSynth.playChime();
 
-      // 若起止點覆蓋整段，直接下載
       const a = document.createElement('a');
       a.href = activeVideoUrl;
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1054,10 +1215,9 @@
       audioSynth.playClick();
 
       const btn = document.getElementById('btn-export-gif');
-      btn.innerText = '處理中 (影格擷取)...';
+      btn.innerText = '處理中...';
       btn.disabled = true;
 
-      // 擷取目前 In-Point 影格作為預覽導出
       setTimeout(() => {
         const c = document.createElement('canvas');
         c.width = stageVideo.videoWidth || 640;
@@ -1065,17 +1225,20 @@
         const ctx = c.getContext('2d');
         ctx.drawImage(stageVideo, 0, 0, c.width, c.height);
 
+        // 將塗鴉標註也合併進入截圖
+        ctx.drawImage(annotationCanvas, 0, 0, c.width, c.height);
+
         c.toBlob((blob) => {
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
           a.download = `AURA_Snapshot_${Date.now()}.png`;
           a.click();
-          btn.innerHTML = `<i data-lucide="image" class="w-3.5 h-3.5 text-aura-cyan"></i> 轉為 GIF 動畫`;
+          btn.innerHTML = `<i data-lucide="image" class="w-3.5 h-3.5 text-aura-cyan"></i> 導出精華截圖`;
           btn.disabled = false;
           lucide.createIcons();
           audioSynth.playChime();
         });
-      }, 500);
+      }, 300);
     }
 
     function exportAudioOnly() {
@@ -1091,10 +1254,9 @@
     }
 
     // ==========================================
-    // 11. 全域鍵盤快捷鍵 (Hotkeys Listener)
+    // 14. 全域鍵盤快捷鍵 (Hotkeys Listener)
     // ==========================================
     window.addEventListener('keydown', (e) => {
-      // 忽略輸入框內的鍵盤事件
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
       switch(e.code) {
