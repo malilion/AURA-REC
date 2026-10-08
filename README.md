@@ -6,11 +6,18 @@
 
 ## ✨ 核心特色
 
-1. **🌐 macOS & Windows 雙平台無縫支援**
+1. **🌐 AURA REC // 獲獎級 Web 沈浸式全螢幕錄製與剪輯工作站 (新增)**
+   - **Awwwards / Webby / FWA 標準**：採用深邃黑曜石科技奢華風（Dark Neo-Brutalist & Cyber Elegance），具備 1px 賽博微光邊界與細緻毛玻璃材質。
+   - **劇院級環境光自適應背光 (Dynamic Ambient Glow)**：即時採樣視訊主色調並柔化擴散至監視窗背景，營造極致劇院沈浸感。
+   - **雙軌非線性時間軸 (Non-linear Dual Track)**：包含影像膠卷影格條 (V1) 與 60 FPS 實時跳動的 Web Audio 音訊波形頻譜 (A1)。
+   - **合成器微互動音效**：使用純 Web Audio API 合成機械阻尼點擊音、完成弦音與倒數嗶聲。
+   - **全鍵盤快捷鍵**：支援 `Space` 播放/錄影、`I/O` 標記起止點、`S` 切片、`J/L` 快退快進、`F` 全螢幕。
+   - **雙擊即開**：macOS 雙擊 `open_studio.command`、Windows 雙擊 `open_studio.bat` 即刻在瀏覽器中暢享！
+2. **🌐 macOS & Windows 雙平台桌面客戶端支援**
    - **macOS**：原生整合 `AVFoundation` 螢幕音訊捕獲與 Apple Silicon `VideoToolbox` 硬體編碼。
    - **Windows**：原生支援 `GDI Grab` 全螢幕擷取、DirectShow 麥克風與立體聲混音，支援 NVIDIA NVENC / Intel QSV / AMD AMF 硬體加速。
    - **High-DPI 高解析度優化**：Windows 4K/2K 縮放不模糊、macOS Retina 超清晰字體。
-2. **💊 懸浮膠囊模式 (Mini Floating Pill)**
+3. **💊 懸浮膠囊模式 (Mini Floating Pill)**
    - 開始錄影後可自動收合成小巧置頂懸浮條（`● REC 00:01:23 [⏹ 停止]`），不遮擋畫面，隨意拖曳至螢幕角落。
    - 停止錄製時自動恢復控制面板。
 3. **✂️ 內建即時影片剪輯與後製 (Video Trimmer & Editor)**
@@ -85,12 +92,15 @@
 
 ## 📂 專案檔案結構
 
-- [`app.py`](file://app.py) - 跨平台主視窗 GUI、懸浮膠囊視窗、快捷鍵調度。
+- [`web_studio/index.html`](file://web_studio/index.html) - **AURA REC 獲獎級沈浸式 Web 錄影與非線性剪輯工作站**（Awwwards / Webby / FWA 標準）。
+- [`open_studio.command`](file://open_studio.command) - macOS 雙擊即開 Web 工作站。
+- [`open_studio.bat`](file://open_studio.bat) - Windows 雙擊即開 Web 工作站。
+- [`app.py`](file://app.py) - 跨平台桌面客戶端 GUI、懸浮膠囊視窗、快捷鍵調度。
 - [`platform_utils.py`](file://platform_utils.py) - 跨平台輔助庫（系統偵測、字體、High-DPI、系統音效、檔案定位、GPU 編碼器探測）。
 - [`recorder.py`](file://recorder.py) - 跨平台錄影核心（macOS AVFoundation / Windows GDI & DirectShow / GPU 硬體加速）。
-- [`editor_window.py`](file://editor_window.py) - 影片剪輯視窗（即時影格預覽、時間軸微調、起終點標記與多種匯出）。
+- [`editor_window.py`](file://editor_window.py) - 桌面影片剪輯視窗（即時影格預覽、時間軸微調、起終點標記與多種匯出）。
 - [`video_editor.py`](file://video_editor.py) - 剪輯後製引擎（無損極速裁剪、精準重編碼、GIF 雙遍調色盤、音訊分離）。
-- [`ScreenRecorder.command`](file://ScreenRecorder.command) - macOS 雙擊即開執行檔。
-- [`ScreenRecorder.bat`](file://ScreenRecorder.bat) - Windows 雙擊即開批次檔。
+- [`ScreenRecorder.command`](file://ScreenRecorder.command) - macOS 桌面端雙擊即開執行檔。
+- [`ScreenRecorder.bat`](file://ScreenRecorder.bat) - Windows 桌面端雙擊即開批次檔。
 - [`run.sh`](file://run.sh) - Linux / macOS Shell 啟動腳本。
 - `recordings/` - 錄影成品預設儲存目錄。

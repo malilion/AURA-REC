@@ -119,6 +119,19 @@ class LiteRecorderApp:
         )
         self.status_badge.pack(side=tk.RIGHT)
 
+        btn_web = tk.Button(
+            header_frame,
+            text="🌐 Web 獲獎級工作站",
+            font=self.fonts["badge"],
+            bg="#151922",
+            fg="#00F0FF",
+            relief=tk.FLAT,
+            command=self.open_web_studio,
+            padx=6,
+            pady=2
+        )
+        btn_web.pack(side=tk.RIGHT, padx=(0, 8))
+
         # 計時器卡片
         self.timer_card = tk.Frame(self.main_container, bg="#262630", highlightbackground="#363644", highlightthickness=1)
         self.timer_card.pack(fill=tk.X, pady=(0, 16), ipady=12)
@@ -540,6 +553,11 @@ class LiteRecorderApp:
         """開啟影片剪輯編輯視窗"""
         target = video_path or self.recorder.last_recorded_file
         VideoEditorWindow(self.root, video_path=target)
+
+    def open_web_studio(self):
+        """開啟獲獎級 Web 錄製與剪輯工作站"""
+        studio_path = Path(__file__).resolve().parent / "web_studio" / "index.html"
+        open_file_or_dir(str(studio_path))
 
     def _on_close(self):
         if self.recorder.is_recording:
