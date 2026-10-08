@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-LiteScreenRecorder - 輕量 macOS 桌面錄影工具
-- 支援 Apple Silicon VideoToolbox 硬體加速
+LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
+- 支援 Apple Silicon (macOS) 與 NVIDIA / Intel / AMD (Windows) 硬體加速
 - 支援螢幕選擇、音訊設備選擇（麥克風 / 系統音效）
 - 支援自訂解析度 (原生 / 2K / 1080p / 720p) 與 FPS (15 / 30 / 60)
 - 支援懸浮膠囊迷你模式 (Mini Floating Pill)，不遮擋畫面
-- 支援 3 秒倒數準備、快速鍵 (Space / F9 / Cmd+R)
+- 支援 3 秒倒數準備、快速鍵 (Space / F9 / Ctrl+R / Cmd+R)
+- 支援即時影片剪輯與匯出 GIF / 提取音訊
 """
 
 import os
@@ -20,22 +21,26 @@ from pathlib import Path
 
 from recorder import ScreenRecorder
 from editor_window import VideoEditorWindow
-
-
-def play_system_sound(sound_name="Tink"):
-    """播放 macOS 系統提示音 (非同步)"""
-    sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
-    if os.path.exists(sound_path):
-        threading.Thread(target=lambda: subprocess.run(["afplay", sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), daemon=True).start()
+from platform_utils import (
+    IS_MAC,
+    IS_WINDOWS,
+    enable_dpi_awareness,
+    get_ui_fonts,
+    play_system_alert,
+    open_file_or_dir
+)
 
 
 class LiteRecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("輕量桌面錄影 (Lite Screen Recorder)")
-        self.root.geometry("460x580")
-        self.root.minsize(440, 520)
+        self.root.geometry("470x590")
+        self.root.minsize(450, 530)
         self.root.configure(bg="#1E1E24")
+
+        # 跨平台字型
+        self.fonts = get_ui_fonts()
 
         # 核心錄影實例
         self.recorder = ScreenRecorder()
@@ -97,7 +102,7 @@ class LiteRecorderApp:
         title_label = tk.Label(
             header_frame,
             text="🎥 輕量螢幕錄製",
-            font=("SF Pro Display", 18, "bold"),
+            font=self.fonts["title"],
             fg="#FFFFFF",
             bg="#1E1E24"
         )
@@ -106,7 +111,7 @@ class LiteRecorderApp:
         self.status_badge = tk.Label(
             header_frame,
             text="● 就緒",
-            font=("SF Pro Text", 11, "bold"),
+            font=self.fonts["badge"],
             fg="#30D158",
             bg="#2A2A34",
             padx=10,
@@ -121,16 +126,17 @@ class LiteRecorderApp:
         self.timer_display = tk.Label(
             self.timer_card,
             text="00:00:00",
-            font=("SF Pro Display", 34, "bold"),
+            font=self.fonts["timer"],
             fg="#8E8E93",
             bg="#262630"
         )
         self.timer_display.pack()
 
+        shortcut_hint = "Space / F9 / Ctrl+R" if IS_WINDOWS else "Space / F9 / Cmd+R"
         self.timer_hint = tk.Label(
             self.timer_card,
-            text="點擊下方按鈕或按 Space / F9 開始錄製",
-            font=("SF Pro Text", 11),
+            text=f"點擊下方按鈕或按 {shortcut_hint} 開始錄製",
+            font=self.fonts["body"],
             fg="#6E6E78",
             bg="#262630"
         )
@@ -143,21 +149,21 @@ class LiteRecorderApp:
         # 1. 螢幕來源
         f1 = tk.Frame(settings_card, bg="#262630")
         f1.pack(fill=tk.X, padx=14, pady=(12, 6))
-        tk.Label(f1, text="🖥 錄製螢幕", font=("SF Pro Text", 12), fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(f1, text="🖥 錄製螢幕", font=self.fonts["body"], fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
         self.video_combo = ttk.Combobox(f1, style="Dark.TCombobox", state="readonly", width=22)
         self.video_combo.pack(side=tk.RIGHT)
 
         # 2. 音訊來源
         f2 = tk.Frame(settings_card, bg="#262630")
         f2.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f2, text="🎙 音訊來源", font=("SF Pro Text", 12), fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(f2, text="🎙 音訊來源", font=self.fonts["body"], fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
         self.audio_combo = ttk.Combobox(f2, style="Dark.TCombobox", state="readonly", width=22)
         self.audio_combo.pack(side=tk.RIGHT)
 
         # 3. 畫質與解析度
         f3 = tk.Frame(settings_card, bg="#262630")
         f3.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f3, text="📐 畫質解析度", font=("SF Pro Text", 12), fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(f3, text="📐 畫質解析度", font=self.fonts["body"], fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
         self.res_combo = ttk.Combobox(f3, style="Dark.TCombobox", state="readonly", width=22)
         self.res_combo["values"] = ["原生解析度 (Native)", "2K (2560x1440)", "1080p FHD (1920x1080)", "720p HD (1280x720)"]
         self.res_combo.current(0)
@@ -166,7 +172,7 @@ class LiteRecorderApp:
         # 4. 幀率 (FPS)
         f4 = tk.Frame(settings_card, bg="#262630")
         f4.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f4, text="⚡ 錄製幀率 (FPS)", font=("SF Pro Text", 12), fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(f4, text="⚡ 錄製幀率 (FPS)", font=self.fonts["body"], fg="#D1D1D6", bg="#262630").pack(side=tk.LEFT)
         self.fps_combo = ttk.Combobox(f4, style="Dark.TCombobox", state="readonly", width=22)
         self.fps_combo["values"] = ["30 FPS (推薦平衡)", "60 FPS (高流暢動態)", "15 FPS (極省空間)"]
         self.fps_combo.current(0)
@@ -176,29 +182,30 @@ class LiteRecorderApp:
         f5 = tk.Frame(settings_card, bg="#262630")
         f5.pack(fill=tk.X, padx=14, pady=(8, 12))
 
+        accel_text = "Apple 晶片硬體加速" if IS_MAC else ("GPU 硬體加速 (NVENC/QSV/AMF)" if IS_WINDOWS else "硬體加速編碼")
         cb_accel = tk.Checkbutton(
-            f5, text="Apple 晶片硬體加速", variable=self.hardware_accel_var,
-            font=("SF Pro Text", 11), fg="#30D158", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#30D158"
+            f5, text=accel_text, variable=self.hardware_accel_var,
+            font=self.fonts["body"], fg="#30D158", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#30D158"
         )
         cb_accel.pack(side=tk.LEFT, padx=(0, 10))
 
         cb_countdown = tk.Checkbutton(
             f5, text="3秒倒數", variable=self.countdown_var,
-            font=("SF Pro Text", 11), fg="#A0A0B0", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#A0A0B0", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         cb_countdown.pack(side=tk.LEFT, padx=(0, 10))
 
         cb_mini = tk.Checkbutton(
-            f5, text="錄製時收合為懸浮膠囊", variable=self.auto_mini_var,
-            font=("SF Pro Text", 11), fg="#A0A0B0", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            f5, text="收合為懸浮膠囊", variable=self.auto_mini_var,
+            font=self.fonts["body"], fg="#A0A0B0", selectcolor="#2B2B36", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         cb_mini.pack(side=tk.LEFT)
 
         # 錄製主按鈕
         self.record_btn = tk.Button(
             self.main_container,
-            text="🔴 開始錄影 (Space / F9)",
-            font=("SF Pro Display", 15, "bold"),
+            text=f"🔴 開始錄影 ({shortcut_hint})",
+            font=self.fonts["title"],
             bg="#FF453A",
             fg="#FFFFFF",
             activebackground="#D32F2F",
@@ -210,14 +217,14 @@ class LiteRecorderApp:
         )
         self.record_btn.pack(fill=tk.X, pady=(0, 12))
 
-        # 底部快捷工具列 (儲存路徑、開啟資料夾、播放最新)
+        # 底部快捷工具列 (開啟資料夾、剪輯影片、播放最新、變更目錄)
         footer_frame = tk.Frame(self.main_container, bg="#1E1E24")
         footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
 
         btn_folder = tk.Button(
             footer_frame,
             text="📁 資料夾",
-            font=("SF Pro Text", 11),
+            font=self.fonts["body"],
             bg="#2E2E3A",
             fg="#E0E0E0",
             relief=tk.FLAT,
@@ -230,7 +237,7 @@ class LiteRecorderApp:
         self.btn_trim = tk.Button(
             footer_frame,
             text="✂️ 剪輯影片",
-            font=("SF Pro Text", 11, "bold"),
+            font=self.fonts["bold"],
             bg="#0A84FF",
             fg="#FFFFFF",
             relief=tk.FLAT,
@@ -243,7 +250,7 @@ class LiteRecorderApp:
         self.btn_play_last = tk.Button(
             footer_frame,
             text="▶️ 播放最新",
-            font=("SF Pro Text", 11),
+            font=self.fonts["body"],
             bg="#2E2E3A",
             fg="#E0E0E0",
             relief=tk.FLAT,
@@ -257,7 +264,7 @@ class LiteRecorderApp:
         btn_change = tk.Button(
             footer_frame,
             text="⚙️ 路徑",
-            font=("SF Pro Text", 11),
+            font=self.fonts["body"],
             bg="#2E2E3A",
             fg="#E0E0E0",
             relief=tk.FLAT,
@@ -278,7 +285,7 @@ class LiteRecorderApp:
         drag_handle = tk.Label(
             self.mini_container,
             text="⋮⋮",
-            font=("SF Pro Text", 13, "bold"),
+            font=self.fonts["bold"],
             fg="#6E6E78",
             bg="#18181E",
             cursor="fleur"
@@ -291,7 +298,7 @@ class LiteRecorderApp:
         self.mini_time_label = tk.Label(
             self.mini_container,
             text="● REC 00:00",
-            font=("SF Pro Display", 13, "bold"),
+            font=self.fonts["subtitle"],
             fg="#FF453A",
             bg="#18181E"
         )
@@ -303,7 +310,7 @@ class LiteRecorderApp:
         mini_stop_btn = tk.Button(
             self.mini_container,
             text="⏹ 停止",
-            font=("SF Pro Text", 11, "bold"),
+            font=self.fonts["bold"],
             bg="#FF453A",
             fg="#FFFFFF",
             relief=tk.FLAT,
@@ -323,8 +330,9 @@ class LiteRecorderApp:
         self.root.geometry(f"+{x}+{y}")
 
     def _bind_shortcuts(self):
-        # 快捷鍵 Space / F9 / Cmd+R (支援全域焦點響應)
+        # 跨平台快捷鍵 Space / F9 / Ctrl+R / Cmd+R
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
+        self.root.bind_all("<Control-r>", lambda e: self.toggle_recording())
         self.root.bind_all("<Command-r>", lambda e: self.toggle_recording())
         self.root.bind("<space>", lambda e: self.toggle_recording())
 
@@ -341,7 +349,7 @@ class LiteRecorderApp:
         a_names = ["無音訊 (靜音)"] + [f"[{d['index']}] {d['name']}" for d in a_devs]
         self.audio_combo["values"] = a_names
         if len(a_names) > 1:
-            self.audio_combo.current(1)  # 預設選第一個可用音訊
+            self.audio_combo.current(1)
         else:
             self.audio_combo.current(0)
 
@@ -350,7 +358,6 @@ class LiteRecorderApp:
         self.is_mini_mode = True
         self.main_container.pack_forget()
 
-        # 儲存原本位置
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
@@ -367,7 +374,7 @@ class LiteRecorderApp:
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
-        self.root.geometry(f"460x580+{prev_x}+{prev_y}")
+        self.root.geometry(f"470x590+{prev_x}+{prev_y}")
         self.root.resizable(True, True)
         self.root.attributes("-topmost", False)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
@@ -394,7 +401,7 @@ class LiteRecorderApp:
             if val > 0:
                 self.timer_display.config(text=f"準備: {val}", fg="#FF9F0A")
                 self.status_badge.config(text=f"● 倒數 {val}", fg="#FF9F0A")
-                play_system_sound("Tink")
+                play_system_alert("ready")
                 self.root.after(1000, lambda: count_step(val - 1))
             else:
                 self.countdown_active = False
@@ -404,8 +411,7 @@ class LiteRecorderApp:
         count_step(count)
 
     def start_recording(self):
-        # 讀取設定
-        v_idx = "0"
+        v_idx = None
         if self.video_combo.current() >= 0 and self.video_devices:
             v_idx = self.video_devices[self.video_combo.current()]["index"]
 
@@ -422,7 +428,7 @@ class LiteRecorderApp:
 
         use_accel = self.hardware_accel_var.get()
 
-        play_system_sound("Hero")
+        play_system_alert("start")
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
             audio_idx=a_idx,
@@ -449,7 +455,7 @@ class LiteRecorderApp:
         self.root.update_idletasks()
 
         ok, msg = self.recorder.stop_recording()
-        play_system_sound("Glass")
+        play_system_alert("stop")
 
         if self.is_mini_mode:
             self._switch_to_normal_mode()
@@ -470,15 +476,16 @@ class LiteRecorderApp:
             messagebox.showwarning("錄影提示", msg)
 
     def _update_ui_state(self, recording=False):
+        shortcut_hint = "Space / F9 / Ctrl+R" if IS_WINDOWS else "Space / F9 / Cmd+R"
         if recording:
             self.status_badge.config(text="● 錄製中 (REC)", fg="#FF453A")
             self.record_btn.config(
-                text="⏹ 停止錄影 (Space / F9)",
+                text=f"⏹ 停止錄影 ({shortcut_hint})",
                 bg="#D32F2F",
                 activebackground="#B71C1C"
             )
             self.timer_display.config(fg="#FF453A")
-            self.timer_hint.config(text="正在錄製中... 隨時可按 Space / F9 停止")
+            self.timer_hint.config(text="正在錄製中... 隨時可按快捷鍵停止")
             self.video_combo.config(state=tk.DISABLED)
             self.audio_combo.config(state=tk.DISABLED)
             self.res_combo.config(state=tk.DISABLED)
@@ -486,7 +493,7 @@ class LiteRecorderApp:
         else:
             self.status_badge.config(text="● 就緒", fg="#30D158")
             self.record_btn.config(
-                text="🔴 開始錄影 (Space / F9)",
+                text=f"🔴 開始錄影 ({shortcut_hint})",
                 bg="#FF453A",
                 activebackground="#D32F2F"
             )
@@ -505,16 +512,14 @@ class LiteRecorderApp:
             time_str = f"{hrs:02d}:{mins:02d}:{s:02d}"
             self.timer_display.config(text=time_str)
 
-            # 懸浮膠囊更新
             mini_str = f"● REC {mins:02d}:{s:02d}" if hrs == 0 else f"● REC {hrs:02d}:{mins:02d}:{s:02d}"
             self.mini_time_label.config(text=mini_str)
 
         self.root.after(500, self._timer_tick)
 
     def open_output_folder(self):
-        """在 Finder 中開啟儲存路徑"""
-        folder = str(self.recorder.output_dir)
-        subprocess.run(["open", folder])
+        """在檔案總管 / Finder 中開啟儲存路徑"""
+        open_file_or_dir(str(self.recorder.output_dir))
 
     def change_output_folder(self):
         """選擇新的錄影儲存目錄"""
@@ -527,7 +532,7 @@ class LiteRecorderApp:
     def play_last_recording(self):
         """以系統預設播放器開啟最新錄製的影片"""
         if self.recorder.last_recorded_file and os.path.exists(self.recorder.last_recorded_file):
-            subprocess.run(["open", str(self.recorder.last_recorded_file)])
+            open_file_or_dir(str(self.recorder.last_recorded_file))
         else:
             messagebox.showinfo("提示", "尚未有可播放的錄影檔")
 
@@ -546,14 +551,8 @@ class LiteRecorderApp:
 
 
 def main():
+    enable_dpi_awareness()
     root = tk.Tk()
-    # 支援 Retina 高解析度清晰字型
-    try:
-        from ctypes import c_void_p, c_int
-        # macOS Tkinter 自動支援 Retina
-    except Exception:
-        pass
-
     app = LiteRecorderApp(root)
     root.mainloop()
 
