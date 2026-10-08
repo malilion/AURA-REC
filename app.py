@@ -19,6 +19,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
 from recorder import ScreenRecorder
+from editor_window import VideoEditorWindow
 
 
 def play_system_sound(sound_name="Tink"):
@@ -215,7 +216,7 @@ class LiteRecorderApp:
 
         btn_folder = tk.Button(
             footer_frame,
-            text="📁 開啟資料夾",
+            text="📁 資料夾",
             font=("SF Pro Text", 11),
             bg="#2E2E3A",
             fg="#E0E0E0",
@@ -224,20 +225,20 @@ class LiteRecorderApp:
             padx=6,
             pady=5
         )
-        btn_folder.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        btn_folder.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
-        btn_change = tk.Button(
+        self.btn_trim = tk.Button(
             footer_frame,
-            text="⚙️ 變更目錄",
-            font=("SF Pro Text", 11),
-            bg="#2E2E3A",
-            fg="#E0E0E0",
+            text="✂️ 剪輯影片",
+            font=("SF Pro Text", 11, "bold"),
+            bg="#0A84FF",
+            fg="#FFFFFF",
             relief=tk.FLAT,
-            command=self.change_output_folder,
+            command=self.open_editor,
             padx=6,
             pady=5
         )
-        btn_change.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        self.btn_trim.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
         self.btn_play_last = tk.Button(
             footer_frame,
@@ -251,7 +252,20 @@ class LiteRecorderApp:
             padx=6,
             pady=5
         )
-        self.btn_play_last.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.btn_play_last.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+
+        btn_change = tk.Button(
+            footer_frame,
+            text="⚙️ 路徑",
+            font=("SF Pro Text", 11),
+            bg="#2E2E3A",
+            fg="#E0E0E0",
+            relief=tk.FLAT,
+            command=self.change_output_folder,
+            padx=6,
+            pady=5
+        )
+        btn_change.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2, 0))
 
         # 建立懸浮迷你膠囊容器 (平常隱藏)
         self._build_mini_ui()
@@ -445,8 +459,13 @@ class LiteRecorderApp:
         if ok:
             self.btn_play_last.config(state=tk.NORMAL)
             self.timer_hint.config(text=f"已儲存: {Path(msg).name}")
-            # 彈出成功小通知
-            messagebox.showinfo("錄影完成", f"影片已成功儲存至：\n{msg}")
+            # 詢問是否進入編輯剪輯
+            ans = messagebox.askyesno(
+                "錄影完成！🎉",
+                f"影片已成功儲存！\n檔名：{Path(msg).name}\n\n是否立即開啟【剪輯編輯器】進行裁剪或轉為 GIF？"
+            )
+            if ans:
+                self.open_editor(msg)
         else:
             messagebox.showwarning("錄影提示", msg)
 
@@ -511,6 +530,11 @@ class LiteRecorderApp:
             subprocess.run(["open", str(self.recorder.last_recorded_file)])
         else:
             messagebox.showinfo("提示", "尚未有可播放的錄影檔")
+
+    def open_editor(self, video_path=None):
+        """開啟影片剪輯編輯視窗"""
+        target = video_path or self.recorder.last_recorded_file
+        VideoEditorWindow(self.root, video_path=target)
 
     def _on_close(self):
         if self.recorder.is_recording:
