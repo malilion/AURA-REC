@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-EditorWindow - 影片編輯與剪輯視窗
+EditorWindow - 影片編輯與剪輯視窗 (macOS & Windows 跨平台支援)
 包含：畫面影格即時預覽、時間軸精準滑桿、起點/終點設定、無損極速裁剪、精確重編碼、GIF 匯出與音訊提取
 """
 
@@ -15,6 +15,12 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
 from video_editor import VideoEditor
+from platform_utils import (
+    IS_MAC,
+    IS_WINDOWS,
+    get_ui_fonts,
+    open_file_or_dir
+)
 
 
 def sec_to_time_str(seconds):
@@ -52,9 +58,12 @@ class VideoEditorWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title("✂️ 影片剪輯與編輯 (Video Trimmer)")
-        self.window.geometry("640x780")
+        self.window.geometry("640x790")
         self.window.minsize(600, 720)
         self.window.configure(bg="#1E1E24")
+
+        # 跨平台字體
+        self.fonts = get_ui_fonts()
 
         # 影片資訊與狀態
         self.video_info = None
@@ -84,7 +93,6 @@ class VideoEditorWindow:
         self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
-        # 主外層滾動或邊界容器
         self.main_frame = tk.Frame(self.window, bg="#1E1E24")
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=18, pady=14)
 
@@ -93,17 +101,17 @@ class VideoEditorWindow:
         top_bar.pack(fill=tk.X, pady=(0, 12), ipady=6, padx=0)
 
         self.lbl_filename = tk.Label(
-            top_bar, text="未載入影片", font=("SF Pro Display", 13, "bold"), fg="#FFFFFF", bg="#262630"
+            top_bar, text="未載入影片", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#262630"
         )
         self.lbl_filename.pack(anchor="w", padx=12, pady=(4, 2))
 
         self.lbl_meta = tk.Label(
-            top_bar, text="請選擇要編輯的影片檔案", font=("SF Pro Text", 11), fg="#A0A0B0", bg="#262630"
+            top_bar, text="請選擇要編輯的影片檔案", font=self.fonts["body"], fg="#A0A0B0", bg="#262630"
         )
         self.lbl_meta.pack(anchor="w", padx=12, pady=(0, 4))
 
         btn_choose = tk.Button(
-            top_bar, text="📂 載入其他影片", font=("SF Pro Text", 11), bg="#3A3A4A", fg="#FFFFFF", relief=tk.FLAT,
+            top_bar, text="📂 載入其他影片", font=self.fonts["body"], bg="#3A3A4A", fg="#FFFFFF", relief=tk.FLAT,
             command=self.select_video_file, padx=8, pady=3
         )
         btn_choose.place(relx=1.0, rely=0.5, anchor="e", x=-12)
@@ -115,7 +123,7 @@ class VideoEditorWindow:
         self.preview_label = tk.Label(
             preview_container,
             text="載入畫面預覽中...",
-            font=("SF Pro Text", 12),
+            font=self.fonts["body"],
             fg="#6E6E78",
             bg="#141418",
             width=58,
@@ -125,7 +133,7 @@ class VideoEditorWindow:
 
         # 當前時間標籤
         self.lbl_cur_time = tk.Label(
-            self.main_frame, text="時間軸位置: 00:00.0 / 00:00.0", font=("SF Pro Display", 13, "bold"), fg="#30D158", bg="#1E1E24"
+            self.main_frame, text="時間軸位置: 00:00.0 / 00:00.0", font=self.fonts["subtitle"], fg="#30D158", bg="#1E1E24"
         )
         self.lbl_cur_time.pack(pady=(0, 4))
 
@@ -138,26 +146,26 @@ class VideoEditorWindow:
         )
         self.time_slider.pack(fill=tk.X)
 
-        # 時間微調控制列 (-1s, -0.1s, 預覽播放, +0.1s, +1s)
+        # 時間微調控制列
         nudge_frame = tk.Frame(self.main_frame, bg="#1E1E24")
         nudge_frame.pack(fill=tk.X, pady=(0, 12))
 
-        btn_nudge_m1 = tk.Button(nudge_frame, text="⏪ -1s", font=("SF Pro Text", 10), bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-1.0))
+        btn_nudge_m1 = tk.Button(nudge_frame, text="⏪ -1s", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-1.0))
         btn_nudge_m1.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        btn_nudge_m01 = tk.Button(nudge_frame, text="◀ -0.1s", font=("SF Pro Text", 10), bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-0.1))
+        btn_nudge_m01 = tk.Button(nudge_frame, text="◀ -0.1s", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-0.1))
         btn_nudge_m01.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
         self.btn_play_seg = tk.Button(
-            nudge_frame, text="▶️ 播放選取片段", font=("SF Pro Text", 11, "bold"), bg="#0A84FF", fg="#FFFFFF", relief=tk.FLAT,
+            nudge_frame, text="▶️ 播放選取片段", font=self.fonts["bold"], bg="#0A84FF", fg="#FFFFFF", relief=tk.FLAT,
             command=self.preview_play_selection, padx=10, pady=4
         )
         self.btn_play_seg.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=4)
 
-        btn_nudge_p01 = tk.Button(nudge_frame, text="+0.1s ▶", font=("SF Pro Text", 10), bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(0.1))
+        btn_nudge_p01 = tk.Button(nudge_frame, text="+0.1s ▶", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(0.1))
         btn_nudge_p01.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        btn_nudge_p1 = tk.Button(nudge_frame, text="+1s ⏩", font=("SF Pro Text", 10), bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(1.0))
+        btn_nudge_p1 = tk.Button(nudge_frame, text="+1s ⏩", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(1.0))
         btn_nudge_p1.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
         # 區間裁切控制面板 (起點 / 終點 / 片段長度)
@@ -169,40 +177,40 @@ class VideoEditorWindow:
         r1.pack(fill=tk.X, padx=12, pady=4)
 
         btn_set_start = tk.Button(
-            r1, text="🚩 設當前為起點", font=("SF Pro Text", 11, "bold"), bg="#30D158", fg="#FFFFFF", relief=tk.FLAT,
+            r1, text="🚩 設當前為起點", font=self.fonts["bold"], bg="#30D158", fg="#FFFFFF", relief=tk.FLAT,
             command=self.set_in_point, padx=8, pady=3
         )
         btn_set_start.pack(side=tk.LEFT)
 
-        self.ent_start = tk.Entry(r1, font=("SF Pro Display", 12), width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
+        self.ent_start = tk.Entry(r1, font=self.fonts["subtitle"], width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
         self.ent_start.insert(0, "00:00.0")
         self.ent_start.pack(side=tk.LEFT, padx=8)
         self.ent_start.bind("<FocusOut>", lambda e: self._update_times_from_entries())
         self.ent_start.bind("<Return>", lambda e: self._update_times_from_entries())
 
-        tk.Label(r1, text="(起始位置)", font=("SF Pro Text", 10), fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(r1, text="(起始位置)", font=self.fonts["body"], fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
 
         # 終點設定行
         r2 = tk.Frame(trim_card, bg="#262630")
         r2.pack(fill=tk.X, padx=12, pady=4)
 
         btn_set_end = tk.Button(
-            r2, text="🏁 設當前為終點", font=("SF Pro Text", 11, "bold"), bg="#FF453A", fg="#FFFFFF", relief=tk.FLAT,
+            r2, text="🏁 設當前為終點", font=self.fonts["bold"], bg="#FF453A", fg="#FFFFFF", relief=tk.FLAT,
             command=self.set_out_point, padx=8, pady=3
         )
         btn_set_end.pack(side=tk.LEFT)
 
-        self.ent_end = tk.Entry(r2, font=("SF Pro Display", 12), width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
+        self.ent_end = tk.Entry(r2, font=self.fonts["subtitle"], width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
         self.ent_end.insert(0, "00:00.0")
         self.ent_end.pack(side=tk.LEFT, padx=8)
         self.ent_end.bind("<FocusOut>", lambda e: self._update_times_from_entries())
         self.ent_end.bind("<Return>", lambda e: self._update_times_from_entries())
 
-        tk.Label(r2, text="(結束位置)", font=("SF Pro Text", 10), fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(r2, text="(結束位置)", font=self.fonts["body"], fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
 
         # 片段總長顯示
         self.lbl_selected_len = tk.Label(
-            trim_card, text="✂️ 裁切選取長度: 00:00.0", font=("SF Pro Text", 12, "bold"), fg="#FFD60A", bg="#262630"
+            trim_card, text="✂️ 裁切片段長度: 00:00.0", font=self.fonts["bold"], fg="#FFD60A", bg="#262630"
         )
         self.lbl_selected_len.pack(anchor="w", padx=12, pady=(6, 0))
 
@@ -210,7 +218,7 @@ class VideoEditorWindow:
         export_card = tk.Frame(self.main_frame, bg="#262630", highlightbackground="#363644", highlightthickness=1)
         export_card.pack(fill=tk.X, pady=(0, 14), ipady=8)
 
-        tk.Label(export_card, text="📦 匯出設定與模式", font=("SF Pro Text", 12, "bold"), fg="#FFFFFF", bg="#262630").pack(anchor="w", padx=12, pady=(4, 6))
+        tk.Label(export_card, text="📦 匯出設定與模式", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#262630").pack(anchor="w", padx=12, pady=(4, 6))
 
         self.export_mode_var = tk.StringVar(value="lossless")
         self.mute_var = tk.BooleanVar(value=False)
@@ -220,31 +228,31 @@ class VideoEditorWindow:
 
         rb1 = tk.Radiobutton(
             modes_frame, text="⚡ 無損極速剪裁 (0.5秒秒存，無畫質損失)", variable=self.export_mode_var, value="lossless",
-            font=("SF Pro Text", 11), fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         rb1.pack(anchor="w", pady=2)
 
         rb2 = tk.Radiobutton(
             modes_frame, text="🎯 精確幀剪輯 (重新編碼)", variable=self.export_mode_var, value="precise",
-            font=("SF Pro Text", 11), fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         rb2.pack(anchor="w", pady=2)
 
         rb3 = tk.Radiobutton(
             modes_frame, text="🎞️ 匯出為 GIF 動畫 (適合分享/教學)", variable=self.export_mode_var, value="gif",
-            font=("SF Pro Text", 11), fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         rb3.pack(anchor="w", pady=2)
 
         rb4 = tk.Radiobutton(
             modes_frame, text="🎵 提取純音訊 (MP3 / M4A)", variable=self.export_mode_var, value="audio",
-            font=("SF Pro Text", 11), fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         rb4.pack(anchor="w", pady=2)
 
         cb_mute = tk.Checkbutton(
             export_card, text="🔇 移除聲音 (靜音剪輯)", variable=self.mute_var,
-            font=("SF Pro Text", 11), fg="#A0A0B0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#A0A0B0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
         )
         cb_mute.pack(anchor="w", padx=12, pady=(4, 0))
 
@@ -252,7 +260,7 @@ class VideoEditorWindow:
         self.btn_export = tk.Button(
             self.main_frame,
             text="🚀 立即匯出選取片段",
-            font=("SF Pro Display", 14, "bold"),
+            font=self.fonts["title"],
             bg="#30D158",
             fg="#FFFFFF",
             activebackground="#28A745",
@@ -285,7 +293,6 @@ class VideoEditorWindow:
         self.start_sec = 0.0
         self.end_sec = self.total_duration
 
-        # 更新 UI 顯示
         self.lbl_filename.config(text=f"📹 {info['file_name']}")
         meta_str = f"解析度: {info['width']}x{info['height']} | 總長: {sec_to_time_str(self.total_duration)} | 大小: {info['size_mb']} MB"
         if info['has_audio']:
@@ -324,7 +331,6 @@ class VideoEditorWindow:
         self._request_preview(new_time)
 
     def _request_preview(self, sec):
-        """非同步請求影格預覽 (支援防抖)"""
         self._preview_pending_time = sec
         if self._preview_thread is None or not self._preview_thread.is_alive():
             self._preview_thread = threading.Thread(target=self._worker_fetch_preview, daemon=True)
@@ -353,7 +359,6 @@ class VideoEditorWindow:
             print("Preview render error:", e)
 
     def set_in_point(self):
-        """將當前時間軸位置設為起點"""
         self.start_sec = self.current_time
         if self.start_sec > self.end_sec:
             self.end_sec = self.total_duration
@@ -365,7 +370,6 @@ class VideoEditorWindow:
         self._update_selection_length_label()
 
     def set_out_point(self):
-        """將當前時間軸位置設為終點"""
         self.end_sec = self.current_time
         if self.end_sec < self.start_sec:
             self.start_sec = 0.0
@@ -398,7 +402,6 @@ class VideoEditorWindow:
         )
 
     def preview_play_selection(self):
-        """使用 ffplay 播放選取的片段"""
         if self._playing_process and self._playing_process.poll() is None:
             self._playing_process.terminate()
             self._playing_process = None
@@ -434,7 +437,6 @@ class VideoEditorWindow:
         mode = self.export_mode_var.get()
         p = Path(self.current_file)
 
-        # 建議檔名
         time_tag = f"{int(self.start_sec)}s-{int(self.end_sec)}s"
         default_dir = str(p.parent)
 
@@ -456,7 +458,6 @@ class VideoEditorWindow:
         if not out_path:
             return
 
-        # 禁用按鈕並顯示處理狀態
         self.btn_export.config(text="⏳ 正在處理與匯出中...", state=tk.DISABLED, bg="#FF9F0A")
 
         def run_export_thread():
@@ -486,10 +487,10 @@ class VideoEditorWindow:
         if ok:
             ans = messagebox.askyesno(
                 "匯出成功！🎉",
-                f"檔案已成功儲存至：\n{out_path}\n\n是否立即在 Finder 中開啟？"
+                f"檔案已成功儲存至：\n{out_path}\n\n是否立即在檔案管理員中開啟？"
             )
             if ans:
-                subprocess.run(["open", "-R", out_path])
+                open_file_or_dir(out_path, reveal=True)
         else:
             messagebox.showerror("匯出失敗", f"匯出過程發生錯誤：\n{msg}")
 

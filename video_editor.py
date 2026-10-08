@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-VideoEditor - 輕量影片剪輯核心
+VideoEditor - 輕量影片剪輯核心 (macOS & Windows 跨平台支援)
 支援時長獲取、畫面影格提取 (PPM in-memory)、無損極速裁剪、精確重編碼、GIF 導出、純音訊提取與靜音輸出
 """
 
@@ -11,18 +11,19 @@ import os
 import subprocess
 from pathlib import Path
 
+from platform_utils import (
+    IS_MAC,
+    IS_WINDOWS,
+    find_executable,
+    detect_best_video_encoder
+)
+
 
 class VideoEditor:
-    def __init__(self, ffmpeg_bin=None, ffprobe_bin=None):
-        self.ffmpeg_bin = ffmpeg_bin or self._find_bin("ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"])
-        self.ffprobe_bin = ffprobe_bin or self._find_bin("ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"])
-        self.ffplay_bin = self._find_bin("ffplay", ["/opt/homebrew/bin/ffplay", "/usr/local/bin/ffplay"])
-
-    def _find_bin(self, name, candidates):
-        for c in candidates:
-            if os.path.exists(c):
-                return c
-        return name
+    def __init__(self, ffmpeg_bin=None, ffprobe_bin=None, ffplay_bin=None):
+        self.ffmpeg_bin = ffmpeg_bin or find_executable("ffmpeg")
+        self.ffprobe_bin = ffprobe_bin or find_executable("ffprobe")
+        self.ffplay_bin = ffplay_bin or find_executable("ffplay")
 
     def get_video_info(self, file_path):
         """
@@ -82,7 +83,6 @@ class VideoEditor:
         在指定時間點擷取一幀畫面，以 PPM 格式 byte 串流返回，直接供 Tkinter PhotoImage 使用
         """
         file_path = str(file_path)
-        # 濾鏡：保持寬高比並填滿縮圖
         scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
 
         cmd = [
@@ -152,7 +152,15 @@ class VideoEditor:
         ]
 
         if use_hardware_accel:
-            cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "8000k"])
+            enc = detect_best_video_encoder(self.ffmpeg_bin)
+            if enc == "h264_videotoolbox":
+                cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "8000k"])
+            elif enc == "h264_nvenc":
+                cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22"])
+            elif enc == "h264_qsv":
+                cmd.extend(["-c:v", "h264_qsv", "-global_quality", "22"])
+            else:
+                cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20"])
         else:
             cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20"])
 
@@ -181,7 +189,6 @@ class VideoEditor:
         if duration <= 0:
             return False, "長度必須大於 0 秒"
 
-        # 高品質調色盤濾鏡
         vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer"
 
         cmd = [
