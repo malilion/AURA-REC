@@ -1,0 +1,12 @@
+#!/bin/bash
+# AURA REC 啟動器 —— 雙擊 .app 即執行
+DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+cd "$DIR"
+
+# 找 python3（優先 Homebrew，再 PATH）
+PY="$(command -v python3 || true)"
+[ -z "$PY" ] && [ -x "/opt/homebrew/bin/python3" ] && PY="/opt/homebrew/bin/python3"
+[ -z "$PY" ] && [ -x "/usr/local/bin/python3" ] && PY="/usr/local/bin/python3"
+[ -z "$PY" ] && PY="python3"
+
+exec "$PY" app.py

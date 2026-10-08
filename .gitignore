@@ -19,3 +19,9 @@ test_*.mp4
 # IDE & Editor
 .vscode/
 .idea/
+
+# Backups and local snapshots
+*.backup.*
+*.backup
+.versions/
+*.versions/
