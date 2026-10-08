@@ -60,7 +60,7 @@ class VideoEditorWindow:
         self.window.title("✂️ 影片剪輯與編輯 (Video Trimmer)")
         self.window.geometry("640x790")
         self.window.minsize(600, 720)
-        self.window.configure(bg="#1E1E24")
+        self.window.configure(bg="#0A0C10")
 
         # 跨平台字體
         self.fonts = get_ui_fonts()
@@ -93,39 +93,39 @@ class VideoEditorWindow:
         self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
-        self.main_frame = tk.Frame(self.window, bg="#1E1E24")
+        self.main_frame = tk.Frame(self.window, bg="#0A0C10")
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=18, pady=14)
 
         # 頂部資訊列
-        top_bar = tk.Frame(self.main_frame, bg="#262630", highlightbackground="#363644", highlightthickness=1)
+        top_bar = tk.Frame(self.main_frame, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
         top_bar.pack(fill=tk.X, pady=(0, 12), ipady=6, padx=0)
 
         self.lbl_filename = tk.Label(
-            top_bar, text="未載入影片", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#262630"
+            top_bar, text="未載入影片", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#0F1218"
         )
         self.lbl_filename.pack(anchor="w", padx=12, pady=(4, 2))
 
         self.lbl_meta = tk.Label(
-            top_bar, text="請選擇要編輯的影片檔案", font=self.fonts["body"], fg="#A0A0B0", bg="#262630"
+            top_bar, text="請選擇要編輯的影片檔案", font=self.fonts["body"], fg="#94A3B8", bg="#0F1218"
         )
         self.lbl_meta.pack(anchor="w", padx=12, pady=(0, 4))
 
         btn_choose = tk.Button(
-            top_bar, text="📂 載入其他影片", font=self.fonts["body"], bg="#3A3A4A", fg="#FFFFFF", relief=tk.FLAT,
+            top_bar, text="📂 載入其他影片", font=self.fonts["body"], bg="#1E2330", fg="#FFFFFF", relief=tk.FLAT,
             command=self.select_video_file, padx=8, pady=3
         )
         btn_choose.place(relx=1.0, rely=0.5, anchor="e", x=-12)
 
         # 影格預覽區
-        preview_container = tk.Frame(self.main_frame, bg="#141418", highlightbackground="#363644", highlightthickness=1)
+        preview_container = tk.Frame(self.main_frame, bg="#060709", highlightbackground="#1E2330", highlightthickness=1)
         preview_container.pack(fill=tk.X, pady=(0, 10))
 
         self.preview_label = tk.Label(
             preview_container,
             text="載入畫面預覽中...",
             font=self.fonts["body"],
-            fg="#6E6E78",
-            bg="#141418",
+            fg="#64748B",
+            bg="#060709",
             width=58,
             height=14
         )
@@ -133,12 +133,12 @@ class VideoEditorWindow:
 
         # 當前時間標籤
         self.lbl_cur_time = tk.Label(
-            self.main_frame, text="時間軸位置: 00:00.0 / 00:00.0", font=self.fonts["subtitle"], fg="#30D158", bg="#1E1E24"
+            self.main_frame, text="時間軸位置: 00:00.0 / 00:00.0", font=self.fonts["subtitle"], fg="#00FF9D", bg="#0A0C10"
         )
         self.lbl_cur_time.pack(pady=(0, 4))
 
         # 時間軸滑桿
-        slider_frame = tk.Frame(self.main_frame, bg="#1E1E24")
+        slider_frame = tk.Frame(self.main_frame, bg="#0A0C10")
         slider_frame.pack(fill=tk.X, pady=(0, 6))
 
         self.time_slider = ttk.Scale(
@@ -147,126 +147,126 @@ class VideoEditorWindow:
         self.time_slider.pack(fill=tk.X)
 
         # 時間微調控制列
-        nudge_frame = tk.Frame(self.main_frame, bg="#1E1E24")
+        nudge_frame = tk.Frame(self.main_frame, bg="#0A0C10")
         nudge_frame.pack(fill=tk.X, pady=(0, 12))
 
-        btn_nudge_m1 = tk.Button(nudge_frame, text="⏪ -1s", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-1.0))
+        btn_nudge_m1 = tk.Button(nudge_frame, text="⏪ -1s", font=self.fonts["body"], bg="#151922", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-1.0))
         btn_nudge_m1.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        btn_nudge_m01 = tk.Button(nudge_frame, text="◀ -0.1s", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-0.1))
+        btn_nudge_m01 = tk.Button(nudge_frame, text="◀ -0.1s", font=self.fonts["body"], bg="#151922", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(-0.1))
         btn_nudge_m01.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
         self.btn_play_seg = tk.Button(
-            nudge_frame, text="▶️ 播放選取片段", font=self.fonts["bold"], bg="#0A84FF", fg="#FFFFFF", relief=tk.FLAT,
+            nudge_frame, text="▶️ 播放選取片段", font=self.fonts["bold"], bg="#00F0FF", fg="#060709", relief=tk.FLAT,
             command=self.preview_play_selection, padx=10, pady=4
         )
         self.btn_play_seg.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=4)
 
-        btn_nudge_p01 = tk.Button(nudge_frame, text="+0.1s ▶", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(0.1))
+        btn_nudge_p01 = tk.Button(nudge_frame, text="+0.1s ▶", font=self.fonts["body"], bg="#151922", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(0.1))
         btn_nudge_p01.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        btn_nudge_p1 = tk.Button(nudge_frame, text="+1s ⏩", font=self.fonts["body"], bg="#2B2B36", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(1.0))
+        btn_nudge_p1 = tk.Button(nudge_frame, text="+1s ⏩", font=self.fonts["body"], bg="#151922", fg="#FFFFFF", relief=tk.FLAT, command=lambda: self._nudge_time(1.0))
         btn_nudge_p1.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
         # 區間裁切控制面板 (起點 / 終點 / 片段長度)
-        trim_card = tk.Frame(self.main_frame, bg="#262630", highlightbackground="#363644", highlightthickness=1)
+        trim_card = tk.Frame(self.main_frame, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
         trim_card.pack(fill=tk.X, pady=(0, 14), ipady=8, padx=0)
 
         # 起點設定行
-        r1 = tk.Frame(trim_card, bg="#262630")
+        r1 = tk.Frame(trim_card, bg="#0F1218")
         r1.pack(fill=tk.X, padx=12, pady=4)
 
         btn_set_start = tk.Button(
-            r1, text="🚩 設當前為起點", font=self.fonts["bold"], bg="#30D158", fg="#FFFFFF", relief=tk.FLAT,
+            r1, text="🚩 設當前為起點", font=self.fonts["bold"], bg="#00FF9D", fg="#060709", relief=tk.FLAT,
             command=self.set_in_point, padx=8, pady=3
         )
         btn_set_start.pack(side=tk.LEFT)
 
-        self.ent_start = tk.Entry(r1, font=self.fonts["subtitle"], width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
+        self.ent_start = tk.Entry(r1, font=self.fonts["subtitle"], width=10, bg="#0A0C10", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
         self.ent_start.insert(0, "00:00.0")
         self.ent_start.pack(side=tk.LEFT, padx=8)
         self.ent_start.bind("<FocusOut>", lambda e: self._update_times_from_entries())
         self.ent_start.bind("<Return>", lambda e: self._update_times_from_entries())
 
-        tk.Label(r1, text="(起始位置)", font=self.fonts["body"], fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(r1, text="(起始位置)", font=self.fonts["body"], fg="#64748B", bg="#0F1218").pack(side=tk.LEFT)
 
         # 終點設定行
-        r2 = tk.Frame(trim_card, bg="#262630")
+        r2 = tk.Frame(trim_card, bg="#0F1218")
         r2.pack(fill=tk.X, padx=12, pady=4)
 
         btn_set_end = tk.Button(
-            r2, text="🏁 設當前為終點", font=self.fonts["bold"], bg="#FF453A", fg="#FFFFFF", relief=tk.FLAT,
+            r2, text="🏁 設當前為終點", font=self.fonts["bold"], bg="#FF2A6D", fg="#FFFFFF", relief=tk.FLAT,
             command=self.set_out_point, padx=8, pady=3
         )
         btn_set_end.pack(side=tk.LEFT)
 
-        self.ent_end = tk.Entry(r2, font=self.fonts["subtitle"], width=10, bg="#1E1E24", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
+        self.ent_end = tk.Entry(r2, font=self.fonts["subtitle"], width=10, bg="#0A0C10", fg="#FFFFFF", insertbackground="#FFFFFF", relief=tk.FLAT)
         self.ent_end.insert(0, "00:00.0")
         self.ent_end.pack(side=tk.LEFT, padx=8)
         self.ent_end.bind("<FocusOut>", lambda e: self._update_times_from_entries())
         self.ent_end.bind("<Return>", lambda e: self._update_times_from_entries())
 
-        tk.Label(r2, text="(結束位置)", font=self.fonts["body"], fg="#8E8E93", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(r2, text="(結束位置)", font=self.fonts["body"], fg="#64748B", bg="#0F1218").pack(side=tk.LEFT)
 
         # 片段總長顯示
         self.lbl_selected_len = tk.Label(
-            trim_card, text="✂️ 裁切片段長度: 00:00.0", font=self.fonts["bold"], fg="#FFD60A", bg="#262630"
+            trim_card, text="✂️ 裁切片段長度: 00:00.0", font=self.fonts["bold"], fg="#FFB800", bg="#0F1218"
         )
         self.lbl_selected_len.pack(anchor="w", padx=12, pady=(6, 0))
 
         # 匯出選項與模式
-        export_card = tk.Frame(self.main_frame, bg="#262630", highlightbackground="#363644", highlightthickness=1)
+        export_card = tk.Frame(self.main_frame, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
         export_card.pack(fill=tk.X, pady=(0, 14), ipady=8)
 
-        tk.Label(export_card, text="📦 匯出設定與模式", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#262630").pack(anchor="w", padx=12, pady=(4, 6))
+        tk.Label(export_card, text="📦 匯出設定與模式", font=self.fonts["subtitle"], fg="#FFFFFF", bg="#0F1218").pack(anchor="w", padx=12, pady=(4, 6))
 
         self.export_mode_var = tk.StringVar(value="lossless")
         self.mute_var = tk.BooleanVar(value=False)
 
-        modes_frame = tk.Frame(export_card, bg="#262630")
+        modes_frame = tk.Frame(export_card, bg="#0F1218")
         modes_frame.pack(fill=tk.X, padx=12, pady=2)
 
         rb1 = tk.Radiobutton(
             modes_frame, text="⚡ 無損極速剪裁 (0.5秒秒存，無畫質損失)", variable=self.export_mode_var, value="lossless",
-            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E2E8F0", selectcolor="#0A0C10", bg="#0F1218", activebackground="#0F1218", activeforeground="#FFFFFF"
         )
         rb1.pack(anchor="w", pady=2)
 
         rb2 = tk.Radiobutton(
             modes_frame, text="🎯 精確幀剪輯 (重新編碼)", variable=self.export_mode_var, value="precise",
-            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E2E8F0", selectcolor="#0A0C10", bg="#0F1218", activebackground="#0F1218", activeforeground="#FFFFFF"
         )
         rb2.pack(anchor="w", pady=2)
 
         rb3 = tk.Radiobutton(
             modes_frame, text="🎞️ 匯出為 GIF 動畫 (適合分享/教學)", variable=self.export_mode_var, value="gif",
-            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E2E8F0", selectcolor="#0A0C10", bg="#0F1218", activebackground="#0F1218", activeforeground="#FFFFFF"
         )
         rb3.pack(anchor="w", pady=2)
 
         rb4 = tk.Radiobutton(
             modes_frame, text="🎵 提取純音訊 (MP3 / M4A)", variable=self.export_mode_var, value="audio",
-            font=self.fonts["body"], fg="#E0E0E0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#E2E8F0", selectcolor="#0A0C10", bg="#0F1218", activebackground="#0F1218", activeforeground="#FFFFFF"
         )
         rb4.pack(anchor="w", pady=2)
 
         # 進階設定列 (倍速、比例、濾鏡)
-        adv_frame = tk.Frame(export_card, bg="#262630")
+        adv_frame = tk.Frame(export_card, bg="#0F1218")
         adv_frame.pack(fill=tk.X, padx=12, pady=(4, 6))
 
-        tk.Label(adv_frame, text="速度:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(adv_frame, text="速度:", font=self.fonts["body"], fg="#94A3B8", bg="#0F1218").pack(side=tk.LEFT)
         self.speed_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=6)
         self.speed_combo["values"] = ["1.0x", "0.5x", "1.5x", "2.0x"]
         self.speed_combo.current(0)
         self.speed_combo.pack(side=tk.LEFT, padx=(4, 10))
 
-        tk.Label(adv_frame, text="比例:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(adv_frame, text="比例:", font=self.fonts["body"], fg="#94A3B8", bg="#0F1218").pack(side=tk.LEFT)
         self.ratio_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=9)
         self.ratio_combo["values"] = ["原始比例", "9:16 短片", "16:9 橫向", "1:1 方形"]
         self.ratio_combo.current(0)
         self.ratio_combo.pack(side=tk.LEFT, padx=(4, 10))
 
-        tk.Label(adv_frame, text="色彩:", font=self.fonts["body"], fg="#A0A0B0", bg="#262630").pack(side=tk.LEFT)
+        tk.Label(adv_frame, text="色彩:", font=self.fonts["body"], fg="#94A3B8", bg="#0F1218").pack(side=tk.LEFT)
         self.color_combo = ttk.Combobox(adv_frame, style="Dark.TCombobox", state="readonly", width=8)
         self.color_combo["values"] = ["原色", "鮮豔", "高對比"]
         self.color_combo.current(0)
@@ -274,7 +274,7 @@ class VideoEditorWindow:
 
         cb_mute = tk.Checkbutton(
             adv_frame, text="🔇 靜音", variable=self.mute_var,
-            font=self.fonts["body"], fg="#A0A0B0", selectcolor="#1E1E24", bg="#262630", activebackground="#262630", activeforeground="#FFFFFF"
+            font=self.fonts["body"], fg="#94A3B8", selectcolor="#0A0C10", bg="#0F1218", activebackground="#0F1218", activeforeground="#FFFFFF"
         )
         cb_mute.pack(side=tk.LEFT)
 
@@ -283,10 +283,10 @@ class VideoEditorWindow:
             self.main_frame,
             text="🚀 立即匯出選取片段",
             font=self.fonts["title"],
-            bg="#30D158",
-            fg="#FFFFFF",
-            activebackground="#28A745",
-            activeforeground="#FFFFFF",
+            bg="#00FF9D",
+            fg="#060709",
+            activebackground="#00FF9D",
+            activeforeground="#060709",
             relief=tk.FLAT,
             cursor="hand2",
             command=self.perform_export,
@@ -427,7 +427,7 @@ class VideoEditorWindow:
         if self._playing_process and self._playing_process.poll() is None:
             self._playing_process.terminate()
             self._playing_process = None
-            self.btn_play_seg.config(text="▶️ 播放選取片段", bg="#0A84FF")
+            self.btn_play_seg.config(text="▶️ 播放選取片段", bg="#00F0FF")
             return
 
         dur = self.end_sec - self.start_sec
@@ -436,12 +436,12 @@ class VideoEditorWindow:
             return
 
         self._playing_process = self.editor.play_segment(self.current_file, self.start_sec, dur)
-        self.btn_play_seg.config(text="⏹ 停止預覽播放", bg="#FF453A")
+        self.btn_play_seg.config(text="⏹ 停止預覽播放", bg="#FF2A6D")
 
         def monitor_process():
             if self._playing_process:
                 self._playing_process.wait()
-            self.window.after(0, lambda: self.btn_play_seg.config(text="▶️ 播放選取片段", bg="#0A84FF"))
+            self.window.after(0, lambda: self.btn_play_seg.config(text="▶️ 播放選取片段", bg="#00F0FF"))
 
         threading.Thread(target=monitor_process, daemon=True).start()
 
@@ -480,7 +480,7 @@ class VideoEditorWindow:
         if not out_path:
             return
 
-        self.btn_export.config(text="⏳ 正在處理與匯出中...", state=tk.DISABLED, bg="#FF9F0A")
+        self.btn_export.config(text="⏳ 正在處理與匯出中...", state=tk.DISABLED, bg="#FFB800")
 
         def run_export_thread():
             mute = self.mute_var.get()
@@ -528,7 +528,7 @@ class VideoEditorWindow:
         threading.Thread(target=run_export_thread, daemon=True).start()
 
     def _on_export_finished(self, ok, msg, out_path):
-        self.btn_export.config(text="🚀 立即匯出選取片段", state=tk.NORMAL, bg="#30D158")
+        self.btn_export.config(text="🚀 立即匯出選取片段", state=tk.NORMAL, bg="#00FF9D")
         if ok:
             ans = messagebox.askyesno(
                 "匯出成功！🎉",
