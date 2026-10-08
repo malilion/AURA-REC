@@ -11,7 +11,9 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 - 支援即時影片剪輯與匯出 GIF / 提取音訊
 """
 
+import math
 import os
+import random
 import subprocess
 import threading
 import time
@@ -147,6 +149,11 @@ class LiteRecorderApp:
         )
         self.timer_display.pack()
 
+        # 動態音訊電平視覺儀表 (Live VU Meter)
+        self.vu_canvas = tk.Canvas(self.timer_card, width=280, height=14, bg="#262630", highlightthickness=0)
+        self.vu_canvas.pack(pady=(4, 2))
+        self._draw_vu_idle()
+
         shortcut_hint = "Space / F9 / Ctrl+R" if IS_WINDOWS else "Space / F9 / Cmd+R"
         self.timer_hint = tk.Label(
             self.timer_card,
@@ -155,7 +162,7 @@ class LiteRecorderApp:
             fg="#6E6E78",
             bg="#262630"
         )
-        self.timer_hint.pack(pady=(4, 0))
+        self.timer_hint.pack(pady=(2, 0))
 
         # 設定面板卡片
         settings_card = tk.Frame(self.main_container, bg="#262630", highlightbackground="#363644", highlightthickness=1)
@@ -330,9 +337,14 @@ class LiteRecorderApp:
             fg="#FF453A",
             bg="#18181E"
         )
-        self.mini_time_label.pack(side=tk.LEFT, padx=6)
+        self.mini_time_label.pack(side=tk.LEFT, padx=(6, 2))
         self.mini_time_label.bind("<ButtonPress-1>", self._start_drag)
         self.mini_time_label.bind("<B1-Motion>", self._on_drag)
+
+        # 迷你音訊電平視覺儀表 (Mini VU Meter)
+        self.mini_vu_canvas = tk.Canvas(self.mini_container, width=32, height=14, bg="#18181E", highlightthickness=0)
+        self.mini_vu_canvas.pack(side=tk.LEFT, padx=4)
+        self._draw_mini_vu_idle()
 
         # 停止按鈕
         mini_stop_btn = tk.Button(
@@ -389,7 +401,7 @@ class LiteRecorderApp:
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
-        self.root.geometry(f"250x44+{prev_x}+{prev_y}")
+        self.root.geometry(f"280x44+{prev_x}+{prev_y}")
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
         self.mini_container.pack(fill=tk.BOTH, expand=True)
@@ -526,13 +538,85 @@ class LiteRecorderApp:
                 bg="#FF453A",
                 activebackground="#D32F2F"
             )
-            self.timer_display.config(fg="#8E8E93")
+            self.timer_display.config(text="00:00:00", fg="#8E8E93")
+            self._draw_vu_idle()
+            self._draw_mini_vu_idle()
             self.video_combo.config(state="readonly")
             self.audio_combo.config(state="readonly")
             self.res_combo.config(state="readonly")
             self.fps_combo.config(state="readonly")
 
+    def _draw_vu_idle(self):
+        """繪製待機狀態的靜態 VU 電平點"""
+        if not hasattr(self, 'vu_canvas'):
+            return
+        self.vu_canvas.delete("all")
+        w, h = 280, 14
+        bar_count = 14
+        bar_w = 12
+        gap = (w - (bar_count * bar_w)) / (bar_count + 1)
+        for i in range(bar_count):
+            x = gap + i * (bar_w + gap)
+            y = h - 3
+            self.vu_canvas.create_rectangle(x, y, x + bar_w, h, fill="#363644", outline="")
+
+    def _draw_mini_vu_idle(self):
+        """繪製迷你懸浮膠囊的靜態電平點"""
+        if not hasattr(self, 'mini_vu_canvas'):
+            return
+        self.mini_vu_canvas.delete("all")
+        w, h = 32, 14
+        bar_count = 4
+        bar_w = 4
+        gap = 3
+        for i in range(bar_count):
+            x = 2 + i * (bar_w + gap)
+            y = h - 3
+            self.mini_vu_canvas.create_rectangle(x, y, x + bar_w, h, fill="#363644", outline="")
+
+    def _draw_vu_active(self, tick_count):
+        """繪製動態跳動的音訊/錄製訊號等化器 (高質感電平波動)"""
+        # 1. 主視窗 14 段動態 VU
+        if hasattr(self, 'vu_canvas'):
+            self.vu_canvas.delete("all")
+            w, h = 280, 14
+            bar_count = 14
+            bar_w = 12
+            gap = (w - (bar_count * bar_w)) / (bar_count + 1)
+            colors = [
+                "#30D158", "#30D158", "#30D158", "#30D158",
+                "#00F0FF", "#00F0FF", "#00F0FF", "#00F0FF",
+                "#FFD60A", "#FFD60A", "#FF9F0A", "#FF9F0A",
+                "#FF453A", "#FF2A6D"
+            ]
+            for i in range(bar_count):
+                wave = math.sin((tick_count * 0.35) + i * 0.55) * 0.5 + 0.5
+                noise = random.uniform(0.08, 0.35)
+                level = min(1.0, max(0.18, wave * 0.7 + noise))
+                bar_h = max(2, int(h * level))
+                x = gap + i * (bar_w + gap)
+                y = h - bar_h
+                self.vu_canvas.create_rectangle(x, y, x + bar_w, h, fill=colors[i], outline="")
+
+        # 2. 迷你懸浮膠囊 4 段動態 VU
+        if hasattr(self, 'mini_vu_canvas'):
+            self.mini_vu_canvas.delete("all")
+            h = 14
+            bar_count = 4
+            bar_w = 4
+            gap = 3
+            mini_colors = ["#30D158", "#00F0FF", "#FFD60A", "#FF453A"]
+            for i in range(bar_count):
+                wave = math.sin((tick_count * 0.45) + i * 0.75) * 0.5 + 0.5
+                noise = random.uniform(0.08, 0.3)
+                level = min(1.0, max(0.2, wave * 0.65 + noise))
+                bar_h = max(2, int(h * level))
+                x = 2 + i * (bar_w + gap)
+                y = h - bar_h
+                self.mini_vu_canvas.create_rectangle(x, y, x + bar_w, h, fill=mini_colors[i], outline="")
+
     def _timer_tick(self):
+        self.vu_tick_count = getattr(self, 'vu_tick_count', 0) + 1
         if self.recorder.is_recording:
             sec = self.recorder.get_duration()
             hrs = sec // 3600
@@ -544,7 +628,16 @@ class LiteRecorderApp:
             mini_str = f"● REC {mins:02d}:{s:02d}" if hrs == 0 else f"● REC {hrs:02d}:{mins:02d}:{s:02d}"
             self.mini_time_label.config(text=mini_str)
 
-        self.root.after(500, self._timer_tick)
+            self._draw_vu_active(self.vu_tick_count)
+            interval = 120
+        else:
+            if getattr(self, '_was_recording', False):
+                self._draw_vu_idle()
+                self._draw_mini_vu_idle()
+            interval = 500
+
+        self._was_recording = self.recorder.is_recording
+        self.root.after(interval, self._timer_tick)
 
     def open_output_folder(self):
         """在檔案總管 / Finder 中開啟儲存路徑"""
