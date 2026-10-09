@@ -7,7 +7,8 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 - 支援螢幕選擇、音訊設備選擇（麥克風 / 系統音效）
 - 支援自訂解析度 (原生 / 2K / 1080p / 720p) 與 FPS (15 / 30 / 60)
 - 支援懸浮膠囊迷你模式 (Mini Floating Pill)，不遮擋畫面
-- 支援 3 秒倒數準備、快速鍵 (Space / F9 / Ctrl+R / Cmd+R)
+- 支援暫停與繼續、錄製游標開關，並記住上次的裝置與畫質
+- 支援 3 秒倒數準備、快速鍵 (Space / F8 / F9 / Ctrl+R / Cmd+R)
 - 支援即時影片剪輯與匯出 GIF / 提取音訊
 """
 
@@ -31,6 +32,7 @@ from platform_utils import (
     play_system_alert,
     open_file_or_dir,
     save_settings,
+    load_settings,
     recommended_capture,
     UI,
     apply_widget_style,
@@ -59,9 +61,11 @@ class LiteRecorderApp:
         self._stopping = False
         self._pending_mini = False
         self._normal_size = (560, 720)
-        self.auto_mini_var = tk.BooleanVar(value=True)
-        self.countdown_var = tk.BooleanVar(value=True)
-        self.hardware_accel_var = tk.BooleanVar(value=True)
+        self._saved = load_settings()
+        self.auto_mini_var = tk.BooleanVar(value=self._flag("auto_mini", True))
+        self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
+        self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
+        self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
 
         self.video_devices = []
         self.audio_devices = []
@@ -124,6 +128,7 @@ class LiteRecorderApp:
             "快捷鍵",
             "開始或停止錄影：\n"
             f"{self.shortcut_hint}\n\n"
+            "暫停或繼續：F8\n\n"
             "錄影開始後可以收成畫面上方的小條，拖曳就能挪開。",
         )
 
@@ -133,6 +138,7 @@ class LiteRecorderApp:
         file_menu.add_command(label="開啟儲存資料夾", command=self.open_output_folder)
         file_menu.add_command(label="變更儲存位置…", command=self.change_output_folder)
         file_menu.add_separator()
+        file_menu.add_command(label="暫停或繼續", command=self.toggle_pause)
         file_menu.add_command(label="剪輯影片…", command=self.open_editor)
         file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
         file_menu.add_separator()
@@ -211,14 +217,19 @@ class LiteRecorderApp:
         )
         self.timer_hint.pack(pady=(6, 0))
 
+        self.record_row = tk.Frame(self.timer_card, bg=UI["card"])
+        self.record_row.pack(fill=tk.X, padx=16, pady=(12, 14))
+        self.pause_btn = AuraButton(
+            self.record_row, text="暫停", style="Ghost.TButton", command=self.toggle_pause
+        )
         self.record_btn = AuraButton(
-            self.timer_card,
+            self.record_row,
             text="開始錄影",
             style="Primary.TButton",
             command=self.toggle_recording,
             state=tk.DISABLED,
         )
-        self.record_btn.pack(fill=tk.X, padx=16, pady=(12, 14))
+        self.record_btn.pack(fill=tk.X)
 
         settings_card = self._card(self.main_container)
         settings_card.pack(fill=tk.X, pady=(0, 10))
@@ -247,10 +258,10 @@ class LiteRecorderApp:
             "1080p（1920×1080）",
             "720p（1280×720）",
         ]
-        self.res_combo.current(self.capture_advice["res_index"])
+        self.res_combo.current(self._saved_index("res_index", self.capture_advice["res_index"], 3))
         self.fps_combo = setting_row(3, "幀率")
         self.fps_combo["values"] = ["30 FPS", "60 FPS（較吃資源）", "15 FPS（較省）"]
-        self.fps_combo.current(self.capture_advice["fps_index"])
+        self.fps_combo.current(self._saved_index("fps_index", self.capture_advice["fps_index"], 2))
 
         accel_text = "使用硬體加速" if IS_MAC else ("使用 GPU 硬體加速" if IS_WINDOWS else "使用硬體加速")
         checks = tk.Frame(settings_card, bg=UI["card"])
@@ -259,8 +270,11 @@ class LiteRecorderApp:
             (accel_text, self.hardware_accel_var),
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
+            ("錄下游標", self.capture_cursor_var),
         ):
-            AuraCheck(checks, text=text, variable=variable).pack(anchor="w")
+            AuraCheck(checks, text=text, variable=variable, command=self._save_capture_settings).pack(anchor="w")
+        for combo in (self.video_combo, self.audio_combo, self.res_combo, self.fps_combo):
+            combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
 
         self.recent_card = self._card(self.main_container)
         self.recent_card.pack(fill=tk.BOTH, expand=True)
@@ -329,7 +343,11 @@ class LiteRecorderApp:
             text="停止",
             style="Stop.TButton",
             command=self.stop_recording,
-        ).pack(side=tk.RIGHT, padx=8, pady=5)
+        ).pack(side=tk.RIGHT, padx=(0, 8), pady=5)
+        self.mini_pause_btn = AuraButton(
+            self.mini_container, text="暫停", style="Ghost.TButton", command=self.toggle_pause
+        )
+        self.mini_pause_btn.pack(side=tk.RIGHT, padx=4, pady=5)
 
     def _start_drag(self, event):
         self.drag_x = event.x
@@ -342,6 +360,7 @@ class LiteRecorderApp:
 
     def _bind_shortcuts(self):
         # 跨平台快捷鍵 Space / F9 / Ctrl+R / Cmd+R
+        self.root.bind_all("<F8>", lambda e: self.toggle_pause())
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
         self.root.bind_all("<Control-r>", lambda e: self.toggle_recording())
         self.root.bind_all("<Command-r>", lambda e: self.toggle_recording())
@@ -386,12 +405,19 @@ class LiteRecorderApp:
             if "capture screen" in lowered or "desktop" in lowered or "螢幕" in name:
                 screen_at = i
                 break
+        saved_video = self._saved.get("video_device")
+        if isinstance(saved_video, str) and saved_video in v_names:
+            screen_at = v_names.index(saved_video)
         self.video_combo.current(screen_at)
         self.video_combo.config(state="readonly")
 
         a_names = ["無音訊 (靜音)"] + [f"[{d['index']}] {d['name']}" for d in a_devs]
         self.audio_combo["values"] = a_names
-        self.audio_combo.current(1 if len(a_names) > 1 else 0)
+        audio_at = 1 if len(a_names) > 1 else 0
+        saved_audio = self._saved.get("audio_device")
+        if isinstance(saved_audio, str) and saved_audio in a_names:
+            audio_at = a_names.index(saved_audio)
+        self.audio_combo.current(audio_at)
         self.audio_combo.config(state="readonly")
 
         self.timer_hint.config(text=self._idle_hint())
@@ -407,7 +433,7 @@ class LiteRecorderApp:
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
-        self.root.geometry(f"280x44+{prev_x}+{prev_y}")
+        self.root.geometry(f"360x48+{prev_x}+{prev_y}")
         self.root.resizable(False, False)
         self.root.config(menu="")
         self.root.attributes("-topmost", True)
@@ -427,6 +453,79 @@ class LiteRecorderApp:
         self.root.attributes("-topmost", False)
         self.root.config(menu=self.menubar)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
+
+    def _flag(self, key, default):
+        if key not in self._saved:
+            return default
+        return bool(self._saved[key])
+
+    def _saved_index(self, key, default, last):
+        try:
+            value = int(self._saved.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        if 0 <= value <= last:
+            return value
+        return default
+
+    def _save_capture_settings(self):
+        video = self.video_combo.get()
+        audio = self.audio_combo.get()
+        payload = {
+            "res_index": self.res_combo.current(),
+            "fps_index": self.fps_combo.current(),
+            "hardware_accel": bool(self.hardware_accel_var.get()),
+            "countdown": bool(self.countdown_var.get()),
+            "auto_mini": bool(self.auto_mini_var.get()),
+            "capture_cursor": bool(self.capture_cursor_var.get()),
+        }
+        if video and "偵測" not in video and "找不到" not in video:
+            payload["video_device"] = video
+        if audio and "偵測" not in audio and "找不到" not in audio:
+            payload["audio_device"] = audio
+        save_settings(payload)
+        self._saved.update(payload)
+
+    def toggle_pause(self):
+        if self._stopping or self.countdown_active or not self.recorder.is_recording:
+            return
+        if self.recorder.paused:
+            ok, msg = self.recorder.resume_recording()
+        else:
+            ok, msg = self.recorder.pause_recording()
+        if not ok:
+            messagebox.showwarning("暫停沒有成功", msg)
+            return
+        self._sync_pause_button()
+
+    def _sync_pause_button(self):
+        paused = bool(self.recorder.paused)
+        label = "繼續" if paused else "暫停"
+        self.pause_btn.config(text=label)
+        if hasattr(self, "mini_pause_btn"):
+            self.mini_pause_btn.config(text=label)
+        if paused:
+            self.status_badge.config(text="●  暫停", fg=UI["warn"])
+            self.timer_display.config(fg=UI["warn"])
+            self.timer_hint.config(text="已暫停。F8 繼續，或按停止結束")
+            self.mini_time_label.config(fg=UI["warn"])
+            self._draw_vu_idle()
+            self._draw_mini_vu_idle()
+        elif self.recorder.is_recording:
+            self.status_badge.config(text="●  錄製中", fg=UI["red"])
+            self.timer_display.config(fg=UI["red"])
+            self.timer_hint.config(text=f"錄製中。F8 暫停，{self.shortcut_hint} 停止")
+            self.mini_time_label.config(fg=UI["red"])
+
+    def _layout_record_buttons(self, recording):
+        self.pause_btn.pack_forget()
+        self.record_btn.pack_forget()
+        if recording:
+            self.pause_btn.config(text="繼續" if self.recorder.paused else "暫停")
+            self.pause_btn.pack(side=tk.LEFT, padx=(0, 8))
+            self.record_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        else:
+            self.record_btn.pack(fill=tk.X)
 
     def toggle_recording(self):
         if self.countdown_active:
@@ -483,7 +582,8 @@ class LiteRecorderApp:
             audio_idx=a_idx,
             fps=fps,
             resolution=resolution,
-            use_hardware_accel=use_accel
+            use_hardware_accel=use_accel,
+            capture_cursor=self.capture_cursor_var.get(),
         )
 
         if not ok:
@@ -560,8 +660,9 @@ class LiteRecorderApp:
         if recording:
             self.status_badge.config(text="●  錄製中", fg=UI["red"])
             self.record_btn.config(text="停止錄影", style="Stop.TButton")
+            self._layout_record_buttons(True)
             self.timer_display.config(fg=UI["red"])
-            self.timer_hint.config(text=f"錄製中。{self.shortcut_hint} 可以停止")
+            self.timer_hint.config(text=f"錄製中。F8 暫停，{self.shortcut_hint} 停止")
             self.video_combo.config(state=tk.DISABLED)
             self.audio_combo.config(state=tk.DISABLED)
             self.res_combo.config(state=tk.DISABLED)
@@ -569,6 +670,7 @@ class LiteRecorderApp:
         else:
             self.status_badge.config(text="●  就緒", fg=UI["ok"])
             self.record_btn.config(text="開始錄影", style="Primary.TButton")
+            self._layout_record_buttons(False)
             self.timer_display.config(text="00:00:00", fg=UI["white"])
             self.timer_hint.config(text=self._idle_hint())
             self._draw_vu_idle()
@@ -663,10 +765,14 @@ class LiteRecorderApp:
             time_str = f"{hrs:02d}:{mins:02d}:{s:02d}"
             self.timer_display.config(text=time_str)
 
-            mini_str = f"REC {mins:02d}:{s:02d}" if hrs == 0 else f"REC {hrs:02d}:{mins:02d}:{s:02d}"
+            prefix = "PAUSE" if self.recorder.paused else "REC"
+            mini_str = f"{prefix} {mins:02d}:{s:02d}" if hrs == 0 else f"{prefix} {hrs:02d}:{mins:02d}:{s:02d}"
             self.mini_time_label.config(text=mini_str)
-
-            self._draw_vu_active(self.vu_tick_count)
+            if self.recorder.paused:
+                self._draw_vu_idle()
+                self._draw_mini_vu_idle()
+            else:
+                self._draw_vu_active(self.vu_tick_count)
             interval = 280
         else:
             if getattr(self, '_was_recording', False):
@@ -701,7 +807,7 @@ class LiteRecorderApp:
     def open_editor(self, video_path=None):
         """開啟影片剪輯編輯視窗"""
         target = video_path or self.recorder.last_recorded_file
-        VideoEditorWindow(self.root, video_path=target)
+        VideoEditorWindow(self.root, video_path=target, on_close=self.refresh_recent_list)
 
     def open_web_studio(self):
         """開啟獨立的 AURA REC 工作站檔。官網不在這個檔案裡。"""
@@ -731,11 +837,11 @@ class LiteRecorderApp:
             widget.destroy()
 
         try:
-            files = sorted(
-                list(self.recorder.output_dir.glob("*.mp4")) + list(self.recorder.output_dir.glob("*.mov")),
-                key=lambda x: x.stat().st_mtime,
-                reverse=True
-            )[:8]
+            patterns = ("*.mp4", "*.mov", "*.mkv", "*.webm", "*.gif", "*.m4a", "*.mp3", "*.wav")
+            found = []
+            for pattern in patterns:
+                found.extend(self.recorder.output_dir.glob(pattern))
+            files = sorted(found, key=lambda x: x.stat().st_mtime, reverse=True)[:8]
         except Exception:
             files = []
 
@@ -764,8 +870,10 @@ class LiteRecorderApp:
                 top, text=display_name, font=self.fonts["body"], fg=UI["text"], bg=UI["card"], anchor="w"
             ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 4))
             self._quiet_button(top, "刪除", lambda f=p: self._delete_recording(f), fg=UI["red"]).pack(side=tk.RIGHT)
-            self._quiet_button(top, "剪輯", lambda f=p: self.open_editor(str(f))).pack(side=tk.RIGHT)
+            if p.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}:
+                self._quiet_button(top, "剪輯", lambda f=p: self.open_editor(str(f))).pack(side=tk.RIGHT)
             self._quiet_button(top, "播放", lambda f=p: open_file_or_dir(str(f))).pack(side=tk.RIGHT)
+            self._quiet_button(top, "顯示", lambda f=p: open_file_or_dir(str(f), reveal=True)).pack(side=tk.RIGHT)
 
             tk.Label(
                 row,

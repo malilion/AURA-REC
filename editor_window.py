@@ -53,8 +53,9 @@ def time_str_to_sec(time_str):
 
 
 class VideoEditorWindow:
-    def __init__(self, parent, video_path=None):
+    def __init__(self, parent, video_path=None, on_close=None):
         self.parent = parent
+        self._after_close = on_close
         self.editor = VideoEditor()
 
         self.window = tk.Toplevel(parent)
@@ -483,3 +484,5 @@ class VideoEditorWindow:
         if self._playing_process and self._playing_process.poll() is None:
             self._playing_process.terminate()
         self.window.destroy()
+        if self._after_close:
+            self._after_close()
