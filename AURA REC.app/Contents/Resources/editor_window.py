@@ -233,7 +233,9 @@ class VideoEditorWindow:
         )
         self.ratio_combo.bind("<<ComboboxSelected>>", lambda _event: self._request_preview(self.current_time))
         self.color_combo = labeled_combo(1, 0, "色彩", ["原色", "鮮豔", "高對比"], 8)
-        AuraCheck(adv_frame, text="靜音", variable=self.mute_var).grid(row=1, column=2, sticky="w", pady=4)
+        self.volume_combo = labeled_combo(1, 1, "音量", ["100% 原始", "150% 增強", "200% 放大", "50% 降低"], 14)
+        self.scale_combo = labeled_combo(2, 0, "尺寸", ["原始畫質", "1080p 適合分享", "720p 節省空間"], 12)
+        AuraCheck(adv_frame, text="靜音", variable=self.mute_var).grid(row=2, column=2, columnspan=2, sticky="w", pady=4)
 
         self.btn_export = AuraButton(
             self.main_frame,
@@ -542,6 +544,22 @@ class VideoEditorWindow:
                 ct = 1.25
                 br = -0.02
 
+            vol = 1.0
+            vol_str = self.volume_combo.get() if hasattr(self, "volume_combo") else "100%"
+            if "150%" in vol_str:
+                vol = 1.5
+            elif "200%" in vol_str:
+                vol = 2.0
+            elif "50%" in vol_str:
+                vol = 0.5
+
+            scale_res = "original"
+            scale_str = self.scale_combo.get() if hasattr(self, "scale_combo") else "原始"
+            if "1080p" in scale_str:
+                scale_res = "1080p"
+            elif "720p" in scale_str:
+                scale_res = "720p"
+
             picture_change = (
                 rat != "original"
                 or abs(spd - 1.0) > 0.001
@@ -549,6 +567,8 @@ class VideoEditorWindow:
                 or br != 0.0
                 or ct != 1.0
                 or sat != 1.0
+                or abs(vol - 1.0) > 0.001
+                or scale_res != "original"
             )
             export_mode = mode
             switched = export_mode == "lossless" and picture_change
@@ -563,7 +583,9 @@ class VideoEditorWindow:
                         self.current_file, out_path, self.start_sec, self.end_sec,
                         speed=spd, aspect_ratio=rat, anchor=anchor,
                         brightness=br, contrast=ct, saturation=sat,
-                        mute_audio=mute
+                        mute_audio=mute,
+                        volume=vol,
+                        target_resolution=scale_res,
                     )
                 elif export_mode == "gif":
                     ok, msg = self.editor.export_gif(
@@ -571,7 +593,10 @@ class VideoEditorWindow:
                         aspect_ratio=rat, anchor=anchor,
                     )
                 elif export_mode == "audio":
-                    ok, msg = self.editor.extract_audio(self.current_file, out_path, self.start_sec, self.end_sec)
+                    ok, msg = self.editor.extract_audio(
+                        self.current_file, out_path, self.start_sec, self.end_sec,
+                        volume=vol,
+                    )
             except Exception as e:
                 ok = False
                 msg = str(e)
