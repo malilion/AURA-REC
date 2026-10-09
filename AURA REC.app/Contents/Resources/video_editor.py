@@ -32,12 +32,16 @@ from platform_utils import (
 def parse_aspect_choice(text):
     """把剪輯視窗的比例選項變成濾鏡用的比例與取景。"""
     text = text or ""
-    if "9:16" in text or "直式" in text:
+    if "完整" in text:
+        return "9:16", "fit"
+    if "9:16" in text or "直式" in text or "裁切" in text:
         if "左" in text:
             return "9:16", "left"
         if "右" in text:
             return "9:16", "right"
-        return "9:16", "center"
+        if "中" in text or "裁" in text:
+            return "9:16", "center"
+        return "9:16", "fit"
     if "16:9" in text or "橫式" in text:
         return "16:9", "center"
     if "1:1" in text or "方形" in text:
@@ -45,9 +49,52 @@ def parse_aspect_choice(text):
     return "original", "center"
 
 
+def _even(value):
+    number = int(value)
+    return max(2, number - number % 2)
+
+
+def vertical_canvas_size(profile=None):
+    """直式畫布。文書電腦用 720×1280，其他用 1080×1920。"""
+    profile = profile or machine_profile()
+    if profile == "light":
+        return 720, 1280
+    return 1080, 1920
+
+
+def vertical_fit_graph(canvas_w, canvas_h):
+    """整段畫面放進直式畫布，上下用縮小後模糊的同一畫面補滿。"""
+    width = _even(canvas_w)
+    height = _even(canvas_h)
+    # 先把整張畫面縮小再模糊，避免只剩中間一條顏色。
+    small_w = _even(max(32, width // 6))
+    return (
+        f"split[fg][bg];"
+        f"[bg]scale={small_w}:-2:flags=fast_bilinear,boxblur=12:1,"
+        f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
+        f"crop={width}:{height}[bg];"
+        f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear[fg];"
+        f"[bg][fg]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2"
+    )
+
+
+def preview_video_filter(aspect_ratio, anchor="center", width=320, height=180):
+    """預覽用的濾鏡。直式完整會先排成直式，再放進橫向預覽格。"""
+    pad = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+    )
+    if aspect_ratio == "9:16" and anchor == "fit":
+        return vertical_fit_graph(height, width) + "," + pad
+    crop = aspect_crop_filter(aspect_ratio, anchor)
+    return f"{crop},{pad}" if crop else pad
+
+
 def aspect_crop_filter(aspect_ratio, anchor="center"):
     """裁成目標比例。寬高與起點都取偶數。已經符合時回傳 None。"""
     if aspect_ratio == "9:16":
+        if anchor == "fit":
+            return None
         width = r"trunc(min(iw\,ih*9/16)/2)*2"
         height = r"trunc(ih/2)*2"
         if anchor == "left":
@@ -157,7 +204,7 @@ class VideoEditor:
             print(f"[VideoEditor] get_video_info error: {e}")
             return None
 
-    def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202, crop_filter=None):
+    def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202, crop_filter=None, video_filter=None):
         """
         在指定時間點擷取一幀畫面，以 PPM 格式 byte 串流返回，直接供 Tkinter PhotoImage 使用。
         預覽用小圖和最快的縮放，避免拖時間軸時把 CPU 佔滿。
@@ -167,7 +214,9 @@ class VideoEditor:
             f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
         )
-        if crop_filter:
+        if video_filter:
+            scale = video_filter
+        elif crop_filter:
             scale = crop_filter + "," + scale
 
         cmd = [
@@ -253,27 +302,27 @@ class VideoEditor:
             "-t", f"{duration:.3f}",
         ]
 
-        # 構建視訊濾鏡
+        profile = machine_profile()
+        # 速度與色彩接在比例處理後面。直式完整用畫布，不裁掉左右。
         vf_list = []
-
-        # 1. 比例裁切。直式可選左、中、右，寬高維持偶數。
-        crop = aspect_crop_filter(aspect_ratio, anchor)
-        if crop:
-            vf_list.append(crop)
-
-        # 2. 視訊倍速
         if speed != 1.0:
             pts_factor = 1.0 / speed
             vf_list.append(f"setpts={pts_factor:.4f}*PTS")
-
-        # 3. 色彩調整
         if brightness != 0.0 or contrast != 1.0 or saturation != 1.0:
             vf_list.append(f"eq=brightness={brightness:.2f}:contrast={contrast:.2f}:saturation={saturation:.2f}")
 
-        if vf_list:
-            cmd.extend(["-vf", ",".join(vf_list)])
-
-        profile = machine_profile()
+        if aspect_ratio == "9:16" and anchor == "fit":
+            canvas_w, canvas_h = vertical_canvas_size(profile)
+            graph = vertical_fit_graph(canvas_w, canvas_h)
+            if vf_list:
+                graph += "," + ",".join(vf_list)
+            cmd.extend(["-filter_complex", graph])
+        else:
+            crop = aspect_crop_filter(aspect_ratio, anchor)
+            if crop:
+                vf_list.insert(0, crop)
+            if vf_list:
+                cmd.extend(["-vf", ",".join(vf_list)])
         export_rate = {"light": 1800, "balanced": 2800, "high": 4500}.get(profile, 2800)
         cmd.extend(["-threads", str(encode_threads(profile))])
         cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, export_rate, profile))
@@ -317,15 +366,23 @@ class VideoEditor:
         if duration <= 0:
             return False, "長度必須大於 0 秒"
 
-        if aspect_ratio == "9:16":
+        profile = machine_profile()
+        fit = aspect_ratio == "9:16" and anchor == "fit"
+        if fit:
+            width = 270 if profile == "light" else 360
+        elif aspect_ratio == "9:16":
             width = min(int(width), 360)
-        budget = gif_export_settings(duration, fps=fps, width=width)
-        crop = aspect_crop_filter(aspect_ratio, anchor)
-        scale = (
+        budget = gif_export_settings(duration, fps=fps, width=width, profile=profile)
+        palette = (
             f"fps={budget['fps']},scale={budget['width']}:-1:flags={budget['flags']},"
             f"split[s0][s1];[s0]palettegen=max_colors={budget['colors']}[p];[s1][p]paletteuse=dither=bayer"
         )
-        vf = f"{crop},{scale}" if crop else scale
+        if fit:
+            canvas_w, canvas_h = (270, 480) if profile == "light" else (360, 640)
+            vf = vertical_fit_graph(canvas_w, canvas_h) + "," + palette
+        else:
+            crop = aspect_crop_filter(aspect_ratio, anchor)
+            vf = f"{crop},{palette}" if crop else palette
 
         cmd = [self.ffmpeg_bin, "-y"]
         if budget["profile"] == "light":
