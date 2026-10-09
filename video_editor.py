@@ -421,6 +421,10 @@ class VideoEditor:
         input_file = str(input_file)
         output_file = str(output_file)
 
+        info = self.get_video_info(input_file)
+        if info and not info.get("has_audio"):
+            return False, "該影片沒有音訊軌道，無法提取音訊"
+
         cmd = [self.ffmpeg_bin, "-y"]
         if start_sec is not None and end_sec is not None and (end_sec > start_sec):
             cmd.extend(["-ss", f"{start_sec:.3f}", "-i", input_file, "-t", f"{end_sec - start_sec:.3f}"])

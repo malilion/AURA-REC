@@ -2036,12 +2036,16 @@ class LiteRecorderApp:
             return
 
         for p in files:
+            try:
+                st = p.stat()
+            except OSError:
+                continue
             row = tk.Frame(self.recent_list_frame, bg=UI["card"])
             row.pack(fill=tk.X, pady=1)
 
-            sz = p.stat().st_size / (1024 * 1024)
-            size_text = f"{sz:.1f} MB" if sz >= 0.1 else f"{max(1, int(p.stat().st_size / 1024))} KB"
-            time_str = datetime.fromtimestamp(p.stat().st_mtime).strftime("%m/%d %H:%M")
+            sz = st.st_size / (1024 * 1024)
+            size_text = f"{sz:.1f} MB" if sz >= 0.1 else f"{max(1, int(st.st_size / 1024))} KB"
+            time_str = datetime.fromtimestamp(st.st_mtime).strftime("%m/%d %H:%M")
             display_name = p.name if len(p.name) <= 36 else ("…" + p.name[-35:])
 
             top = tk.Frame(row, bg=UI["card"])
@@ -2364,6 +2368,10 @@ class LiteRecorderApp:
         if messagebox.askyesno("確認刪除", f"確定要刪除錄影檔案嗎？\n{file_path.name}"):
             try:
                 file_path.unlink()
+                if self.recorder.last_recorded_file and Path(self.recorder.last_recorded_file) == file_path:
+                    self.recorder.last_recorded_file = None
+                    if hasattr(self, "btn_play_last"):
+                        self.btn_play_last.config(state=tk.DISABLED)
                 self.refresh_recent_list()
             except Exception as e:
                 messagebox.showerror("刪除失敗", str(e))

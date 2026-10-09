@@ -298,49 +298,104 @@ def _box_on_display(win_x, win_y, win_w, win_h, display):
 
 def _mac_window_rows():
     import ctypes
-    import objc
 
     cg = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     cf = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
     cg.CGWindowListCopyWindowInfo.restype = ctypes.c_void_p
     cg.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
     cf.CFRelease.argtypes = [ctypes.c_void_p]
-    # 畫面上的一般視窗，不含桌布。
+
+    cf.CFArrayGetCount.restype = ctypes.c_long
+    cf.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+    cf.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+    cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+
+    cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+    cf.CFDictionaryGetValue.restype = ctypes.c_void_p
+    cf.CFDictionaryGetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    cf.CFNumberGetValue.restype = ctypes.c_bool
+    cf.CFNumberGetValue.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+    cf.CFStringGetCString.restype = ctypes.c_bool
+    cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+
+    class _Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+    class _Size(ctypes.Structure):
+        _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+    class _Rect(ctypes.Structure):
+        _fields_ = [("origin", _Point), ("size", _Size)]
+
+    cg.CGRectMakeWithDictionaryRepresentation.restype = ctypes.c_bool
+    cg.CGRectMakeWithDictionaryRepresentation.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Rect)]
+
+    UTF8 = 0x08000100
+
+    def cf_str(cf_val):
+        if not cf_val:
+            return ""
+        buf = ctypes.create_string_buffer(512)
+        if cf.CFStringGetCString(cf_val, buf, 512, UTF8):
+            return buf.value.decode("utf-8", errors="ignore")
+        return ""
+
+    def cf_int(cf_val):
+        if not cf_val:
+            return 0
+        val = ctypes.c_longlong(0)
+        if cf.CFNumberGetValue(cf_val, 4, ctypes.byref(val)):
+            return val.value
+        return 0
+
     ptr = cg.CGWindowListCopyWindowInfo(1 | 16, 0)
     if not ptr:
         return []
+
+    k_owner = cf.CFStringCreateWithCString(None, b"kCGWindowOwnerName", UTF8)
+    k_name = cf.CFStringCreateWithCString(None, b"kCGWindowName", UTF8)
+    k_pid = cf.CFStringCreateWithCString(None, b"kCGWindowOwnerPID", UTF8)
+    k_layer = cf.CFStringCreateWithCString(None, b"kCGWindowLayer", UTF8)
+    k_num = cf.CFStringCreateWithCString(None, b"kCGWindowNumber", UTF8)
+    k_bounds = cf.CFStringCreateWithCString(None, b"kCGWindowBounds", UTF8)
+
     rows = []
+    my_pid = os.getpid()
     try:
-        array = objc.objc_object(c_void_p=ptr)
-        for index in range(int(array.count())):
-            item = array.objectAtIndex_(index)
-            try:
-                layer = int(item["kCGWindowLayer"])
-                owner_pid = int(item["kCGWindowOwnerPID"])
-                window_id = int(item["kCGWindowNumber"])
-                bounds = item["kCGWindowBounds"]
-                win_x = float(bounds["X"])
-                win_y = float(bounds["Y"])
-                win_w = float(bounds["Width"])
-                win_h = float(bounds["Height"])
-            except (KeyError, TypeError, ValueError):
+        count = int(cf.CFArrayGetCount(ptr))
+        for index in range(count):
+            d = cf.CFArrayGetValueAtIndex(ptr, index)
+            layer = cf_int(cf.CFDictionaryGetValue(d, k_layer))
+            owner_pid = cf_int(cf.CFDictionaryGetValue(d, k_pid))
+            if layer != 0 or owner_pid == my_pid:
                 continue
-            if layer != 0 or owner_pid == os.getpid() or win_w < 160 or win_h < 100:
+            bounds_dict = cf.CFDictionaryGetValue(d, k_bounds)
+            r = _Rect()
+            if not cg.CGRectMakeWithDictionaryRepresentation(bounds_dict, ctypes.byref(r)):
                 continue
-            owner = str(item["kCGWindowOwnerName"] or "").strip()
-            title = str(item["kCGWindowName"] or "").strip()
+            win_w = float(r.size.width)
+            win_h = float(r.size.height)
+            if win_w < 160 or win_h < 100:
+                continue
+            owner = cf_str(cf.CFDictionaryGetValue(d, k_owner)).strip()
+            title = cf_str(cf.CFDictionaryGetValue(d, k_name)).strip()
             if not owner or owner in {"Window Server", "Dock"}:
                 continue
+            window_id = cf_int(cf.CFDictionaryGetValue(d, k_num))
             rows.append({
                 "id": window_id,
                 "owner": owner,
                 "title": title,
-                "x": win_x,
-                "y": win_y,
+                "x": float(r.origin.x),
+                "y": float(r.origin.y),
                 "w": win_w,
                 "h": win_h,
             })
     finally:
+        for k in (k_owner, k_name, k_pid, k_layer, k_num, k_bounds):
+            if k:
+                cf.CFRelease(k)
         cf.CFRelease(ptr)
     return rows
 

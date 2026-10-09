@@ -540,6 +540,9 @@ class VideoEditorWindow:
         if e is not None and 0.0 <= e <= self.total_duration:
             self.end_sec = e
 
+        if self.start_sec > self.end_sec:
+            self.start_sec, self.end_sec = self.end_sec, self.start_sec
+
         self.ent_start.delete(0, tk.END)
         self.ent_start.insert(0, sec_to_time_str(self.start_sec))
         self.ent_end.delete(0, tk.END)
@@ -560,6 +563,11 @@ class VideoEditorWindow:
             self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton")
             return
 
+        if not self.current_file or not os.path.exists(self.current_file):
+            messagebox.showwarning("提示", "尚未載入影片！")
+            return
+
+        self._update_times_from_entries()
         dur = self.end_sec - self.start_sec
         if dur <= 0:
             messagebox.showwarning("提示", "選取長度需大於 0 秒")
@@ -581,7 +589,7 @@ class VideoEditorWindow:
         threading.Thread(target=monitor_process, daemon=True).start()
 
     def perform_export(self):
-        if not self.current_file:
+        if not self.current_file or not os.path.exists(self.current_file):
             messagebox.showwarning("提示", "尚未載入影片！")
             return
 
@@ -592,6 +600,10 @@ class VideoEditorWindow:
             return
 
         mode = self.export_mode_var.get()
+        if mode == "audio" and self.video_info and not self.video_info.get("has_audio"):
+            messagebox.showwarning("提示", "此影片沒有音訊軌，無法提取音訊！")
+            return
+
         p = Path(self.current_file)
 
         time_tag = f"{int(self.start_sec)}s-{int(self.end_sec)}s"
