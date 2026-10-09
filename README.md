@@ -2,7 +2,7 @@
 
 把畫面留下來的工具。分兩套，解決的事情不一樣：
 
-- **瀏覽器工作站**是一個檔案：`web_studio/download/AURA-REC.html`。官網 `web_studio/index.html` 只負責介紹，下載按鈕只給這一個檔。Mac 與 Windows 都是它。雙擊用 Chrome 或 Edge 打開，不用安裝、不用解壓縮、不用 Python。
+- **瀏覽器工作站**是一個檔案：`AURA-REC.html`。官網在 [malilion.github.io/Record](https://malilion.github.io/Record/)。下載按鈕只給這一個檔。Mac 與 Windows 都是它。用 Chrome、Edge 或 Brave 打開，不用安裝、不用解壓縮、不用 Python。
 - **桌面程式**是 `AURA REC.app`（Windows 為 `AURA-REC.exe`）。要系統音訊裝置、硬體編碼、離線剪輯、錄某一個視窗時用它。它需要 Python 3 與 FFmpeg，官網不提供這個安裝檔。
 
 ---
@@ -39,8 +39,8 @@
 
 ### 怎麼用
 
-1. 用瀏覽器打開官網，按下載。只會得到 `AURA-REC.html`。
-2. 雙擊那個檔。請用 Chrome 或 Edge，並允許螢幕分享。
+1. 打開 [官網](https://malilion.github.io/Record/)，按下載。只會得到 `AURA-REC.html`。
+2. 雙擊那個檔。請用 Chrome、Edge 或 Brave，並允許螢幕分享。
 3. 按「開始選取並錄製」。要電腦裡的聲音，在分享視窗勾選。要自己的聲音，打開底部的麥克風。
 4. 倒數結束後開始。再按空白鍵，或按懸浮條上的「停止錄製」。
 5. 用時間軸看。要指出某一格，用左上角的畫筆。要換看法，用右上角的濾鏡和倍速。
