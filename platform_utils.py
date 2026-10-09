@@ -399,10 +399,15 @@ def capture_device_preview_ppm(ffmpeg_bin, dev_name, width=288, height=162, time
                     pass
 
         # 2. 判斷是否為攝影機
-        is_camera = any(k in low for k in ("相機", "camera", "facetime", "鏡頭", "webcam"))
+        is_camera = any(k in low for k in ("相機", "camera", "facetime", "鏡頭", "webcam")) or dev_str.isdigit() or not is_screen
         if is_camera and ffmpeg_bin:
-            m_idx = re.search(r"^\[(\d+)\]", dev_str)
-            cam_idx = m_idx.group(1) if m_idx else "0"
+            m_idx = re.search(r"\[(\d+)\]", dev_str)
+            if m_idx:
+                cam_idx = m_idx.group(1)
+            elif dev_str.isdigit():
+                cam_idx = dev_str
+            else:
+                cam_idx = "0"
             try:
                 ff_cmd = [
                     ffmpeg_bin, "-y", "-f", "avfoundation", "-framerate", "30",

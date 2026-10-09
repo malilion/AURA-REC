@@ -123,6 +123,139 @@ def format_media_duration(seconds):
     return f"{minutes}:{secs:02d}"
 
 
+class FloatingCameraBubble:
+    """錄影時出現在桌面角落的可拖曳即時相機小圓圈 (Loom / Recordly 風格)"""
+
+    def __init__(self, parent_root, ffmpeg_bin, camera_dev, size=260, shape="circle", border_color="#00f0ff", position="bottom-right"):
+        self.root = parent_root
+        self.ffmpeg_bin = ffmpeg_bin
+        self.camera_dev = camera_dev
+        self.size = size
+        self.shape = shape
+        self.border_color = border_color
+        self.position = position
+        self.is_alive = True
+        self._photo = None
+        self._drag_data = {"x": 0, "y": 0}
+
+        self.win = tk.Toplevel(parent_root)
+        self.win.overrideredirect(True)
+        self.win.configure(bg="#000000")
+        try:
+            self.win.attributes("-topmost", True)
+        except Exception:
+            pass
+
+        sw = self.win.winfo_screenwidth()
+        sh = self.win.winfo_screenheight()
+        margin = 40
+        if position == "bottom-left":
+            x = margin
+            y = sh - size - margin - 50
+        elif position == "top-right":
+            x = sw - size - margin
+            y = margin + 30
+        elif position == "top-left":
+            x = margin
+            y = margin + 30
+        else:
+            x = sw - size - margin
+            y = sh - size - margin - 50
+
+        self.win.geometry(f"{size}x{size}+{x}+{y}")
+
+        self.canvas = tk.Canvas(
+            self.win,
+            width=size,
+            height=size,
+            bg="#0d0d11",
+            highlightthickness=2,
+            highlightbackground=border_color,
+            cursor="fleur",
+        )
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas.bind("<Button-1>", self._start_drag)
+        self.canvas.bind("<B1-Motion>", self._do_drag)
+
+        badge_text = "● 相機鏡頭" if shape == "circle" else "● 鏡頭畫面"
+        self.canvas.create_text(
+            size // 2, size // 2 - 12,
+            text=badge_text,
+            fill=border_color,
+            font=("SF Pro Text", 12, "bold") if IS_MAC else ("Segoe UI", 11, "bold"),
+            justify="center",
+        )
+        self.canvas.create_text(
+            size // 2, size // 2 + 12,
+            text="可拖曳移動 · 錄影中",
+            fill="#a1a1aa",
+            font=("SF Pro Text", 10) if IS_MAC else ("Segoe UI", 9),
+            justify="center",
+        )
+
+        close_btn = self.canvas.create_text(
+            size - 18, 18, text="✕", fill="#71717a", font=("SF Pro Text", 12, "bold")
+        )
+        self.canvas.tag_bind(close_btn, "<Button-1>", lambda _e: self.destroy())
+
+        self._load_frame()
+
+    def _start_drag(self, event):
+        self._drag_data["x"] = event.x
+        self._drag_data["y"] = event.y
+
+    def _do_drag(self, event):
+        dx = event.x - self._drag_data["x"]
+        dy = event.y - self._drag_data["y"]
+        x = self.win.winfo_x() + dx
+        y = self.win.winfo_y() + dy
+        self.win.geometry(f"+{x}+{y}")
+
+    def _load_frame(self):
+        def worker():
+            try:
+                ppm = capture_device_preview_ppm(
+                    self.ffmpeg_bin, self.camera_dev, width=self.size, height=self.size
+                )
+            except Exception:
+                ppm = None
+            if ppm and self.is_alive:
+                def update():
+                    if not self.is_alive or not self.win.winfo_exists():
+                        return
+                    try:
+                        self._photo = tk.PhotoImage(data=ppm)
+                        self.canvas.delete("all")
+                        self.canvas.create_image(self.size // 2, self.size // 2, image=self._photo)
+                        self.canvas.create_rectangle(
+                            0, self.size - 26, self.size, self.size,
+                            fill="#000000", outline=""
+                        )
+                        self.canvas.create_text(
+                            self.size // 2, self.size - 13,
+                            text="● LIVE PIP 鏡頭", fill="#10b981",
+                            font=("SF Pro Text", 9, "bold") if IS_MAC else ("Segoe UI", 8, "bold")
+                        )
+                        close_btn = self.canvas.create_text(
+                            self.size - 16, 16, text="✕", fill="#ffffff", font=("SF Pro Text", 11, "bold")
+                        )
+                        self.canvas.tag_bind(close_btn, "<Button-1>", lambda _e: self.destroy())
+                        self.canvas.bind("<Button-1>", self._start_drag)
+                        self.canvas.bind("<B1-Motion>", self._do_drag)
+                    except Exception:
+                        pass
+                self.root.after(0, update)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def destroy(self):
+        self.is_alive = False
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+
+
 class LiteRecorderApp:
     def __init__(self, root):
         self.root = root
@@ -160,6 +293,14 @@ class LiteRecorderApp:
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
         self.auto_copy_screenshot_var = tk.BooleanVar(value=self._flag("auto_copy_screenshot", True))
         self.sound_alert_var = tk.BooleanVar(value=self._flag("sound_alerts", True))
+        self.pip_enabled_var = tk.BooleanVar(value=self._flag("pip_enabled", False))
+        self.pip_floating_var = tk.BooleanVar(value=self._flag("pip_floating", True))
+        self.pip_camera_var = tk.StringVar(value=str(self._saved.get("pip_camera", "")))
+        self.pip_shape_var = tk.StringVar(value=str(self._saved.get("pip_shape", "圓形相機 (Circle)")))
+        self.pip_pos_var = tk.StringVar(value=str(self._saved.get("pip_pos", "右下角")))
+        self.pip_size_var = tk.StringVar(value=str(self._saved.get("pip_size", "中 (260px)")))
+        self.pip_border_var = tk.StringVar(value=str(self._saved.get("pip_border", "極光霓虹藍 (#00f0ff)")))
+        self._camera_bubble_win = None
 
         self.video_devices = []
         self.audio_devices = []
@@ -446,6 +587,80 @@ class LiteRecorderApp:
                 checks, text=text, variable=variable, command=self._save_capture_settings
             ).grid(row=index // 2, column=index % 2, sticky="w")
 
+        # 畫中畫 (PiP 人臉相機) 設定卡片
+        self.pip_card = tk.Frame(settings_card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        self.pip_card.pack(fill=tk.X, padx=14, pady=(0, 10))
+
+        pip_header = tk.Frame(self.pip_card, bg=UI["card"])
+        pip_header.pack(fill=tk.X, padx=10, pady=(6, 4))
+
+        AuraCheck(
+            pip_header,
+            text="畫中畫相機 (PiP 人臉鏡頭)",
+            variable=self.pip_enabled_var,
+            command=self._on_pip_toggle,
+        ).pack(side=tk.LEFT)
+
+        tk.Label(
+            pip_header,
+            text="Loom / Recordly 風格",
+            font=self.fonts["badge"],
+            fg=UI["blue"],
+            bg=UI["card"],
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        pip_actions = tk.Frame(pip_header, bg=UI["card"])
+        pip_actions.pack(side=tk.RIGHT)
+        self.pip_test_btn = self._quiet_button(pip_actions, "鏡頭試看 👁", self._test_camera_bubble)
+        self.pip_test_btn.pack(side=tk.LEFT)
+
+        # PiP 細節設定面板 (依開關展開/收合)
+        self.pip_options_frame = tk.Frame(self.pip_card, bg=UI["card"])
+        if self.pip_enabled_var.get():
+            self.pip_options_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+
+        pip_grid = tk.Frame(self.pip_options_frame, bg=UI["card"])
+        pip_grid.pack(fill=tk.X)
+        pip_grid.columnconfigure(1, weight=1)
+        pip_grid.columnconfigure(3, weight=1)
+
+        # Row 0: 鏡頭來源、形狀
+        tk.Label(pip_grid, text="鏡頭", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=0, column=0, sticky="w", padx=(0, 6), pady=2)
+        self.pip_camera_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_camera_var)
+        self.pip_camera_combo.grid(row=0, column=1, sticky="ew", pady=2)
+
+        tk.Label(pip_grid, text="形狀", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=0, column=2, sticky="w", padx=(8, 6), pady=2)
+        self.pip_shape_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_shape_var)
+        self.pip_shape_combo["values"] = ["圓形相機 (Circle)", "圓角矩形 (Rect)"]
+        self.pip_shape_combo.grid(row=0, column=3, sticky="ew", pady=2)
+
+        # Row 1: 位置、尺寸
+        tk.Label(pip_grid, text="位置", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=1, column=0, sticky="w", padx=(0, 6), pady=2)
+        self.pip_pos_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_pos_var)
+        self.pip_pos_combo["values"] = ["右下角", "左下角", "右上角", "左上角"]
+        self.pip_pos_combo.grid(row=1, column=1, sticky="ew", pady=2)
+
+        tk.Label(pip_grid, text="尺寸", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=1, column=2, sticky="w", padx=(8, 6), pady=2)
+        self.pip_size_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_size_var)
+        self.pip_size_combo["values"] = ["中 (260px)", "小 (200px)", "大 (340px)"]
+        self.pip_size_combo.grid(row=1, column=3, sticky="ew", pady=2)
+
+        # Row 2: 外框樣式、即時浮動相機開關
+        tk.Label(pip_grid, text="外框", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=2, column=0, sticky="w", padx=(0, 6), pady=2)
+        self.pip_border_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_border_var)
+        self.pip_border_combo["values"] = ["極光霓虹藍 (#00f0ff)", "純白外框 (#ffffff)", "無外框"]
+        self.pip_border_combo.grid(row=2, column=1, sticky="ew", pady=2)
+
+        AuraCheck(
+            pip_grid,
+            text="錄影時顯示桌面小圓圈",
+            variable=self.pip_floating_var,
+            command=self._save_capture_settings,
+        ).grid(row=2, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=2)
+
+        for combo in (self.pip_camera_combo, self.pip_shape_combo, self.pip_pos_combo, self.pip_size_combo, self.pip_border_combo):
+            combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
+
         # 即時畫面縮圖卡片
         self.preview_card = tk.Frame(settings_card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
         self.preview_card.pack(fill=tk.X, padx=14, pady=(0, 10))
@@ -715,6 +930,35 @@ class LiteRecorderApp:
                     break
         self.audio_combo.current(audio_at)
         self.audio_combo.config(state=tk.DISABLED if busy else "readonly")
+
+        # 填入 PiP 鏡頭選單
+        cam_names = []
+        for d in v_devs:
+            low = d["name"].lower()
+            if any(k in low for k in ("camera", "webcam", "facetime", "鏡頭", "相機")):
+                cam_names.append(f"[{d['index']}] {d['name']}")
+        if not cam_names and v_devs:
+            for d in v_devs:
+                low = d["name"].lower()
+                if not any(k in low for k in ("screen", "desktop", "螢幕", "display")):
+                    cam_names.append(f"[{d['index']}] {d['name']}")
+        if not cam_names and v_devs:
+            cam_names = [f"[{d['index']}] {d['name']}" for d in v_devs]
+
+        if hasattr(self, "pip_camera_combo"):
+            self.pip_camera_combo["values"] = cam_names or ["預設視訊鏡頭 [0]"]
+            saved_cam = self._saved.get("pip_camera")
+            cam_at = 0
+            if isinstance(saved_cam, str) and cam_names:
+                for idx, item in enumerate(cam_names):
+                    if item == saved_cam or (saved_cam.startswith("[") and item.split("]")[0] == saved_cam.split("]")[0]):
+                        cam_at = idx
+                        break
+            if cam_names:
+                self.pip_camera_combo.current(cam_at)
+            else:
+                self.pip_camera_combo.set("預設視訊鏡頭 [0]")
+            self.pip_camera_combo.config(state=tk.DISABLED if busy else "readonly")
 
         if not busy:
             self.timer_hint.config(text=self._idle_hint())
@@ -1034,6 +1278,13 @@ class LiteRecorderApp:
             "window_id": self.capture_window["id"] if self.capture_window else None,
             "window_owner": self.capture_window.get("owner", "") if self.capture_window else "",
             "window_title": self.capture_window.get("title", "") if self.capture_window else "",
+            "pip_enabled": bool(self.pip_enabled_var.get()) if hasattr(self, "pip_enabled_var") else False,
+            "pip_floating": bool(self.pip_floating_var.get()) if hasattr(self, "pip_floating_var") else True,
+            "pip_camera": self.pip_camera_var.get() if hasattr(self, "pip_camera_var") else "",
+            "pip_shape": self.pip_shape_var.get() if hasattr(self, "pip_shape_var") else "",
+            "pip_pos": self.pip_pos_var.get() if hasattr(self, "pip_pos_var") else "",
+            "pip_size": self.pip_size_var.get() if hasattr(self, "pip_size_var") else "",
+            "pip_border": self.pip_border_var.get() if hasattr(self, "pip_border_var") else "",
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -1234,6 +1485,7 @@ class LiteRecorderApp:
             label=label,
             follow=follow,
             prefix=self._saved.get("filename_prefix"),
+            pip_config=self._get_pip_config(),
         )
 
         if not ok:
@@ -1245,6 +1497,9 @@ class LiteRecorderApp:
             messagebox.showerror("錄影啟動失敗", msg)
             self._update_ui_state(recording=False)
             return
+
+        if self.pip_enabled_var.get() and self.pip_floating_var.get():
+            self._show_camera_bubble()
 
         if self.recorder.process is not None:
             hold_awake(self.recorder.process.pid)
@@ -1361,10 +1616,20 @@ class LiteRecorderApp:
             self.segment_combo,
         ):
             combo.config(state=state)
+        for combo_name in (
+            "pip_camera_combo", "pip_shape_combo", "pip_pos_combo",
+            "pip_size_combo", "pip_border_combo",
+        ):
+            cb = getattr(self, combo_name, None)
+            if cb is not None:
+                cb.config(state=state)
         for button_name in ("reselect_btn", "window_btn", "video_preview_btn", "video_identify_btn"):
             button = getattr(self, button_name, None)
             if button is not None:
                 button.config(state=tk.DISABLED if locked else tk.NORMAL)
+        if hasattr(self, "pip_test_btn"):
+            pip_on = bool(self.pip_enabled_var.get()) if hasattr(self, "pip_enabled_var") else False
+            self.pip_test_btn.config(state=tk.DISABLED if locked or not pip_on else tk.NORMAL)
 
     def _update_ui_state(self, recording=False):
         if recording:
@@ -1377,6 +1642,7 @@ class LiteRecorderApp:
             if not self._shooting:
                 self.shot_btn.config(state=tk.NORMAL)
         else:
+            self._close_camera_bubble()
             self.status_badge.config(text="●  就緒", fg=UI["ok"])
             self.record_btn.config(text="開始錄影", style="Primary.TButton")
             self._layout_record_buttons(False)
@@ -1995,6 +2261,110 @@ class LiteRecorderApp:
             threading.Thread(target=bg_load, daemon=True).start()
 
         win.after(100, load_all_thumbnails)
+
+    def _on_pip_toggle(self):
+        if self.pip_enabled_var.get():
+            self.pip_options_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+            self.pip_test_btn.config(state=tk.NORMAL)
+        else:
+            self.pip_options_frame.pack_forget()
+            self.pip_test_btn.config(state=tk.DISABLED)
+            self._close_camera_bubble()
+        self._save_capture_settings()
+
+    def _get_pip_config(self):
+        if not getattr(self, "pip_enabled_var", None) or not self.pip_enabled_var.get():
+            return {"enabled": False}
+
+        cam_text = self.pip_camera_combo.get() if hasattr(self, "pip_camera_combo") else ""
+        m_idx = re.search(r"\[(\d+)\]", cam_text)
+        cam_idx = m_idx.group(1) if m_idx else "0"
+
+        shape_choice = self.pip_shape_combo.get() if hasattr(self, "pip_shape_combo") else "圓形"
+        shape = "circle" if "圓形" in shape_choice or "circle" in shape_choice.lower() else "rect"
+
+        pos_choice = self.pip_pos_combo.get() if hasattr(self, "pip_pos_combo") else "右下角"
+        pos_map = {
+            "右下角": "bottom-right",
+            "左下角": "bottom-left",
+            "右上角": "top-right",
+            "左上角": "top-left",
+        }
+        pos = pos_map.get(pos_choice, "bottom-right")
+
+        size_choice = self.pip_size_combo.get() if hasattr(self, "pip_size_combo") else "260"
+        m_sz = re.search(r"(\d+)", size_choice)
+        size = int(m_sz.group(1)) if m_sz else 260
+
+        border_choice = self.pip_border_combo.get() if hasattr(self, "pip_border_combo") else "霓虹藍"
+        if "無" in border_choice:
+            border_rgb = None
+        elif "白" in border_choice:
+            border_rgb = (255, 255, 255)
+        else:
+            border_rgb = (0, 240, 255)
+
+        return {
+            "enabled": True,
+            "camera_idx": cam_idx,
+            "shape": shape,
+            "position": pos,
+            "size": size,
+            "border_color": border_rgb,
+            "margin": 32,
+            "camera_text": cam_text,
+        }
+
+    def _test_camera_bubble(self):
+        """試看畫中畫相機氣泡"""
+        cfg = self._get_pip_config()
+        cam_text = cfg.get("camera_text") or (self.pip_camera_combo.get() if hasattr(self, "pip_camera_combo") else "0")
+        size = cfg.get("size", 260)
+        shape = cfg.get("shape", "circle")
+        pos = cfg.get("position", "bottom-right")
+        border = "#00f0ff" if cfg.get("border_color") == (0, 240, 255) else ("#ffffff" if cfg.get("border_color") else "#27272a")
+
+        self._close_camera_bubble()
+        self._camera_bubble_win = FloatingCameraBubble(
+            self.root,
+            self.recorder.ffmpeg_bin,
+            cam_text,
+            size=size,
+            shape=shape,
+            border_color=border,
+            position=pos,
+        )
+
+    def _show_camera_bubble(self):
+        """在錄影中開啟桌面浮動相機小圓圈"""
+        cfg = self._get_pip_config()
+        if not cfg.get("enabled"):
+            return
+        cam_text = cfg.get("camera_text") or (self.pip_camera_combo.get() if hasattr(self, "pip_camera_combo") else "0")
+        size = cfg.get("size", 260)
+        shape = cfg.get("shape", "circle")
+        pos = cfg.get("position", "bottom-right")
+        border = "#00f0ff" if cfg.get("border_color") == (0, 240, 255) else ("#ffffff" if cfg.get("border_color") else "#27272a")
+
+        self._close_camera_bubble()
+        self._camera_bubble_win = FloatingCameraBubble(
+            self.root,
+            self.recorder.ffmpeg_bin,
+            cam_text,
+            size=size,
+            shape=shape,
+            border_color=border,
+            position=pos,
+        )
+
+    def _close_camera_bubble(self):
+        """關閉桌面浮動相機"""
+        if self._camera_bubble_win:
+            try:
+                self._camera_bubble_win.destroy()
+            except Exception:
+                pass
+            self._camera_bubble_win = None
 
     def _show_system_audio_guide(self):
         """開啟系統內部聲音錄製指南對話框"""
@@ -2745,6 +3115,7 @@ class LiteRecorderApp:
         })
 
     def _on_close(self):
+        self._close_camera_bubble()
         self._remember_window()
         if self.recorder.is_recording:
             if not messagebox.askyesno("正在錄影", "錄影還沒停。要停下來並結束嗎？"):
@@ -2761,6 +3132,7 @@ class LiteRecorderApp:
         self.root.destroy()
 
     def _destroy_after_stop(self):
+        self._close_camera_bubble()
         release_awake()
         self.root.destroy()
 

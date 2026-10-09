@@ -172,6 +172,7 @@ class ScreenRecorder:
         output_file=None,
         profile=None,
         segment_sec=None,
+        pip_config=None,
     ):
         """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。"""
         profile = profile or machine_profile()
@@ -184,57 +185,184 @@ class ScreenRecorder:
             cmd.extend(["-filter_threads", "1"])
 
         has_audio = audio_idx is not None and str(audio_idx).strip() != "" and str(audio_idx).lower() != "none"
+        pip_enabled = bool(pip_config and pip_config.get("enabled"))
 
-        if IS_MAC:
-            if video_idx is None:
-                video_idx = "0"
-            input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
-            cmd.extend([
-                "-f", "avfoundation",
-                "-capture_cursor", "1" if capture_cursor else "0",
-                "-framerate", str(fps),
-                "-i", input_spec,
-            ])
-        elif IS_WINDOWS:
-            if video_idx is None or video_idx == "desktop":
+        if pip_enabled:
+            pip_camera_idx = str(pip_config.get("camera_idx", "0")).strip()
+            pip_size = int(pip_config.get("size", 260))
+            pip_shape = str(pip_config.get("shape", "circle")).lower()
+            pip_pos = str(pip_config.get("position", "bottom-right")).lower()
+            border_rgb = pip_config.get("border_color", (0, 240, 255))
+            margin = int(pip_config.get("margin", 32))
+
+            # 1. 主畫面與相機輸入
+            if IS_MAC:
+                if video_idx is None:
+                    video_idx = "0"
+                input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
                 cmd.extend([
-                    "-f", "gdigrab",
+                    "-f", "avfoundation",
+                    "-capture_cursor", "1" if capture_cursor else "0",
                     "-framerate", str(fps),
-                    "-draw_mouse", "1" if capture_cursor else "0",
-                    "-i", "desktop",
+                    "-i", input_spec,
+                    "-f", "avfoundation",
+                    "-framerate", str(fps),
+                    "-i", f"{pip_camera_idx}:none",
                 ])
-            else:
+            elif IS_WINDOWS:
+                if video_idx is None or video_idx == "desktop":
+                    cmd.extend([
+                        "-f", "gdigrab",
+                        "-framerate", str(fps),
+                        "-draw_mouse", "1" if capture_cursor else "0",
+                        "-i", "desktop",
+                    ])
+                else:
+                    cmd.extend([
+                        "-f", "dshow",
+                        "-framerate", str(fps),
+                        "-i", f"video={video_idx}",
+                    ])
                 cmd.extend([
                     "-f", "dshow",
                     "-framerate", str(fps),
-                    "-i", f"video={video_idx}",
+                    "-i", f"video={pip_camera_idx}",
                 ])
-            if has_audio:
-                cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
-        else:
-            cmd.extend([
-                "-f", "x11grab",
-                "-framerate", str(fps),
-                "-draw_mouse", "1" if capture_cursor else "0",
-                "-i", ":0.0",
-            ])
-            if has_audio:
-                cmd.extend(["-f", "pulse", "-i", "default"])
+                if has_audio:
+                    cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
+            else:
+                cam_dev = pip_camera_idx if pip_camera_idx.startswith("/dev") else f"/dev/video{pip_camera_idx}"
+                cmd.extend([
+                    "-f", "x11grab",
+                    "-framerate", str(fps),
+                    "-draw_mouse", "1" if capture_cursor else "0",
+                    "-i", ":0.0",
+                    "-f", "v4l2",
+                    "-framerate", str(fps),
+                    "-i", str(cam_dev),
+                ])
+                if has_audio:
+                    cmd.extend(["-f", "pulse", "-i", "default"])
 
-        filters = []
-        if region:
-            x, y, w, h = [int(v) for v in region]
-            x -= x % 2
-            y -= y % 2
-            w = max(2, w - w % 2)
-            h = max(2, h - h % 2)
-            # 名稱固定，錄影中才能把這個 crop 的位置改掉。
-            filters.append(f"crop@aura={w}:{h}:{x}:{y}")
-        scale = scale_filter(resolution)
-        if scale:
-            filters.append(scale)
-        if filters:
-            cmd.extend(["-vf", ",".join(filters)])
+            # 2. 濾鏡圖 (filter_complex)
+            filter_parts = []
+            base_label = "0:v"
+            if region:
+                x, y, w, h = [int(v) for v in region]
+                x -= x % 2
+                y -= y % 2
+                w = max(2, w - w % 2)
+                h = max(2, h - h % 2)
+                filter_parts.append(f"[{base_label}]crop@aura={w}:{h}:{x}:{y}[cropped]")
+                base_label = "cropped"
+            scale = scale_filter(resolution)
+            if scale:
+                filter_parts.append(f"[{base_label}]{scale}[scaled]")
+                base_label = "scaled"
+
+            if pip_shape == "circle":
+                r = pip_size // 2
+                b = 4 if border_rgb else 0
+                r_in = r - b
+                if border_rgb:
+                    br, bg, bb = border_rgb
+                    cam_branch = (
+                        f"[1:v]scale={pip_size}:{pip_size}:force_original_aspect_ratio=increase,"
+                        f"crop={pip_size}:{pip_size},"
+                        f"format=rgba,"
+                        f"geq=r='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {br}, r(X,Y))':"
+                        f"g='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bg}, g(X,Y))':"
+                        f"b='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bb}, b(X,Y))':"
+                        f"a='if(lte((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), 255, 0)'[cam]"
+                    )
+                else:
+                    cam_branch = (
+                        f"[1:v]scale={pip_size}:{pip_size}:force_original_aspect_ratio=increase,"
+                        f"crop={pip_size}:{pip_size},"
+                        f"format=rgba,"
+                        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                        f"a='if(lte((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), 255, 0)'[cam]"
+                    )
+                filter_parts.append(cam_branch)
+            else:
+                w_cam = int(pip_size * 16 / 9)
+                w_cam -= w_cam % 2
+                h_cam = pip_size
+                h_cam -= h_cam % 2
+                drawbox_str = ""
+                if border_rgb:
+                    hex_color = f"0x{border_rgb[0]:02X}{border_rgb[1]:02X}{border_rgb[2]:02X}"
+                    drawbox_str = f",drawbox=x=0:y=0:w=iw:h=ih:color={hex_color}@1:t=4"
+                filter_parts.append(
+                    f"[1:v]scale={w_cam}:{h_cam}:force_original_aspect_ratio=increase,"
+                    f"crop={w_cam}:{h_cam}{drawbox_str}[cam]"
+                )
+
+            pos_map = {
+                "bottom-right": f"W-w-{margin}:H-h-{margin}",
+                "bottom-left": f"{margin}:H-h-{margin}",
+                "top-right": f"W-w-{margin}:{margin}",
+                "top-left": f"{margin}:{margin}",
+            }
+            overlay_coords = pos_map.get(pip_pos, f"W-w-{margin}:H-h-{margin}")
+            filter_parts.append(f"[{base_label}][cam]overlay={overlay_coords}:format=auto[outv]")
+
+            cmd.extend(["-filter_complex", ";".join(filter_parts)])
+            cmd.extend(["-map", "[outv]"])
+            if has_audio:
+                audio_source = "0:a" if IS_MAC else ("2:a" if IS_WINDOWS else "2:a")
+                cmd.extend(["-map", audio_source])
+
+        else:
+            if IS_MAC:
+                if video_idx is None:
+                    video_idx = "0"
+                input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
+                cmd.extend([
+                    "-f", "avfoundation",
+                    "-capture_cursor", "1" if capture_cursor else "0",
+                    "-framerate", str(fps),
+                    "-i", input_spec,
+                ])
+            elif IS_WINDOWS:
+                if video_idx is None or video_idx == "desktop":
+                    cmd.extend([
+                        "-f", "gdigrab",
+                        "-framerate", str(fps),
+                        "-draw_mouse", "1" if capture_cursor else "0",
+                        "-i", "desktop",
+                    ])
+                else:
+                    cmd.extend([
+                        "-f", "dshow",
+                        "-framerate", str(fps),
+                        "-i", f"video={video_idx}",
+                    ])
+                if has_audio:
+                    cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
+            else:
+                cmd.extend([
+                    "-f", "x11grab",
+                    "-framerate", str(fps),
+                    "-draw_mouse", "1" if capture_cursor else "0",
+                    "-i", ":0.0",
+                ])
+                if has_audio:
+                    cmd.extend(["-f", "pulse", "-i", "default"])
+
+            filters = []
+            if region:
+                x, y, w, h = [int(v) for v in region]
+                x -= x % 2
+                y -= y % 2
+                w = max(2, w - w % 2)
+                h = max(2, h - h % 2)
+                filters.append(f"crop@aura={w}:{h}:{x}:{y}")
+            scale = scale_filter(resolution)
+            if scale:
+                filters.append(scale)
+            if filters:
+                cmd.extend(["-vf", ",".join(filters)])
 
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
         bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
@@ -244,8 +372,6 @@ class ScreenRecorder:
         if has_audio:
             bitrate_a = "192k" if quality == "high" else ("128k" if quality == "standard" else "96k")
             cmd.extend(["-c:a", "aac", "-b:a", bitrate_a])
-        # 不用 segment muxer。avfoundation 配這個 muxer 時，q 停不下來，
-        # mp4 也不會寫入 moov。分段改由 _watch_segments 關掉再重開。
         del segment_sec
         cmd.append(str(output_file))
         return cmd
@@ -265,6 +391,7 @@ class ScreenRecorder:
         label=None,
         follow=None,
         prefix=None,
+        pip_config=None,
     ):
         """
         跨平台啟動錄影程序
@@ -313,6 +440,7 @@ class ScreenRecorder:
             "capture_cursor": capture_cursor,
             "region": region,
             "quality": quality,
+            "pip_config": pip_config,
         }
         actual = self._segment_file(0) if self._segment_seconds else self.current_output_file
         self._stderr_lines = []
