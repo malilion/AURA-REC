@@ -317,6 +317,20 @@ def apply_widget_style(style, fonts=None):
     root.option_add("*TCombobox*Listbox.foreground", UI["text"])
     root.option_add("*TCombobox*Listbox.selectBackground", "#10262C")
     root.option_add("*TCombobox*Listbox.selectForeground", UI["blue"])
+    style.configure(
+        "App.Vertical.TScrollbar",
+        background=UI["line"],
+        troughcolor=UI["card"],
+        bordercolor=UI["card"],
+        arrowcolor=UI["muted"],
+        relief="flat",
+        gripcount=0,
+    )
+    style.map(
+        "App.Vertical.TScrollbar",
+        background=[("active", UI["edge"]), ("pressed", UI["muted"])],
+        arrowcolor=[("active", UI["text"])],
+    )
     root.option_add("*Menu.background", UI["card"])
     root.option_add("*Menu.foreground", UI["text"])
     root.option_add("*Menu.activeBackground", UI["hover"])
@@ -555,13 +569,14 @@ def scale_filter(resolution):
 
 
 def capture_bitrate_k(resolution, profile):
-    table = {"720p": 1400, "1080p": 2200, "2K": 3600, "native": 2800}
-    rate = table.get(resolution, 2200)
+    """畫面錄影用的碼率。靜態桌面不需要影片那種大小。"""
+    table = {"720p": 500, "1080p": 800, "2K": 1300, "native": 1000}
+    rate = table.get(resolution, 800)
     if profile == "light":
         rate = int(rate * 0.8)
     elif profile == "high":
         rate = int(rate * 1.2)
-    return max(800, rate)
+    return max(400, rate)
 
 
 def audio_bitrate(profile):
@@ -600,6 +615,8 @@ def _videotoolbox_speed_flags(ffmpeg_bin):
             flags += ["-realtime", "1"]
         if "prio_speed" in text:
             flags += ["-prio_speed", "1"]
+        if "-constant_bit_rate" in text:
+            flags += ["-constant_bit_rate", "1"]
     except Exception:
         pass
     _VT_FLAGS[ffmpeg_bin] = flags
@@ -634,6 +651,8 @@ def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced", q
         "-preset", preset,
         "-tune", "zerolatency",
         "-crf", level(crf),
+        "-maxrate", rate,
+        "-bufsize", f"{int(bitrate_k) * 2}k",
         "-threads", str(threads),
         "-pix_fmt", "yuv420p",
     ]
