@@ -29,6 +29,46 @@ from platform_utils import (
 )
 
 
+def parse_aspect_choice(text):
+    """把剪輯視窗的比例選項變成濾鏡用的比例與取景。"""
+    text = text or ""
+    if "9:16" in text or "直式" in text:
+        if "左" in text:
+            return "9:16", "left"
+        if "右" in text:
+            return "9:16", "right"
+        return "9:16", "center"
+    if "16:9" in text or "橫式" in text:
+        return "16:9", "center"
+    if "1:1" in text or "方形" in text:
+        return "1:1", "center"
+    return "original", "center"
+
+
+def aspect_crop_filter(aspect_ratio, anchor="center"):
+    """裁成目標比例。寬高與起點都取偶數。已經符合時回傳 None。"""
+    if aspect_ratio == "9:16":
+        width = r"trunc(min(iw\,ih*9/16)/2)*2"
+        height = r"trunc(ih/2)*2"
+        if anchor == "left":
+            x = "0"
+        elif anchor == "right":
+            x = f"trunc((iw-({width}))/2)*2"
+        else:
+            x = f"trunc((iw-({width}))/4)*2"
+        return f"crop=w={width}:h={height}:x={x}:y=0"
+    if aspect_ratio == "16:9":
+        height = r"trunc(min(ih\,iw*9/16)/2)*2"
+        return f"crop=w=trunc(iw/2)*2:h={height}:x=0:y=trunc((ih-({height}))/4)*2"
+    if aspect_ratio == "1:1":
+        side = r"trunc(min(iw\,ih)/2)*2"
+        return (
+            f"crop=w={side}:h={side}:x=trunc((iw-({side}))/4)*2:"
+            f"y=trunc((ih-({side}))/4)*2"
+        )
+    return None
+
+
 def gif_export_settings(duration, fps=12, width=640, profile=None):
     """文書電腦用較小的 GIF。超過 15 秒再把幀率壓到 6。"""
     profile = profile or machine_profile()
@@ -117,7 +157,7 @@ class VideoEditor:
             print(f"[VideoEditor] get_video_info error: {e}")
             return None
 
-    def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202):
+    def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202, crop_filter=None):
         """
         在指定時間點擷取一幀畫面，以 PPM 格式 byte 串流返回，直接供 Tkinter PhotoImage 使用。
         預覽用小圖和最快的縮放，避免拖時間軸時把 CPU 佔滿。
@@ -127,6 +167,8 @@ class VideoEditor:
             f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
         )
+        if crop_filter:
+            scale = crop_filter + "," + scale
 
         cmd = [
             self.ffmpeg_bin,
@@ -187,6 +229,7 @@ class VideoEditor:
         end_sec,
         speed=1.0,
         aspect_ratio="original",
+        anchor="center",
         brightness=0.0,
         contrast=1.0,
         saturation=1.0,
@@ -213,13 +256,10 @@ class VideoEditor:
         # 構建視訊濾鏡
         vf_list = []
 
-        # 1. 比例裁切
-        if aspect_ratio == "9:16":
-            vf_list.append("crop=ih*9/16:ih:(iw-ih*9/16)/2:0")
-        elif aspect_ratio == "1:1":
-            vf_list.append("crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2")
-        elif aspect_ratio == "16:9":
-            vf_list.append("crop=iw:iw*9/16:0:(ih-iw*9/16)/2")
+        # 1. 比例裁切。直式可選左、中、右，寬高維持偶數。
+        crop = aspect_crop_filter(aspect_ratio, anchor)
+        if crop:
+            vf_list.append(crop)
 
         # 2. 視訊倍速
         if speed != 1.0:
@@ -267,7 +307,7 @@ class VideoEditor:
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
 
-    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640):
+    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center"):
         """
         GIF 導出。文書電腦降低幀率、寬度和調色盤，避免兩遍 lanczos 把機器卡住。
         """
@@ -277,11 +317,15 @@ class VideoEditor:
         if duration <= 0:
             return False, "長度必須大於 0 秒"
 
+        if aspect_ratio == "9:16":
+            width = min(int(width), 360)
         budget = gif_export_settings(duration, fps=fps, width=width)
-        vf = (
+        crop = aspect_crop_filter(aspect_ratio, anchor)
+        scale = (
             f"fps={budget['fps']},scale={budget['width']}:-1:flags={budget['flags']},"
             f"split[s0][s1];[s0]palettegen=max_colors={budget['colors']}[p];[s1][p]paletteuse=dither=bayer"
         )
+        vf = f"{crop},{scale}" if crop else scale
 
         cmd = [self.ffmpeg_bin, "-y"]
         if budget["profile"] == "light":

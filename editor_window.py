@@ -14,7 +14,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
-from video_editor import VideoEditor
+from video_editor import VideoEditor, aspect_crop_filter, parse_aspect_choice
 from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from platform_utils import (
     get_ui_fonts,
@@ -79,7 +79,7 @@ class VideoEditorWindow:
         self.preview_image = None
         self._preview_lock = threading.Lock()
         self._preview_thread = None
-        self._preview_pending_time = None
+        self._preview_pending = None
 
         # 播放進程
         self._playing_process = None
@@ -223,7 +223,12 @@ class VideoEditorWindow:
             return combo
 
         self.speed_combo = labeled_combo(0, 0, "速度", ["1.0x", "0.5x", "1.5x", "2.0x"], 6)
-        self.ratio_combo = labeled_combo(0, 1, "比例", ["原始比例", "9:16 直式", "16:9 橫式", "1:1 方形"], 10)
+        self.ratio_combo = labeled_combo(
+            0, 1, "比例",
+            ["原始比例", "直式 9:16 左", "直式 9:16 中", "直式 9:16 右", "16:9 橫式", "1:1 方形"],
+            12,
+        )
+        self.ratio_combo.bind("<<ComboboxSelected>>", lambda _event: self._request_preview(self.current_time))
         self.color_combo = labeled_combo(1, 0, "色彩", ["原色", "鮮豔", "高對比"], 8)
         AuraCheck(adv_frame, text="靜音", variable=self.mute_var).grid(row=1, column=2, sticky="w", pady=4)
 
@@ -293,8 +298,16 @@ class VideoEditorWindow:
         )
         self._request_preview(new_time)
 
+    def _preview_crop(self):
+        if not hasattr(self, "ratio_combo"):
+            return None
+        ratio, anchor = parse_aspect_choice(self.ratio_combo.get())
+        return aspect_crop_filter(ratio, anchor)
+
     def _request_preview(self, sec):
-        self._preview_pending_time = sec
+        if not self.current_file:
+            return
+        self._preview_pending = (sec, self._preview_crop())
         if self._preview_thread is None or not self._preview_thread.is_alive():
             self._preview_thread = threading.Thread(target=self._worker_fetch_preview, daemon=True)
             self._preview_thread.start()
@@ -302,13 +315,16 @@ class VideoEditorWindow:
     def _worker_fetch_preview(self):
         while True:
             with self._preview_lock:
-                target_sec = self._preview_pending_time
-                self._preview_pending_time = None
+                pending = self._preview_pending
+                self._preview_pending = None
 
-            if target_sec is None:
+            if pending is None:
                 break
+            target_sec, crop = pending
 
-            ppm_data = self.editor.get_frame_ppm(self.current_file, target_sec, width=320, height=180)
+            ppm_data = self.editor.get_frame_ppm(
+                self.current_file, target_sec, width=320, height=180, crop_filter=crop,
+            )
             if ppm_data:
                 self.window.after(0, lambda data=ppm_data: self._update_preview_image(data))
 
@@ -435,8 +451,7 @@ class VideoEditorWindow:
             except Exception:
                 pass
 
-            rat_str = self.ratio_combo.get()
-            rat = "9:16" if "9:16" in rat_str else ("16:9" if "16:9" in rat_str else ("1:1" if "1:1" in rat_str else "original"))
+            rat, anchor = parse_aspect_choice(self.ratio_combo.get())
 
             col_str = self.color_combo.get()
             br, ct, sat = 0.0, 1.0, 1.0
@@ -447,33 +462,56 @@ class VideoEditorWindow:
                 ct = 1.25
                 br = -0.02
 
+            picture_change = (
+                rat != "original"
+                or abs(spd - 1.0) > 0.001
+                or mute
+                or br != 0.0
+                or ct != 1.0
+                or sat != 1.0
+            )
+            export_mode = mode
+            switched = export_mode == "lossless" and picture_change
+            if switched:
+                export_mode = "precise"
+
             try:
-                if mode == "lossless":
+                if export_mode == "lossless":
                     ok, msg = self.editor.trim_lossless(self.current_file, out_path, self.start_sec, self.end_sec)
-                elif mode == "precise":
+                elif export_mode == "precise":
                     ok, msg = self.editor.trim_advanced(
                         self.current_file, out_path, self.start_sec, self.end_sec,
-                        speed=spd, aspect_ratio=rat, brightness=br, contrast=ct, saturation=sat,
+                        speed=spd, aspect_ratio=rat, anchor=anchor,
+                        brightness=br, contrast=ct, saturation=sat,
                         mute_audio=mute
                     )
-                elif mode == "gif":
-                    ok, msg = self.editor.export_gif(self.current_file, out_path, self.start_sec, self.end_sec)
-                elif mode == "audio":
+                elif export_mode == "gif":
+                    ok, msg = self.editor.export_gif(
+                        self.current_file, out_path, self.start_sec, self.end_sec,
+                        aspect_ratio=rat, anchor=anchor,
+                    )
+                elif export_mode == "audio":
                     ok, msg = self.editor.extract_audio(self.current_file, out_path, self.start_sec, self.end_sec)
             except Exception as e:
                 ok = False
                 msg = str(e)
 
-            self.window.after(0, lambda: self._on_export_finished(ok, msg, out_path))
+            self.window.after(
+                0,
+                lambda ok=ok, msg=msg, out_path=out_path, switched=switched: self._on_export_finished(
+                    ok, msg, out_path, switched
+                ),
+            )
 
         threading.Thread(target=run_export_thread, daemon=True).start()
 
-    def _on_export_finished(self, ok, msg, out_path):
+    def _on_export_finished(self, ok, msg, out_path, switched=False):
         self.btn_export.config(text="匯出", state=tk.NORMAL)
         if ok:
+            note = "\n\n比例或色彩需要重新編碼，已改用重新編碼。" if switched else ""
             ans = messagebox.askyesno(
                 "匯出完成",
-                f"已儲存：\n{out_path}\n\n要在資料夾裡顯示嗎？",
+                f"已儲存：\n{out_path}{note}\n\n要在資料夾裡顯示嗎？",
             )
             if ans:
                 open_file_or_dir(out_path, reveal=True)
