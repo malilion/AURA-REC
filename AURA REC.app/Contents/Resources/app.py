@@ -8,6 +8,7 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 - 支援自訂解析度 (原生 / 2K / 1080p / 720p) 與 FPS (15 / 30 / 60)
 - 支援懸浮膠囊迷你模式 (Mini Floating Pill)，不遮擋畫面
 - 支援暫停與繼續、錄製游標開關，並記住上次的裝置與畫質
+- 支援自訂錄影範圍、畫質、MP4 / MOV，以及到時自動停止
 - 支援 3 秒倒數準備、快速鍵 (Space / F8 / F9 / Ctrl+R / Cmd+R)
 - 支援即時影片剪輯與匯出 GIF / 提取音訊
 """
@@ -24,6 +25,7 @@ from pathlib import Path
 from recorder import ScreenRecorder
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
+from region_picker import pick_screen_region
 from platform_utils import (
     IS_MAC,
     IS_WINDOWS,
@@ -45,8 +47,8 @@ class LiteRecorderApp:
         self.root = root
         use_dark_appearance()
         self.root.title("AURA REC")
-        self.root.geometry("560x720")
-        self.root.minsize(520, 640)
+        self.root.geometry("560x800")
+        self.root.minsize(520, 700)
         self.root.configure(bg=UI["bg"])
 
         # 跨平台字型
@@ -60,8 +62,10 @@ class LiteRecorderApp:
         self.countdown_active = False
         self._stopping = False
         self._pending_mini = False
-        self._normal_size = (560, 720)
+        self._normal_size = (560, 800)
         self._saved = load_settings()
+        self.region = self._saved_region()
+        self._auto_stop_sec = None
         self.auto_mini_var = tk.BooleanVar(value=self._flag("auto_mini", True))
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
@@ -189,7 +193,7 @@ class LiteRecorderApp:
             font=self.fonts["badge"],
             fg=UI["blue"],
             bg=UI["card"],
-        ).pack(pady=(12, 0))
+        ).pack(pady=(8, 0))
 
         self.timer_display = tk.Label(
             self.timer_card,
@@ -198,10 +202,10 @@ class LiteRecorderApp:
             fg=UI["white"],
             bg=UI["card"],
         )
-        self.timer_display.pack(pady=(4, 0))
+        self.timer_display.pack(pady=(2, 0))
 
         self.vu_canvas = tk.Canvas(self.timer_card, width=220, height=8, bg=UI["card"], highlightthickness=0)
-        self.vu_canvas.pack(pady=(8, 0))
+        self.vu_canvas.pack(pady=(4, 0))
         self._draw_vu_idle()
 
         shortcut_hint = "Space / F9 / Ctrl+R" if IS_WINDOWS else "Space / F9 / Cmd+R"
@@ -215,10 +219,10 @@ class LiteRecorderApp:
             wraplength=500,
             justify="center",
         )
-        self.timer_hint.pack(pady=(6, 0))
+        self.timer_hint.pack(pady=(4, 0))
 
         self.record_row = tk.Frame(self.timer_card, bg=UI["card"])
-        self.record_row.pack(fill=tk.X, padx=16, pady=(12, 14))
+        self.record_row.pack(fill=tk.X, padx=16, pady=(8, 10))
         self.pause_btn = AuraButton(
             self.record_row, text="暫停", style="Ghost.TButton", command=self.toggle_pause
         )
@@ -235,23 +239,24 @@ class LiteRecorderApp:
         settings_card.pack(fill=tk.X, pady=(0, 10))
         tk.Label(
             settings_card, text="錄製", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
-        ).pack(anchor="w", padx=14, pady=(10, 2))
+        ).pack(anchor="w", padx=14, pady=(8, 0))
 
         form = tk.Frame(settings_card, bg=UI["card"])
-        form.pack(fill=tk.X, padx=14, pady=(0, 4))
+        form.pack(fill=tk.X, padx=14, pady=(0, 2))
         form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
 
-        def setting_row(row, label):
+        def labeled_combo(row, column, label, span=1):
             tk.Label(
-                form, text=label, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"], width=8, anchor="w"
-            ).grid(row=row, column=0, sticky="w", pady=5)
-            combo = ttk.Combobox(form, style="App.TCombobox", state="readonly", width=28)
-            combo.grid(row=row, column=1, sticky="ew", pady=5)
+                form, text=label, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"], anchor="w"
+            ).grid(row=row, column=column, sticky="w", padx=(8 if column else 0, 6), pady=3)
+            combo = ttk.Combobox(form, style="App.TCombobox", state="readonly")
+            combo.grid(row=row, column=column + 1, columnspan=span, sticky="ew", pady=3)
             return combo
 
-        self.video_combo = setting_row(0, "螢幕")
-        self.audio_combo = setting_row(1, "麥克風")
-        self.res_combo = setting_row(2, "解析度")
+        self.video_combo = labeled_combo(0, 0, "螢幕", span=3)
+        self.audio_combo = labeled_combo(1, 0, "麥克風", span=3)
+        self.res_combo = labeled_combo(2, 0, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
             "2K（較吃資源）",
@@ -259,22 +264,50 @@ class LiteRecorderApp:
             "720p（1280×720）",
         ]
         self.res_combo.current(self._saved_index("res_index", self.capture_advice["res_index"], 3))
-        self.fps_combo = setting_row(3, "幀率")
+        self.fps_combo = labeled_combo(2, 2, "幀率")
         self.fps_combo["values"] = ["30 FPS", "60 FPS（較吃資源）", "15 FPS（較省）"]
         self.fps_combo.current(self._saved_index("fps_index", self.capture_advice["fps_index"], 2))
+        self.quality_combo = labeled_combo(3, 0, "畫質")
+        self.quality_combo["values"] = ["標準", "較省", "較清晰"]
+        self.quality_combo.current(self._saved_index("quality_index", 0, 2))
+        self.format_combo = labeled_combo(3, 2, "格式")
+        self.format_combo["values"] = ["MP4", "MOV"]
+        self.format_combo.current(self._saved_index("format_index", 0, 1))
+        self.area_combo = labeled_combo(4, 0, "範圍")
+        self.limit_combo = labeled_combo(4, 2, "時限")
+        self.limit_combo["values"] = ["不限制", "1 分鐘", "5 分鐘", "10 分鐘", "30 分鐘", "60 分鐘"]
+        self.limit_combo.current(self._saved_index("limit_index", 0, 5))
+
+        area_row = tk.Frame(form, bg=UI["card"])
+        area_row.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(0, 2))
+        self.area_label = tk.Label(
+            area_row, text="", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], anchor="w"
+        )
+        self.area_label.pack(side=tk.LEFT)
+        self.reselect_btn = self._quiet_button(area_row, "重選範圍", self._pick_region)
+        self.reselect_btn.pack(side=tk.RIGHT)
+        self._update_area_label()
 
         accel_text = "使用硬體加速" if IS_MAC else ("使用 GPU 硬體加速" if IS_WINDOWS else "使用硬體加速")
         checks = tk.Frame(settings_card, bg=UI["card"])
-        checks.pack(fill=tk.X, padx=14, pady=(2, 10))
-        for text, variable in (
+        checks.pack(fill=tk.X, padx=14, pady=(0, 8))
+        checks.columnconfigure(0, weight=1)
+        checks.columnconfigure(1, weight=1)
+        for index, (text, variable) in enumerate((
             (accel_text, self.hardware_accel_var),
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
             ("錄下游標", self.capture_cursor_var),
+        )):
+            AuraCheck(
+                checks, text=text, variable=variable, command=self._save_capture_settings
+            ).grid(row=index // 2, column=index % 2, sticky="w")
+        for combo in (
+            self.video_combo, self.audio_combo, self.res_combo, self.fps_combo,
+            self.quality_combo, self.format_combo, self.limit_combo,
         ):
-            AuraCheck(checks, text=text, variable=variable, command=self._save_capture_settings).pack(anchor="w")
-        for combo in (self.video_combo, self.audio_combo, self.res_combo, self.fps_combo):
             combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
+        self.area_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_area_choice())
 
         self.recent_card = self._card(self.main_container)
         self.recent_card.pack(fill=tk.BOTH, expand=True)
@@ -409,7 +442,8 @@ class LiteRecorderApp:
         if isinstance(saved_video, str) and saved_video in v_names:
             screen_at = v_names.index(saved_video)
         self.video_combo.current(screen_at)
-        self.video_combo.config(state="readonly")
+        busy = self.recorder.is_recording or self.countdown_active or self._stopping
+        self.video_combo.config(state=tk.DISABLED if busy else "readonly")
 
         a_names = ["無音訊 (靜音)"] + [f"[{d['index']}] {d['name']}" for d in a_devs]
         self.audio_combo["values"] = a_names
@@ -418,9 +452,10 @@ class LiteRecorderApp:
         if isinstance(saved_audio, str) and saved_audio in a_names:
             audio_at = a_names.index(saved_audio)
         self.audio_combo.current(audio_at)
-        self.audio_combo.config(state="readonly")
+        self.audio_combo.config(state=tk.DISABLED if busy else "readonly")
 
-        self.timer_hint.config(text=self._idle_hint())
+        if not busy:
+            self.timer_hint.config(text=self._idle_hint())
         if not self.recorder.is_recording and not self.countdown_active:
             self.record_btn.config(state=tk.NORMAL)
 
@@ -468,6 +503,51 @@ class LiteRecorderApp:
             return value
         return default
 
+    def _saved_region(self):
+        if self._saved.get("area_mode") != 1:
+            return None
+        raw = self._saved.get("region")
+        if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+            return None
+        try:
+            box = tuple(int(v) for v in raw)
+        except (TypeError, ValueError):
+            return None
+        if box[2] < 2 or box[3] < 2:
+            return None
+        return box
+
+    def _update_area_label(self):
+        if not self.region:
+            self.area_combo["values"] = ["整個螢幕", "自訂範圍"]
+            self.area_combo.current(0)
+            self.area_label.config(text="自訂範圍只錄這個螢幕")
+            return
+        _x, _y, w, h = self.region
+        self.area_combo["values"] = ["整個螢幕", f"自訂 {w}×{h}"]
+        self.area_combo.current(1)
+        self.area_label.config(text=f"{w}×{h} 像素，這個螢幕")
+
+    def _on_area_choice(self):
+        if self.area_combo.current() == 1:
+            self._pick_region()
+            return
+        self.region = None
+        self._update_area_label()
+        self._save_capture_settings()
+
+    def _pick_region(self):
+        if self.recorder.is_recording or self.countdown_active:
+            return
+        rect = pick_screen_region(self.root)
+        if rect is None and not self.region:
+            self.area_combo.current(0)
+        elif rect is not None:
+            self.region = rect
+            self.area_combo.current(1)
+        self._update_area_label()
+        self._save_capture_settings()
+
     def _save_capture_settings(self):
         video = self.video_combo.get()
         audio = self.audio_combo.get()
@@ -478,6 +558,11 @@ class LiteRecorderApp:
             "countdown": bool(self.countdown_var.get()),
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
+            "quality_index": self.quality_combo.current(),
+            "format_index": self.format_combo.current(),
+            "limit_index": self.limit_combo.current(),
+            "area_mode": self.area_combo.current(),
+            "region": list(self.region) if self.region else None,
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -514,7 +599,7 @@ class LiteRecorderApp:
         elif self.recorder.is_recording:
             self.status_badge.config(text="●  錄製中", fg=UI["red"])
             self.timer_display.config(fg=UI["red"])
-            self.timer_hint.config(text=f"錄製中。F8 暫停，{self.shortcut_hint} 停止")
+            self.timer_hint.config(text=self._recording_hint())
             self.mini_time_label.config(fg=UI["red"])
 
     def _layout_record_buttons(self, recording):
@@ -543,6 +628,7 @@ class LiteRecorderApp:
         """執行 3 秒倒數準備動畫"""
         self.countdown_active = True
         self.record_btn.config(state=tk.DISABLED)
+        self._set_capture_locked(True)
         count = 3
 
         def count_step(val):
@@ -575,6 +661,12 @@ class LiteRecorderApp:
         fps = fps_map.get(self.fps_combo.current(), 30)
 
         use_accel = self.hardware_accel_var.get()
+        quality_map = {0: "standard", 1: "economy", 2: "high"}
+        quality = quality_map.get(self.quality_combo.current(), "standard")
+        container = "mov" if self.format_combo.current() == 1 else "mp4"
+        limit_map = {1: 60, 2: 300, 3: 600, 4: 1800, 5: 3600}
+        self._auto_stop_sec = limit_map.get(self.limit_combo.current())
+        region = self.region if self.area_combo.current() == 1 else None
 
         play_system_alert("start")
         ok, msg = self.recorder.start_recording(
@@ -584,6 +676,9 @@ class LiteRecorderApp:
             resolution=resolution,
             use_hardware_accel=use_accel,
             capture_cursor=self.capture_cursor_var.get(),
+            region=region,
+            quality=quality,
+            container=container,
         )
 
         if not ok:
@@ -615,6 +710,7 @@ class LiteRecorderApp:
         if self._pending_mini and not self.is_mini_mode:
             self._pending_mini = False
             self._switch_to_mini_mode()
+        self.timer_hint.config(text=self._recording_hint())
 
     def stop_recording(self):
         if not self.recorder.is_recording or self._stopping:
@@ -656,17 +752,30 @@ class LiteRecorderApp:
         else:
             messagebox.showwarning("錄影沒有完成", msg)
 
+    def _recording_hint(self):
+        extra = ""
+        if self._auto_stop_sec:
+            extra = f"{self._auto_stop_sec // 60} 分鐘後自動停止。"
+        return f"錄製中。{extra}F8 暫停，{self.shortcut_hint} 停止"
+
+    def _set_capture_locked(self, locked):
+        state = tk.DISABLED if locked else "readonly"
+        for combo in (
+            self.video_combo, self.audio_combo, self.res_combo, self.fps_combo,
+            self.area_combo, self.quality_combo, self.format_combo, self.limit_combo,
+        ):
+            combo.config(state=state)
+        if hasattr(self, "reselect_btn"):
+            self.reselect_btn.config(state=tk.DISABLED if locked else tk.NORMAL)
+
     def _update_ui_state(self, recording=False):
         if recording:
             self.status_badge.config(text="●  錄製中", fg=UI["red"])
             self.record_btn.config(text="停止錄影", style="Stop.TButton")
             self._layout_record_buttons(True)
             self.timer_display.config(fg=UI["red"])
-            self.timer_hint.config(text=f"錄製中。F8 暫停，{self.shortcut_hint} 停止")
-            self.video_combo.config(state=tk.DISABLED)
-            self.audio_combo.config(state=tk.DISABLED)
-            self.res_combo.config(state=tk.DISABLED)
-            self.fps_combo.config(state=tk.DISABLED)
+            self.timer_hint.config(text=self._recording_hint())
+            self._set_capture_locked(True)
         else:
             self.status_badge.config(text="●  就緒", fg=UI["ok"])
             self.record_btn.config(text="開始錄影", style="Primary.TButton")
@@ -675,10 +784,7 @@ class LiteRecorderApp:
             self.timer_hint.config(text=self._idle_hint())
             self._draw_vu_idle()
             self._draw_mini_vu_idle()
-            self.video_combo.config(state="readonly")
-            self.audio_combo.config(state="readonly")
-            self.res_combo.config(state="readonly")
-            self.fps_combo.config(state="readonly")
+            self._set_capture_locked(False)
 
     def _draw_vu_idle(self):
         """繪製待機狀態的靜態 VU 電平點"""
@@ -768,6 +874,13 @@ class LiteRecorderApp:
             prefix = "PAUSE" if self.recorder.paused else "REC"
             mini_str = f"{prefix} {mins:02d}:{s:02d}" if hrs == 0 else f"{prefix} {hrs:02d}:{mins:02d}:{s:02d}"
             self.mini_time_label.config(text=mini_str)
+            if (
+                self._auto_stop_sec
+                and sec >= self._auto_stop_sec
+                and not self._stopping
+                and not self.recorder.paused
+            ):
+                self.stop_recording()
             if self.recorder.paused:
                 self._draw_vu_idle()
                 self._draw_mini_vu_idle()

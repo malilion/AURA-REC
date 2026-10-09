@@ -606,20 +606,25 @@ def _videotoolbox_speed_flags(ffmpeg_bin):
     return flags
 
 
-def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced"):
+def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced", quality="standard"):
     """即時錄影用的編碼參數。文書電腦留一半 CPU 給別的程式。"""
     threads = encode_threads(profile)
     enc = detect_best_video_encoder(ffmpeg_bin) if use_hardware else "libx264"
     rate = f"{int(bitrate_k)}k"
+    shift = {"economy": 4, "high": -4}.get(quality, 0)
+
+    def level(base):
+        return str(max(16, min(40, int(base) + shift)))
+
     if enc == "h264_videotoolbox":
         return ["-c:v", "h264_videotoolbox", "-b:v", rate, "-pix_fmt", "yuv420p", *_videotoolbox_speed_flags(ffmpeg_bin)]
     if enc == "h264_nvenc":
         preset = "p1" if profile != "high" else "p4"
         cq = "30" if profile == "light" else "26"
-        return ["-c:v", "h264_nvenc", "-preset", preset, "-cq", cq, "-b:v", rate, "-pix_fmt", "yuv420p"]
+        return ["-c:v", "h264_nvenc", "-preset", preset, "-cq", level(cq), "-b:v", rate, "-pix_fmt", "yuv420p"]
     if enc == "h264_qsv":
-        quality = "32" if profile == "light" else "26"
-        return ["-c:v", "h264_qsv", "-global_quality", quality, "-pix_fmt", "nv12"]
+        base = "32" if profile == "light" else "26"
+        return ["-c:v", "h264_qsv", "-global_quality", level(base), "-pix_fmt", "nv12"]
     if enc == "h264_amf":
         return ["-c:v", "h264_amf", "-quality", "speed", "-b:v", rate, "-pix_fmt", "yuv420p"]
     preset = "ultrafast" if profile != "high" else "veryfast"
@@ -628,7 +633,7 @@ def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced"):
         "-c:v", "libx264",
         "-preset", preset,
         "-tune", "zerolatency",
-        "-crf", crf,
+        "-crf", level(crf),
         "-threads", str(threads),
         "-pix_fmt", "yuv420p",
     ]
