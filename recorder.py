@@ -10,6 +10,7 @@ LiteScreenRecorder - 錄影核心引擎 (macOS & Windows 跨平台支援)
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import threading
@@ -29,7 +30,6 @@ from platform_utils import (
     encode_threads,
     scale_filter,
     capture_bitrate_k,
-    audio_bitrate,
     video_encode_args,
     lower_process_priority,
 )
@@ -146,6 +146,7 @@ class ScreenRecorder:
         quality="standard",
         output_file=None,
         profile=None,
+        segment_sec=None,
     ):
         """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。"""
         profile = profile or machine_profile()
@@ -210,12 +211,24 @@ class ScreenRecorder:
             cmd.extend(["-vf", ",".join(filters)])
 
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
-        bitrate = max(600, int(capture_bitrate_k(resolution, profile) * quality_scale))
+        bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
         cmd.extend(video_encode_args(
             self.ffmpeg_bin, use_hardware_accel, bitrate, profile, quality=quality
         ))
         if has_audio:
-            cmd.extend(["-c:a", "aac", "-b:a", audio_bitrate(profile)])
+            cmd.extend(["-c:a", "aac", "-b:a", "96k"])
+        if segment_sec:
+            suffix = Path(str(output_file)).suffix.lower().lstrip(".") or "mp4"
+            if suffix not in {"mp4", "mov"}:
+                suffix = "mp4"
+            # 分段只在關鍵畫格切開。約每兩秒一個，才切得準。
+            cmd.extend(["-g", str(max(1, int(fps)) * 2)])
+            cmd.extend([
+                "-f", "segment",
+                "-segment_time", str(int(segment_sec)),
+                "-segment_format", suffix,
+                "-reset_timestamps", "1",
+            ])
         cmd.append(str(output_file))
         return cmd
 
@@ -230,6 +243,7 @@ class ScreenRecorder:
         region=None,
         quality="standard",
         container="mp4",
+        segment_sec=None,
     ):
         """
         跨平台啟動錄影程序
@@ -244,7 +258,8 @@ class ScreenRecorder:
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
-        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}{suffix}"
+        piece = "_%03d" if segment_sec else ""
+        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}{piece}{suffix}"
         cmd = self.build_capture_command(
             video_idx=video_idx,
             audio_idx=audio_idx,
@@ -255,6 +270,7 @@ class ScreenRecorder:
             region=region,
             quality=quality,
             output_file=self.current_output_file,
+            segment_sec=segment_sec,
         )
 
         try:
@@ -311,11 +327,15 @@ class ScreenRecorder:
         self.is_recording = False
         self.paused = False
         self.pause_started = None
-        self.last_recorded_file = self.current_output_file
+        self.last_recorded_file = self.resolved_output()
         self.process = None
         usable = False
         try:
-            usable = self.last_recorded_file is not None and self.last_recorded_file.stat().st_size > 1024
+            usable = (
+                self.last_recorded_file is not None
+                and self.last_recorded_file.is_file()
+                and self.last_recorded_file.stat().st_size > 1024
+            )
         except Exception:
             usable = False
         if code == 0 and usable:
@@ -363,9 +383,10 @@ class ScreenRecorder:
             self.is_recording = False
             self.paused = False
             self.pause_started = None
-            self.last_recorded_file = self.current_output_file
+            self.last_recorded_file = self.resolved_output()
             self.process = None
-            return True, str(self.last_recorded_file)
+            target = self.last_recorded_file or self.current_output_file
+            return True, str(target)
         except Exception as e:
             self.is_recording = False
             self.paused = False
@@ -425,8 +446,123 @@ class ScreenRecorder:
         except Exception:
             return False
 
+    def recorded_parts(self):
+        """這次錄影寫出的檔案。分段時由舊到新。"""
+        path = self.current_output_file
+        if path is None:
+            return []
+        name = path.name
+        if "%03d" not in name:
+            return [path] if path.is_file() else []
+        pattern = name.replace("%03d", "*")
+        try:
+            parts = [item for item in path.parent.glob(pattern) if item.is_file()]
+        except OSError:
+            return []
+        return sorted(parts, key=lambda item: item.name)
+
+    def resolved_output(self):
+        parts = self.recorded_parts()
+        if parts:
+            return parts[-1]
+        path = self.current_output_file
+        if path is not None and "%03d" not in path.name:
+            return path
+        return None
+
+    def output_size_bytes(self):
+        total = 0
+        for part in self.recorded_parts():
+            try:
+                total += part.stat().st_size
+            except OSError:
+                pass
+        return total
+
     def get_duration(self):
         if not self.is_recording or self.start_time is None:
             return 0
         now = self.pause_started if self.paused and self.pause_started is not None else time.time()
         return int(max(0, now - self.start_time - self.paused_total))
+
+
+LOW_DISK_BYTES = 500 * 1024 * 1024
+
+
+def format_bytes(size):
+    size = max(0, int(size))
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+    if size >= 1024:
+        return f"{size // 1024} KB"
+    return f"{size} B"
+
+
+def free_disk_bytes(path):
+    folder = Path(path)
+    if not folder.exists():
+        folder = folder.parent
+    try:
+        return shutil.disk_usage(folder).free
+    except OSError:
+        return None
+
+
+def still_path(output_dir, when=None):
+    when = when or datetime.now()
+    return Path(output_dir) / when.strftime("截圖_%Y-%m-%d_%H-%M-%S.png")
+
+
+def mac_still_args(region, output_file, scale=1.0):
+    """screencapture 的 -R 用點，錄影範圍用的是像素。"""
+    cmd = ["screencapture", "-x"]
+    if region:
+        scale = scale or 1.0
+        x, y, w, h = [float(v) / scale for v in region]
+        cmd.extend(["-R", f"{x:.0f},{y:.0f},{max(1, round(w)):.0f},{max(1, round(h)):.0f}"])
+    cmd.append(str(output_file))
+    return cmd
+
+
+def build_still_command(ffmpeg_bin, output_file, region=None):
+    """抓一整張靜態圖。不是錄影。"""
+    cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y"]
+    if IS_WINDOWS:
+        cmd.extend(["-f", "gdigrab", "-framerate", "1", "-i", "desktop"])
+    else:
+        cmd.extend(["-f", "x11grab", "-framerate", "1", "-i", ":0.0"])
+    cmd.extend(["-frames:v", "1"])
+    if region:
+        x, y, w, h = [int(v) for v in region]
+        x -= x % 2
+        y -= y % 2
+        w = max(2, w - w % 2)
+        h = max(2, h - h % 2)
+        cmd.extend(["-vf", f"crop={w}:{h}:{x}:{y}"])
+    cmd.append(str(output_file))
+    return cmd
+
+
+def save_still(ffmpeg_bin, output_dir, region=None):
+    path = still_path(output_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if IS_MAC:
+        from region_picker import display_scale
+        cmd = mac_still_args(region, path, display_scale())
+    else:
+        cmd = build_still_command(ffmpeg_bin, path, region)
+    try:
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=12,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    try:
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+    except OSError:
+        return None
+    return None
