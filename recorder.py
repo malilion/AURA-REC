@@ -242,7 +242,8 @@ class ScreenRecorder:
             self.ffmpeg_bin, use_hardware_accel, bitrate, profile, quality=quality
         ))
         if has_audio:
-            cmd.extend(["-c:a", "aac", "-b:a", "96k"])
+            bitrate_a = "192k" if quality == "high" else ("128k" if quality == "standard" else "96k")
+            cmd.extend(["-c:a", "aac", "-b:a", bitrate_a])
         # 不用 segment muxer。avfoundation 配這個 muxer 時，q 停不下來，
         # mp4 也不會寫入 moov。分段改由 _watch_segments 關掉再重開。
         del segment_sec
@@ -263,6 +264,7 @@ class ScreenRecorder:
         segment_sec=None,
         label=None,
         follow=None,
+        prefix=None,
     ):
         """
         跨平台啟動錄影程序
@@ -297,8 +299,11 @@ class ScreenRecorder:
         suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
         piece = "_%03d" if self._segment_seconds else ""
         stamp = recording_label(label)
-        prefix = f"螢幕錄影_{stamp}_" if stamp else "螢幕錄影_"
-        self.current_output_file = self.output_dir / f"{prefix}{timestamp}{piece}{suffix}"
+        base_prefix = str(prefix).strip() if prefix else "螢幕錄影"
+        if not base_prefix.endswith("_") and not base_prefix.endswith("-"):
+            base_prefix += "_"
+        file_prefix = f"{base_prefix}{stamp}_" if stamp else base_prefix
+        self.current_output_file = self.output_dir / f"{file_prefix}{timestamp}{piece}{suffix}"
         self._capture_kwargs = {
             "video_idx": video_idx,
             "audio_idx": audio_idx,
@@ -742,9 +747,12 @@ def free_disk_bytes(path):
         return None
 
 
-def still_path(output_dir, when=None):
+def still_path(output_dir, when=None, prefix=None):
     when = when or datetime.now()
-    return Path(output_dir) / when.strftime("截圖_%Y-%m-%d_%H-%M-%S.png")
+    base = str(prefix).strip() if prefix else "截圖"
+    if not base.endswith("_") and not base.endswith("-"):
+        base += "_"
+    return Path(output_dir) / when.strftime(f"{base}%Y-%m-%d_%H-%M-%S.png")
 
 
 def mac_still_args(region, output_file, scale=1.0):
@@ -777,8 +785,8 @@ def build_still_command(ffmpeg_bin, output_file, region=None):
     return cmd
 
 
-def save_still(ffmpeg_bin, output_dir, region=None):
-    path = still_path(output_dir)
+def save_still(ffmpeg_bin, output_dir, region=None, prefix=None):
+    path = still_path(output_dir, prefix=prefix)
     path.parent.mkdir(parents=True, exist_ok=True)
     if IS_MAC:
         from region_picker import display_scale
