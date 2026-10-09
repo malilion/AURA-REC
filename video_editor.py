@@ -78,16 +78,102 @@ def vertical_fit_graph(canvas_w, canvas_h):
     )
 
 
-def preview_video_filter(aspect_ratio, anchor="center", width=512, height=288):
-    """預覽用的濾鏡。直式完整會先排成直式，再放進橫向預覽格。"""
+def build_zoom_filter(
+    zoom_mode="off",
+    zoom_level=1.5,
+    focus_x=0.5,
+    focus_y=0.5,
+    duration_sec=3.0,
+    fps=30.0,
+    width=1920,
+    height=1080,
+):
+    """
+    產生 Screen Studio / Recordly 風格的自動平滑縮放運鏡濾鏡。
+    - zoom_mode: 'off', 'smooth_in_out' (平滑進出), 'smooth_in' (平滑推進), 'static' (全程特寫)
+    - zoom_level: 1.1 ~ 3.0 (例如 1.25, 1.5, 1.8, 2.0)
+    - focus_x, focus_y: 焦點中心座標比例 (0.0 ~ 1.0)
+    - duration_sec: 當前片段時長 (秒)
+    - fps: 影片幀率
+    - width, height: 輸出畫面寬高
+    """
+    if not zoom_mode or zoom_mode == "off":
+        return None
+    try:
+        zoom_level = float(zoom_level)
+    except (ValueError, TypeError):
+        zoom_level = 1.5
+
+    if zoom_level <= 1.01:
+        return None
+
+    zoom_level = max(1.1, min(3.0, zoom_level))
+    focus_x = max(0.05, min(0.95, float(focus_x if focus_x is not None else 0.5)))
+    focus_y = max(0.05, min(0.95, float(focus_y if focus_y is not None else 0.5)))
+    width = _even(width or 1920)
+    height = _even(height or 1080)
+    fps = max(15.0, float(fps or 30.0))
+    duration_sec = max(0.2, float(duration_sec or 3.0))
+
+    if zoom_mode == "static":
+        crop_w = f"trunc(iw/{zoom_level:.2f}/2)*2"
+        crop_h = f"trunc(ih/{zoom_level:.2f}/2)*2"
+        crop_x = f"trunc(max(0\,min(iw-iw/{zoom_level:.2f}\,iw*{focus_x:.3f}-iw/{zoom_level:.2f}/2))/2)*2"
+        crop_y = f"trunc(max(0\,min(ih-ih/{zoom_level:.2f}\,ih*{focus_y:.3f}-ih/{zoom_level:.2f}/2))/2)*2"
+        return f"crop=w={crop_w}:h={crop_h}:x={crop_x}:y={crop_y},scale={width}:{height}"
+
+    total_frames = max(1, int(round(duration_sec * fps)))
+    if zoom_mode == "smooth_in_out":
+        trans_sec = min(0.8, max(0.25, duration_sec * 0.25))
+        trans_frames = max(1, int(round(trans_sec * fps)))
+        out_start_frame = max(trans_frames, total_frames - trans_frames)
+        z_expr = (
+            f"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,"
+            f"if(gte(on\,{out_start_frame})\,{zoom_level:.2f}-({zoom_level:.2f}-1.0)*((on-{out_start_frame})/{trans_frames})\,"
+            f"{zoom_level:.2f}))"
+        )
+    else:  # smooth_in
+        trans_sec = min(0.8, max(0.25, duration_sec * 0.3))
+        trans_frames = max(1, int(round(trans_sec * fps)))
+        z_expr = f"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,{zoom_level:.2f})"
+
+    x_expr = f"max(0\,min(iw-iw/zoom\,iw*{focus_x:.3f}-iw/zoom/2))"
+    y_expr = f"max(0\,min(ih-ih/zoom\,ih*{focus_y:.3f}-ih/zoom/2))"
+    return f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':d=1:s={width}x{height}:fps={fps:.2f}"
+
+
+def preview_video_filter(aspect_ratio, anchor="center", width=512, height=288, zoom_config=None):
+    """預覽用的濾鏡。直式完整會先排成直式，再放進橫向預覽格。支援即時特寫縮放。"""
     pad = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
     )
+    zoom_crop = None
+    if zoom_config and zoom_config.get("enabled"):
+        z_level = float(zoom_config.get("level", 1.5))
+        fx = float(zoom_config.get("focus_x", 0.5))
+        fy = float(zoom_config.get("focus_y", 0.5))
+        if z_level > 1.01:
+            cw = f"trunc(iw/{z_level:.2f}/2)*2"
+            ch = f"trunc(ih/{z_level:.2f}/2)*2"
+            cx = f"trunc(max(0\,min(iw-iw/{z_level:.2f}\,iw*{fx:.3f}-iw/{z_level:.2f}/2))/2)*2"
+            cy = f"trunc(max(0\,min(ih-ih/{z_level:.2f}\,ih*{fy:.3f}-ih/{z_level:.2f}/2))/2)*2"
+            zoom_crop = f"crop=w={cw}:h={ch}:x={cx}:y={cy}"
+
     if aspect_ratio == "9:16" and anchor == "fit":
-        return vertical_fit_graph(height, width) + "," + pad
+        vert = vertical_fit_graph(height, width)
+        if zoom_crop:
+            return f"{zoom_crop},{vert},{pad}"
+        return f"{vert},{pad}"
+
     crop = aspect_crop_filter(aspect_ratio, anchor)
-    return f"{crop},{pad}" if crop else pad
+    filters = []
+    if zoom_crop:
+        filters.append(zoom_crop)
+    if crop:
+        filters.append(crop)
+    filters.append(pad)
+    return ",".join(filters)
 
 
 def aspect_crop_filter(aspect_ratio, anchor="center"):
@@ -181,12 +267,19 @@ class VideoEditor:
             height = 0
             has_audio = False
             video_codec = "h264"
+            fps = 30.0
 
             for s in data.get("streams", []):
                 if s.get("codec_type") == "video" and width == 0:
                     width = int(s.get("width", 0))
                     height = int(s.get("height", 0))
                     video_codec = s.get("codec_name", "")
+                    r_fps = s.get("r_frame_rate", "30/1")
+                    try:
+                        num, den = r_fps.split("/")
+                        fps = float(num) / float(den)
+                    except Exception:
+                        fps = 30.0
                 elif s.get("codec_type") == "audio":
                     has_audio = True
 
@@ -198,11 +291,103 @@ class VideoEditor:
                 "width": width,
                 "height": height,
                 "has_audio": has_audio,
-                "video_codec": video_codec
+                "video_codec": video_codec,
+                "fps": fps,
             }
         except Exception as e:
             print(f"[VideoEditor] get_video_info error: {e}")
             return None
+
+    def detect_motion_focus(self, file_path, start_sec=0.0, end_sec=None):
+        """
+        分析剪輯區段內的畫面動態焦點 (滑鼠移動、點擊、輸入或視窗變化)，回傳 (focus_x, focus_y)。
+        若無顯著動態則回傳畫面中心 (0.5, 0.5)。
+        """
+        file_path = str(file_path)
+        if not os.path.exists(file_path):
+            return 0.5, 0.5
+
+        info = self.get_video_info(file_path)
+        if not info:
+            return 0.5, 0.5
+
+        duration = info["duration"]
+        end_sec = min(duration, float(end_sec if end_sec is not None else duration))
+        start_sec = max(0.0, float(start_sec or 0.0))
+        delta = max(0.2, end_sec - start_sec)
+
+        t_a = start_sec + delta * 0.2
+        t_b = start_sec + delta * 0.5
+        t_c = start_sec + delta * 0.8
+
+        ppm_a = self.get_frame_ppm(file_path, t_a, width=160, height=90)
+        ppm_b = self.get_frame_ppm(file_path, t_b, width=160, height=90)
+        ppm_c = self.get_frame_ppm(file_path, t_c, width=160, height=90)
+
+        def parse_raw(ppm_bytes):
+            if not ppm_bytes or not ppm_bytes.startswith(b"P6"):
+                return None, 0, 0
+            pos = 2
+            tokens = []
+            length = len(ppm_bytes)
+            while len(tokens) < 3 and pos < length:
+                while pos < length and ppm_bytes[pos] in b" \t\r\n":
+                    pos += 1
+                if pos >= length:
+                    break
+                if ppm_bytes[pos] == ord("#"):
+                    while pos < length and ppm_bytes[pos] != ord("\n"):
+                        pos += 1
+                    continue
+                start = pos
+                while pos < length and ppm_bytes[pos] not in b" \t\r\n":
+                    pos += 1
+                tokens.append(ppm_bytes[start:pos].decode("ascii", errors="ignore"))
+            if pos < length and ppm_bytes[pos] in b" \t\r\n":
+                pos += 1
+            if len(tokens) >= 3:
+                try:
+                    w = int(tokens[0])
+                    h = int(tokens[1])
+                    return ppm_bytes[pos:], w, h
+                except Exception:
+                    pass
+            return None, 0, 0
+
+        pix_a, wa, ha = parse_raw(ppm_a)
+        pix_b, wb, hb = parse_raw(ppm_b)
+        pix_c, wc, hc = parse_raw(ppm_c)
+
+        pairs = []
+        if pix_a and pix_b and len(pix_a) == len(pix_b):
+            pairs.append((pix_a, pix_b, wa, ha))
+        if pix_b and pix_c and len(pix_b) == len(pix_c):
+            pairs.append((pix_b, pix_c, wb, hb))
+
+        if not pairs:
+            return 0.5, 0.5
+
+        sum_x, sum_y, total_w = 0.0, 0.0, 0.0
+        for p1, p2, w, h in pairs:
+            for y in range(h):
+                row = y * w * 3
+                for x in range(w):
+                    idx = row + x * 3
+                    diff = abs(p1[idx] - p2[idx]) + abs(p1[idx + 1] - p2[idx + 1]) + abs(p1[idx + 2] - p2[idx + 2])
+                    if diff > 45:
+                        weight = float(diff)
+                        sum_x += x * weight
+                        sum_y += y * weight
+                        total_w += weight
+
+        if total_w > 500:
+            w_ref = pairs[0][2]
+            h_ref = pairs[0][3]
+            fx = round(max(0.1, min(0.9, (sum_x / total_w) / w_ref)), 2)
+            fy = round(max(0.1, min(0.9, (sum_y / total_w) / h_ref)), 2)
+            return fx, fy
+
+        return 0.5, 0.5
 
     def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202, crop_filter=None, video_filter=None):
         """
@@ -286,9 +471,10 @@ class VideoEditor:
         use_hardware_accel=True,
         volume=1.0,
         target_resolution="original",
+        zoom_config=None,
     ):
         """
-        高級精準幀剪輯 (支援倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
+        高級精準幀剪輯 (支援自動縮放運鏡、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -304,9 +490,33 @@ class VideoEditor:
             "-t", f"{duration:.3f}",
         ]
 
+        info = self.get_video_info(input_file) or {}
+        v_w = info.get("width", 1920) or 1920
+        v_h = info.get("height", 1080) or 1080
+        fps = info.get("fps", 30.0) or 30.0
+
         profile = machine_profile()
-        # 速度與色彩接在比例處理後面。直式完整用畫布，不裁掉左右。
         vf_list = []
+
+        # 1. 智慧運鏡與自動縮放 (Auto Zoom & Pan)
+        if zoom_config and zoom_config.get("enabled"):
+            z_mode = zoom_config.get("mode", "off")
+            z_lvl = zoom_config.get("level", 1.5)
+            z_fx = zoom_config.get("focus_x", 0.5)
+            z_fy = zoom_config.get("focus_y", 0.5)
+            z_filter = build_zoom_filter(
+                zoom_mode=z_mode,
+                zoom_level=z_lvl,
+                focus_x=z_fx,
+                focus_y=z_fy,
+                duration_sec=duration,
+                fps=fps,
+                width=v_w,
+                height=v_h,
+            )
+            if z_filter:
+                vf_list.append(z_filter)
+
         if speed != 1.0:
             pts_factor = 1.0 / speed
             vf_list.append(f"setpts={pts_factor:.4f}*PTS")
@@ -322,12 +532,13 @@ class VideoEditor:
             canvas_w, canvas_h = vertical_canvas_size(profile)
             graph = vertical_fit_graph(canvas_w, canvas_h)
             if vf_list:
-                graph += "," + ",".join(vf_list)
+                pre_chain = ",".join(vf_list)
+                graph = f"[0:v]{pre_chain}[pre];[pre]{graph}"
             cmd.extend(["-filter_complex", graph])
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
             if crop:
-                vf_list.insert(0, crop)
+                vf_list.append(crop)
             if vf_list:
                 cmd.extend(["-vf", ",".join(vf_list)])
         export_rate = {"light": 1800, "balanced": 2800, "high": 4500}.get(profile, 2800)
@@ -366,7 +577,7 @@ class VideoEditor:
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
 
-    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center"):
+    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center", zoom_config=None):
         """
         GIF 導出。文書電腦降低幀率、寬度和調色盤，避免兩遍 lanczos 把機器卡住。
         """
@@ -383,16 +594,46 @@ class VideoEditor:
         elif aspect_ratio == "9:16":
             width = min(int(width), 360)
         budget = gif_export_settings(duration, fps=fps, width=width, profile=profile)
+
+        zoom_filters = []
+        if zoom_config and zoom_config.get("enabled"):
+            info = self.get_video_info(input_file) or {}
+            v_w = info.get("width", 1920) or 1920
+            v_h = info.get("height", 1080) or 1080
+            v_fps = info.get("fps", 30.0) or 30.0
+            z_filter = build_zoom_filter(
+                zoom_mode=zoom_config.get("mode", "off"),
+                zoom_level=zoom_config.get("level", 1.5),
+                focus_x=zoom_config.get("focus_x", 0.5),
+                focus_y=zoom_config.get("focus_y", 0.5),
+                duration_sec=duration,
+                fps=v_fps,
+                width=v_w,
+                height=v_h,
+            )
+            if z_filter:
+                zoom_filters.append(z_filter)
+
         palette = (
             f"fps={budget['fps']},scale={budget['width']}:-1:flags={budget['flags']},"
             f"split[s0][s1];[s0]palettegen=max_colors={budget['colors']}[p];[s1][p]paletteuse=dither=bayer"
         )
         if fit:
             canvas_w, canvas_h = (270, 480) if profile == "light" else (360, 640)
-            vf = vertical_fit_graph(canvas_w, canvas_h) + "," + palette
+            vert = vertical_fit_graph(canvas_w, canvas_h)
+            if zoom_filters:
+                vf = ",".join(zoom_filters) + "," + vert + "," + palette
+            else:
+                vf = vert + "," + palette
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
-            vf = f"{crop},{palette}" if crop else palette
+            chain = []
+            if zoom_filters:
+                chain.extend(zoom_filters)
+            if crop:
+                chain.append(crop)
+            chain.append(palette)
+            vf = ",".join(chain)
 
         cmd = [self.ffmpeg_bin, "-y"]
         if budget["profile"] == "light":
