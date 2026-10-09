@@ -21,11 +21,41 @@ import subprocess
 from pathlib import Path
 
 from platform_utils import (
-    IS_MAC,
-    IS_WINDOWS,
     find_executable,
-    detect_best_video_encoder
+    machine_profile,
+    video_encode_args,
+    audio_bitrate,
+    encode_threads,
 )
+
+
+def gif_export_settings(duration, fps=12, width=640, profile=None):
+    """文書電腦用較小的 GIF。超過 15 秒再把幀率壓到 6。"""
+    profile = profile or machine_profile()
+    if profile == "light":
+        fps = min(int(fps), 8)
+        width = min(int(width), 480)
+        colors = 48
+        flags = "fast_bilinear"
+    elif profile == "balanced":
+        fps = min(int(fps), 10)
+        width = min(int(width), 560)
+        colors = 80
+        flags = "bilinear"
+    else:
+        fps = int(fps)
+        width = int(width)
+        colors = 128
+        flags = "lanczos"
+    if duration > 15:
+        fps = min(fps, 6)
+    return {
+        "fps": max(1, fps),
+        "width": max(160, width),
+        "colors": colors,
+        "flags": flags,
+        "profile": profile,
+    }
 
 
 class VideoEditor:
@@ -87,18 +117,25 @@ class VideoEditor:
             print(f"[VideoEditor] get_video_info error: {e}")
             return None
 
-    def get_frame_ppm(self, file_path, timestamp_sec, width=480, height=270):
+    def get_frame_ppm(self, file_path, timestamp_sec, width=360, height=202):
         """
-        在指定時間點擷取一幀畫面，以 PPM 格式 byte 串流返回，直接供 Tkinter PhotoImage 使用
+        在指定時間點擷取一幀畫面，以 PPM 格式 byte 串流返回，直接供 Tkinter PhotoImage 使用。
+        預覽用小圖和最快的縮放，避免拖時間軸時把 CPU 佔滿。
         """
         file_path = str(file_path)
-        scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+        scale = (
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+        )
 
         cmd = [
             self.ffmpeg_bin,
+            "-hide_banner", "-loglevel", "error",
+            "-threads", "1",
             "-ss", f"{timestamp_sec:.3f}",
             "-i", file_path,
-            "-vf", scale_filter,
+            "-an",
+            "-vf", scale,
             "-vframes", "1",
             "-f", "image2pipe",
             "-vcodec", "ppm",
@@ -196,19 +233,10 @@ class VideoEditor:
         if vf_list:
             cmd.extend(["-vf", ",".join(vf_list)])
 
-        # 影像編碼
-        if use_hardware_accel:
-            enc = detect_best_video_encoder(self.ffmpeg_bin)
-            if enc == "h264_videotoolbox":
-                cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "9000k"])
-            elif enc == "h264_nvenc":
-                cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22"])
-            elif enc == "h264_qsv":
-                cmd.extend(["-c:v", "h264_qsv", "-global_quality", "22"])
-            else:
-                cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20"])
-        else:
-            cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20"])
+        profile = machine_profile()
+        export_rate = {"light": 1800, "balanced": 2800, "high": 4500}.get(profile, 2800)
+        cmd.extend(["-threads", str(encode_threads(profile))])
+        cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, export_rate, profile))
 
         # 音訊處理與倍速
         if mute_audio:
@@ -227,7 +255,7 @@ class VideoEditor:
             if af_list:
                 cmd.extend(["-af", ",".join(af_list)])
 
-            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+            cmd.extend(["-c:a", "aac", "-b:a", audio_bitrate(profile)])
 
         cmd.extend(["-movflags", "+faststart", output_file])
 
@@ -241,7 +269,7 @@ class VideoEditor:
 
     def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640):
         """
-        高畫質 GIF 導出 (雙遍調色盤 palettegen + paletteuse，無雜訊噪點)
+        GIF 導出。文書電腦降低幀率、寬度和調色盤，避免兩遍 lanczos 把機器卡住。
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -249,17 +277,23 @@ class VideoEditor:
         if duration <= 0:
             return False, "長度必須大於 0 秒"
 
-        vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer"
+        budget = gif_export_settings(duration, fps=fps, width=width)
+        vf = (
+            f"fps={budget['fps']},scale={budget['width']}:-1:flags={budget['flags']},"
+            f"split[s0][s1];[s0]palettegen=max_colors={budget['colors']}[p];[s1][p]paletteuse=dither=bayer"
+        )
 
-        cmd = [
-            self.ffmpeg_bin,
-            "-y",
+        cmd = [self.ffmpeg_bin, "-y"]
+        if budget["profile"] == "light":
+            cmd.extend(["-filter_threads", "1"])
+        cmd.extend([
+            "-threads", str(encode_threads(budget["profile"])),
             "-ss", f"{start_sec:.3f}",
             "-i", input_file,
             "-t", f"{duration:.3f}",
             "-vf", vf,
-            output_file
-        ]
+            output_file,
+        ])
 
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

@@ -367,11 +367,11 @@ class VideoEditorWindow:
             if target_sec is None:
                 break
 
-            ppm_data = self.editor.get_frame_ppm(self.current_file, target_sec, width=480, height=270)
+            ppm_data = self.editor.get_frame_ppm(self.current_file, target_sec, width=360, height=202)
             if ppm_data:
                 self.window.after(0, lambda data=ppm_data: self._update_preview_image(data))
 
-            time.sleep(0.04)
+            time.sleep(0.15)
 
     def _update_preview_image(self, ppm_data):
         try:

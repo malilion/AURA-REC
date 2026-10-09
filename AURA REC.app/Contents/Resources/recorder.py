@@ -12,6 +12,7 @@ import os
 import re
 import signal
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +22,16 @@ from platform_utils import (
     IS_WINDOWS,
     IS_LINUX,
     find_executable,
-    detect_best_video_encoder
+    resolve_recordings_dir,
+    ffmpeg_is_available,
+    explain_ffmpeg_failure,
+    machine_profile,
+    encode_threads,
+    scale_filter,
+    capture_bitrate_k,
+    audio_bitrate,
+    video_encode_args,
+    lower_process_priority,
 )
 
 
@@ -29,24 +39,23 @@ class ScreenRecorder:
     def __init__(self, output_dir=None):
         if output_dir:
             self.output_dir = Path(output_dir)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         else:
-            # 優先使用專案底下的 recordings 目錄
-            self.output_dir = Path(__file__).resolve().parent / "recordings"
-
-        try:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            self.output_dir = Path("./recordings").resolve()
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir = resolve_recordings_dir(__file__)
 
         self.process = None
         self.is_recording = False
         self.start_time = None
         self.current_output_file = None
         self.last_recorded_file = None
+        self._stderr_lines = []
+        self._stderr_lock = threading.Lock()
 
         # 跨平台尋找 FFmpeg
         self.ffmpeg_bin = find_executable("ffmpeg")
+
+    def ffmpeg_ok(self):
+        return ffmpeg_is_available(self.ffmpeg_bin)
 
     def get_devices(self):
         """
@@ -59,7 +68,7 @@ class ScreenRecorder:
             if IS_MAC:
                 # macOS AVFoundation
                 cmd = [self.ffmpeg_bin, "-f", "avfoundation", "-list_devices", "true", "-i", ""]
-                p = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors="ignore")
+                p = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors="ignore", timeout=8)
                 output = p.stderr
 
                 mode = None
@@ -85,7 +94,7 @@ class ScreenRecorder:
                 video_devs.append({"index": "desktop", "name": "全螢幕桌面 (Primary Desktop)"})
 
                 cmd = [self.ffmpeg_bin, "-list_devices", "true", "-f", "dshow", "-i", "dummy"]
-                p = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors="ignore")
+                p = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors="ignore", timeout=8)
                 output = p.stderr
 
                 mode = None
@@ -111,6 +120,8 @@ class ScreenRecorder:
                 video_devs.append({"index": ":0.0", "name": "X11 Display :0.0"})
                 audio_devs.append({"index": "default", "name": "預設音訊 (PulseAudio/ALSA)"})
 
+        except subprocess.TimeoutExpired:
+            print("[Error] Device scan timed out")
         except Exception as e:
             print(f"[Error] Failed to detect devices: {e}")
 
@@ -120,23 +131,28 @@ class ScreenRecorder:
 
         return video_devs, audio_devs
 
-    def start_recording(self, video_idx=None, audio_idx=None, fps=30, resolution="native", use_hardware_accel=True):
-        """
-        跨平台啟動錄影程序
-        """
-        if self.is_recording:
-            return False, "錄影已在進行中"
+    def build_capture_command(
+        self,
+        video_idx=None,
+        audio_idx=None,
+        fps=30,
+        resolution="native",
+        use_hardware_accel=True,
+        output_file=None,
+        profile=None,
+    ):
+        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。"""
+        profile = profile or machine_profile()
+        cmd = [
+            self.ffmpeg_bin,
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-threads", str(encode_threads(profile)),
+        ]
+        if profile == "light":
+            cmd.extend(["-filter_threads", "1"])
 
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}.mp4"
+        has_audio = audio_idx is not None and str(audio_idx).strip() != "" and str(audio_idx).lower() != "none"
 
-        cmd = [self.ffmpeg_bin, "-y"]
-
-        has_audio = False
-        if audio_idx is not None and str(audio_idx).strip() != "" and str(audio_idx).lower() != "none":
-            has_audio = True
-
-        # 跨平台設定輸入源
         if IS_MAC:
             if video_idx is None:
                 video_idx = "0"
@@ -148,90 +164,124 @@ class ScreenRecorder:
                 "-i", input_spec,
             ])
         elif IS_WINDOWS:
-            # Windows 影像輸入 (預設 gdigrab 擷取整面桌面)
             if video_idx is None or video_idx == "desktop":
                 cmd.extend([
                     "-f", "gdigrab",
                     "-framerate", str(fps),
                     "-draw_mouse", "1",
-                    "-i", "desktop"
+                    "-i", "desktop",
                 ])
             else:
                 cmd.extend([
                     "-f", "dshow",
                     "-framerate", str(fps),
-                    "-i", f"video={video_idx}"
+                    "-i", f"video={video_idx}",
                 ])
-
-            # Windows 音訊輸入 (DirectShow)
             if has_audio:
-                cmd.extend([
-                    "-f", "dshow",
-                    "-i", f"audio={audio_idx}"
-                ])
+                cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
         else:
-            # Linux
             cmd.extend([
                 "-f", "x11grab",
                 "-framerate", str(fps),
                 "-draw_mouse", "1",
-                "-i", ":0.0"
+                "-i", ":0.0",
             ])
             if has_audio:
                 cmd.extend(["-f", "pulse", "-i", "default"])
 
-        # 解析度濾鏡
-        filters = []
-        if resolution == "1080p":
-            filters.append("scale=1920:-2")
-        elif resolution == "2K":
-            filters.append("scale=2560:-2")
-        elif resolution == "720p":
-            filters.append("scale=1280:-2")
+        vf = scale_filter(resolution)
+        if vf:
+            cmd.extend(["-vf", vf])
 
-        if filters:
-            cmd.extend(["-vf", ",".join(filters)])
-
-        # 影像編碼器 (偵測硬體加速)
-        if use_hardware_accel:
-            enc = detect_best_video_encoder(self.ffmpeg_bin)
-            if enc == "h264_videotoolbox":
-                cmd.extend(["-c:v", "h264_videotoolbox", "-b:v", "8000k", "-pix_fmt", "yuv420p"])
-            elif enc == "h264_nvenc":
-                cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22", "-pix_fmt", "yuv420p"])
-            elif enc == "h264_qsv":
-                cmd.extend(["-c:v", "h264_qsv", "-global_quality", "22", "-pix_fmt", "nv12"])
-            elif enc == "h264_amf":
-                cmd.extend(["-c:v", "h264_amf", "-quality", "speed", "-pix_fmt", "yuv420p"])
-            else:
-                cmd.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p"])
-        else:
-            cmd.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p"])
-
-        # 音訊編碼
+        bitrate = capture_bitrate_k(resolution, profile)
+        cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, bitrate, profile))
         if has_audio:
-            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+            cmd.extend(["-c:a", "aac", "-b:a", audio_bitrate(profile)])
+        cmd.append(str(output_file))
+        return cmd
 
-        cmd.extend([
-            "-movflags", "+faststart",
-            str(self.current_output_file)
-        ])
+    def start_recording(self, video_idx=None, audio_idx=None, fps=30, resolution="native", use_hardware_accel=True):
+        """
+        跨平台啟動錄影程序
+        """
+        if self.is_recording:
+            return False, "錄影已在進行中"
+        if not self.ffmpeg_ok():
+            return False, explain_ffmpeg_failure("", code="missing")
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}.mp4"
+        cmd = self.build_capture_command(
+            video_idx=video_idx,
+            audio_idx=audio_idx,
+            fps=fps,
+            resolution=resolution,
+            use_hardware_accel=use_hardware_accel,
+            output_file=self.current_output_file,
+        )
 
         try:
-            self.process = subprocess.Popen(
-                cmd,
+            self._stderr_lines = []
+            popen_kwargs = dict(
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
+            if IS_WINDOWS:
+                popen_kwargs["creationflags"] = getattr(
+                    subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000
+                )
+            self.process = subprocess.Popen(cmd, **popen_kwargs)
+            lower_process_priority(self.process.pid)
             self.is_recording = True
             self.start_time = time.time()
+            threading.Thread(target=self._drain_stderr, daemon=True).start()
             return True, str(self.current_output_file)
         except Exception as e:
             self.is_recording = False
             self.process = None
-            return False, f"啟動錄影失敗: {str(e)}"
+            return False, explain_ffmpeg_failure(str(e), code="missing")
+
+    def _drain_stderr(self):
+        """把 FFmpeg 的紀錄讀走。不讀的話管線塞滿，長時間錄影會停住。"""
+        proc = self.process
+        if proc is None or proc.stderr is None:
+            return
+        try:
+            for line in proc.stderr:
+                with self._stderr_lock:
+                    self._stderr_lines.append(line.rstrip())
+                    if len(self._stderr_lines) > 80:
+                        del self._stderr_lines[:40]
+        except Exception:
+            pass
+
+    def stderr_tail(self, limit=8):
+        with self._stderr_lock:
+            lines = [ln for ln in self._stderr_lines if ln.strip()]
+        return "\n".join(lines[-limit:])
+
+    def consume_exit(self):
+        """FFmpeg 已經自己結束時，收回狀態。還在錄就回傳 None。"""
+        proc = self.process
+        if proc is None or not self.is_recording:
+            return None
+        code = proc.poll()
+        if code is None:
+            return None
+        tail = self.stderr_tail()
+        self.is_recording = False
+        self.last_recorded_file = self.current_output_file
+        self.process = None
+        usable = False
+        try:
+            usable = self.last_recorded_file is not None and self.last_recorded_file.stat().st_size > 1024
+        except Exception:
+            usable = False
+        if code == 0 and usable:
+            return True, str(self.last_recorded_file)
+        return False, explain_ffmpeg_failure(tail, code)
 
     def stop_recording(self):
         """
