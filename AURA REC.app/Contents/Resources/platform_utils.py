@@ -8,6 +8,7 @@ platform_utils.py - 跨平台輔助模組 (macOS & Windows & Linux)
 
 import json
 import os
+import re
 import platform
 import shutil
 import subprocess
@@ -656,6 +657,82 @@ def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced", q
         "-threads", str(threads),
         "-pix_fmt", "yuv420p",
     ]
+
+
+_WINDOW_GEOM = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
+_awake_proc = None
+_awake_windows = False
+
+
+def fit_window_geometry(spec, screen_w, screen_h, min_w=520, min_h=700):
+    """把記住的視窗拉回螢幕裡。不合法則回傳 None。"""
+    if not isinstance(spec, str):
+        return None
+    match = _WINDOW_GEOM.match(spec.strip())
+    if not match:
+        return None
+    try:
+        screen_w = int(screen_w)
+        screen_h = int(screen_h)
+    except (TypeError, ValueError):
+        return None
+    if screen_w < 320 or screen_h < 240:
+        return None
+    width, height, x, y = (int(v) for v in match.groups())
+    width = min(max(width, min(min_w, screen_w)), screen_w)
+    height = min(max(height, min(min_h, screen_h)), screen_h)
+    if x + 80 > screen_w:
+        x = max(0, screen_w - width)
+    if y + 80 > screen_h:
+        y = max(0, screen_h - height)
+    return f"{width}x{height}+{max(0, x)}+{max(0, y)}"
+
+
+def hold_awake(pid):
+    """錄影這段時間不要讓螢幕或系統睡著。"""
+    release_awake()
+    global _awake_proc, _awake_windows
+    try:
+        if IS_WINDOWS:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
+            _awake_windows = True
+            return
+        if IS_MAC and shutil.which("caffeinate"):
+            _awake_proc = subprocess.Popen(
+                ["caffeinate", "-dims", "-w", str(int(pid))],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        inhibit = shutil.which("systemd-inhibit")
+        if inhibit:
+            _awake_proc = subprocess.Popen(
+                [inhibit, "--what=idle:sleep", "--who=AURA REC", "--why=正在錄影", "sleep", "infinity"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        pass
+
+
+def release_awake():
+    """錄影結束就恢復原本的睡眠。"""
+    global _awake_proc, _awake_windows
+    proc = _awake_proc
+    _awake_proc = None
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    if _awake_windows:
+        _awake_windows = False
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+        except Exception:
+            pass
 
 
 def lower_process_priority(pid):
