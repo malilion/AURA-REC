@@ -160,15 +160,382 @@ class HiddenRecordHotkeys:
 
 
 def use_dark_appearance():
-    """macOS 標題列與選單跟著官網深色。沒有 PyObjC 就維持系統外觀。"""
+    """macOS 標題列與選單跟著官網深色。若為舊版 Tk 8.5 則略過以避免黑屏。沒有 PyObjC 就維持系統外觀。"""
     if not IS_MAC:
         return
     try:
+        import tkinter
+        if getattr(tkinter, "TkVersion", 0) < 8.6:
+            return
         from AppKit import NSAppearance, NSApplication
         appearance = NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua")
         NSApplication.sharedApplication().setAppearance_(appearance)
     except Exception:
         pass
+
+
+def get_mac_screen_details():
+    """取得 macOS 各個 Capture screen 編號對應的顯示器資訊 (主螢幕/內建/外接、解析度)。"""
+    if not IS_MAC:
+        return {}
+    try:
+        import ctypes
+        class _Point(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+        class _Size(ctypes.Structure):
+            _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+        class _Rect(ctypes.Structure):
+            _fields_ = [("origin", _Point), ("size", _Size)]
+
+        cg = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        cg.CGMainDisplayID.restype = ctypes.c_uint32
+        cg.CGGetActiveDisplayList.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
+        cg.CGGetActiveDisplayList.restype = ctypes.c_int32
+        cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+        cg.CGDisplayBounds.restype = _Rect
+        cg.CGDisplayIsBuiltin.argtypes = [ctypes.c_uint32]
+        cg.CGDisplayIsBuiltin.restype = ctypes.c_bool
+
+        count = ctypes.c_uint32(0)
+        if cg.CGGetActiveDisplayList(0, None, ctypes.byref(count)) != 0 or not count.value:
+            return {}
+        id_list = (ctypes.c_uint32 * count.value)()
+        if cg.CGGetActiveDisplayList(count.value, id_list, ctypes.byref(count)) != 0:
+            return {}
+        main_id = int(cg.CGMainDisplayID())
+        ordered = sorted((int(id_list[i]) for i in range(count.value)), key=lambda did: (did != main_id, did))
+
+        details = {}
+        for idx, did in enumerate(ordered):
+            rect = cg.CGDisplayBounds(did)
+            is_main = (did == main_id)
+            is_builtin = bool(cg.CGDisplayIsBuiltin(did))
+            type_str = "內建" if is_builtin else "外接"
+            role = f"主螢幕 ({type_str})" if is_main else f"外接螢幕"
+            w, h = int(rect.size.width), int(rect.size.height)
+            details[idx] = f"{role} {w}x{h}"
+        return details
+    except Exception:
+        return {}
+
+
+def get_screen_full_info():
+    """
+    取得所有實體顯示器的詳細幾何資訊、識別編號、名稱與解析度。
+    回傳列表，每個元素為 dict：
+    {
+        "index": 0,           # 0-based 螢幕索引
+        "screencapture_id": 1,# screencapture -D 的編號 (1-based)
+        "display_id": 1,      # CoreGraphics 或系統 Display ID
+        "is_main": True,
+        "is_builtin": True,
+        "title": "主螢幕 (內建)",
+        "width": 1440,
+        "height": 900,
+        "x": 0.0,
+        "y": 0.0,
+        "scale": 2.0,
+        "label": "主螢幕 (內建) 1440x900",
+    }
+    """
+    screens = []
+    if IS_MAC:
+        try:
+            import ctypes
+            class _Point(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+            class _Size(ctypes.Structure):
+                _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+            class _Rect(ctypes.Structure):
+                _fields_ = [("origin", _Point), ("size", _Size)]
+
+            cg = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+            cf = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+            cg.CGMainDisplayID.restype = ctypes.c_uint32
+            cg.CGGetActiveDisplayList.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
+            cg.CGGetActiveDisplayList.restype = ctypes.c_int32
+            cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+            cg.CGDisplayBounds.restype = _Rect
+            cg.CGDisplayIsBuiltin.argtypes = [ctypes.c_uint32]
+            cg.CGDisplayIsBuiltin.restype = ctypes.c_bool
+            cg.CGDisplayCopyDisplayMode.argtypes = [ctypes.c_uint32]
+            cg.CGDisplayCopyDisplayMode.restype = ctypes.c_void_p
+            cg.CGDisplayModeGetPixelWidth.argtypes = [ctypes.c_void_p]
+            cg.CGDisplayModeGetPixelWidth.restype = ctypes.c_size_t
+            cg.CGDisplayModeGetWidth.argtypes = [ctypes.c_void_p]
+            cg.CGDisplayModeGetWidth.restype = ctypes.c_size_t
+            cf.CFRelease.argtypes = [ctypes.c_void_p]
+
+            count = ctypes.c_uint32(0)
+            if cg.CGGetActiveDisplayList(0, None, ctypes.byref(count)) == 0 and count.value:
+                id_list = (ctypes.c_uint32 * count.value)()
+                if cg.CGGetActiveDisplayList(count.value, id_list, ctypes.byref(count)) == 0:
+                    main_id = int(cg.CGMainDisplayID())
+                    ordered = sorted((int(id_list[i]) for i in range(count.value)), key=lambda did: (did != main_id, did))
+                    for idx, did in enumerate(ordered):
+                        rect = cg.CGDisplayBounds(did)
+                        is_main = (did == main_id)
+                        is_builtin = bool(cg.CGDisplayIsBuiltin(did))
+                        type_str = "內建" if is_builtin else "外接"
+                        role = f"主螢幕 ({type_str})" if is_main else "外接螢幕"
+                        w, h = int(rect.size.width), int(rect.size.height)
+                        scale = 1.0
+                        mode = cg.CGDisplayCopyDisplayMode(did)
+                        if mode:
+                            try:
+                                pw = int(cg.CGDisplayModeGetPixelWidth(mode))
+                                lw = int(cg.CGDisplayModeGetWidth(mode))
+                                if pw > 0 and lw > 0:
+                                    scale = max(1.0, pw / lw)
+                            finally:
+                                cf.CFRelease(mode)
+                        screens.append({
+                            "index": idx,
+                            "name": f"Capture screen {idx}",
+                            "screencapture_id": idx + 1,
+                            "display_id": did,
+                            "is_main": is_main,
+                            "is_builtin": is_builtin,
+                            "title": role,
+                            "width": w,
+                            "height": h,
+                            "x": float(rect.origin.x),
+                            "y": float(rect.origin.y),
+                            "scale": scale,
+                            "label": f"{role} {w}x{h}",
+                        })
+        except Exception:
+            pass
+
+    if not screens:
+        screens.append({
+            "index": 0,
+            "name": "預設主螢幕",
+            "screencapture_id": 1,
+            "display_id": 0,
+            "is_main": True,
+            "is_builtin": True,
+            "title": "主螢幕",
+            "width": 1920,
+            "height": 1080,
+            "x": 0.0,
+            "y": 0.0,
+            "scale": 1.0,
+            "label": "主螢幕 1920x1080",
+        })
+    return screens
+
+
+def create_placeholder_ppm(width=288, height=162, bg_rgb=(18, 18, 23), border_rgb=(39, 39, 42)):
+    """純 Python 生成深色相容 PPM 點陣圖，避免依賴 PIL。"""
+    header = f"P6\n{width} {height}\n255\n".encode("ascii")
+    pixels = bytearray()
+    for y in range(height):
+        for x in range(width):
+            if x == 0 or x == width - 1 or y == 0 or y == height - 1:
+                pixels.extend(border_rgb)
+            elif (y == height // 2 and width // 4 <= x <= 3 * width // 4) or (x == width // 2 and height // 4 <= y <= 3 * height // 4):
+                pixels.extend((60, 60, 70))
+            else:
+                pixels.extend(bg_rgb)
+    return header + bytes(pixels)
+
+
+def capture_device_preview_ppm(ffmpeg_bin, dev_name, width=288, height=162, timeout=4.0):
+    """
+    擷取指定螢幕或攝影機設備的即時單幀縮圖，回傳 PPM bytes (直接相容 tk.PhotoImage)。
+    macOS 優先使用 screencapture (極速 ~0.15s)，若失敗則回退 FFmpeg avfoundation。
+    Windows 支援 gdigrab 與 dshow。Linux 支援 x11grab。
+    失敗時回傳深色佔位 PPM 圖片。
+    """
+    dev_str = str(dev_name or "").strip()
+    low = dev_str.lower()
+
+    if IS_MAC:
+        # 1. 判斷是否為螢幕畫面
+        m_screen = re.search(r"screen\s*(\d+)", low)
+        is_screen = bool(m_screen) or any(k in low for k in ("螢幕", "desktop", "display"))
+        if is_screen:
+            s_idx = int(m_screen.group(1)) if m_screen else 0
+            sc_id = s_idx + 1
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                # screencapture -x (無快門音) -D <顯示器編號>
+                r = subprocess.run(["screencapture", "-x", "-D", str(sc_id), tmp_path], timeout=timeout)
+                if r.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0 and ffmpeg_bin:
+                    conv_cmd = [
+                        ffmpeg_bin, "-y", "-i", tmp_path,
+                        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                        "-f", "image2", "-vcodec", "ppm", "-"
+                    ]
+                    p = subprocess.run(conv_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+                    if p.returncode == 0 and p.stdout:
+                        return p.stdout
+            except Exception:
+                pass
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+
+            # 若 screencapture 失敗，回退使用 ffmpeg avfoundation 截螢幕
+            if ffmpeg_bin:
+                try:
+                    ff_input = f"Capture screen {s_idx}:none"
+                    ff_cmd = [
+                        ffmpeg_bin, "-y", "-f", "avfoundation", "-framerate", "30", "-capture_cursor", "0",
+                        "-i", ff_input, "-vframes", "1",
+                        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                        "-f", "image2", "-vcodec", "ppm", "-"
+                    ]
+                    p = subprocess.run(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+                    if p.returncode == 0 and p.stdout:
+                        return p.stdout
+                except Exception:
+                    pass
+
+        # 2. 判斷是否為攝影機
+        is_camera = any(k in low for k in ("相機", "camera", "facetime", "鏡頭", "webcam"))
+        if is_camera and ffmpeg_bin:
+            m_idx = re.search(r"^\[(\d+)\]", dev_str)
+            cam_idx = m_idx.group(1) if m_idx else "0"
+            try:
+                ff_cmd = [
+                    ffmpeg_bin, "-y", "-f", "avfoundation", "-framerate", "30",
+                    "-i", f"{cam_idx}:none", "-vframes", "1",
+                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                    "-f", "image2", "-vcodec", "ppm", "-"
+                ]
+                p = subprocess.run(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+                if p.returncode == 0 and p.stdout:
+                    return p.stdout
+            except Exception:
+                pass
+
+    elif IS_WINDOWS and ffmpeg_bin:
+        try:
+            if "desktop" in low or "全螢幕" in low or "桌面" in low:
+                ff_cmd = [
+                    ffmpeg_bin, "-y", "-f", "gdigrab", "-framerate", "30",
+                    "-i", "desktop", "-vframes", "1",
+                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                    "-f", "image2", "-vcodec", "ppm", "-"
+                ]
+            else:
+                m_name = re.search(r"\[.+?\]\s*(.*)", dev_str)
+                name = m_name.group(1).strip() if m_name else dev_str
+                ff_cmd = [
+                    ffmpeg_bin, "-y", "-f", "dshow",
+                    "-i", f"video={name}", "-vframes", "1",
+                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                    "-f", "image2", "-vcodec", "ppm", "-"
+                ]
+            p = subprocess.run(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+            if p.returncode == 0 and p.stdout:
+                return p.stdout
+        except Exception:
+            pass
+
+    elif IS_LINUX and ffmpeg_bin:
+        try:
+            ff_cmd = [
+                ffmpeg_bin, "-y", "-f", "x11grab", "-framerate", "30",
+                "-i", ":0.0", "-vframes", "1",
+                "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+                "-f", "image2", "-vcodec", "ppm", "-"
+            ]
+            p = subprocess.run(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+            if p.returncode == 0 and p.stdout:
+                return p.stdout
+        except Exception:
+            pass
+
+    return create_placeholder_ppm(width, height)
+
+
+def flash_screen_badges(root, screen_infos=None, duration_ms=2500):
+    """
+    在所有實體螢幕的正中央彈出大型半透明發光編號指示卡 (1, 2...)，
+    並於 duration_ms 毫秒後自動關閉，讓使用者清楚明白實體顯示器的編號對應。
+    """
+    import tkinter as tk
+    if not screen_infos:
+        screen_infos = get_screen_full_info()
+
+    badge_windows = []
+
+    for screen in screen_infos:
+        try:
+            win = tk.Toplevel(root)
+            win.overrideredirect(True)
+            win.configure(bg="#09090b")
+            try:
+                win.attributes("-topmost", True)
+                win.attributes("-alpha", 0.94)
+            except Exception:
+                pass
+
+            bw, bh = 240, 220
+            cx = int(screen["x"] + screen["width"] / 2)
+            cy = int(screen["y"] + screen["height"] / 2)
+            pos_x = cx - (bw // 2)
+            pos_y = cy - (bh // 2)
+            win.geometry(f"{bw}x{bh}+{pos_x}+{pos_y}")
+
+            card = tk.Frame(win, bg="#18181b", highlightbackground="#3b82f6", highlightthickness=2)
+            card.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+            disp_num = str(screen.get("screencapture_id") or (screen["index"] + 1))
+
+            num_lbl = tk.Label(
+                card,
+                text=disp_num,
+                font=("SF Pro Display", 68, "bold") if IS_MAC else ("Segoe UI", 60, "bold"),
+                fg="#ffffff",
+                bg="#18181b",
+            )
+            num_lbl.pack(pady=(10, 0))
+
+            title_text = screen.get("title", f"螢幕 {disp_num}")
+            tk.Label(
+                card,
+                text=title_text,
+                font=("SF Pro Text", 13, "bold") if IS_MAC else ("Segoe UI", 12, "bold"),
+                fg="#60a5fa",
+                bg="#18181b",
+            ).pack(pady=(2, 0))
+
+            res_text = f"{screen.get('width', 0)} × {screen.get('height', 0)}"
+            if screen.get("scale", 1.0) > 1.0:
+                res_text += " Retina"
+            tk.Label(
+                card,
+                text=res_text,
+                font=("SF Pro Text", 11) if IS_MAC else ("Segoe UI", 10),
+                fg="#a1a1aa",
+                bg="#18181b",
+            ).pack(pady=(2, 10))
+
+            for widget in (win, card, num_lbl):
+                widget.bind("<Button-1>", lambda _e, w=win: w.destroy())
+
+            badge_windows.append(win)
+        except Exception:
+            pass
+
+    def _close_all():
+        for w in badge_windows:
+            try:
+                w.destroy()
+            except Exception:
+                pass
+
+    if badge_windows:
+        root.after(duration_ms, _close_all)
 
 
 def find_executable(name, extra_mac_paths=None, extra_win_paths=None):

@@ -9,10 +9,12 @@ __pycache__/
 .AppleDouble
 .LSOverride
 
-# Video recordings (large media files)
+# Video recordings & screenshots (large media files)
 recordings/*.mp4
 recordings/*.mov
 recordings/*.mkv
+recordings/*.png
+recordings/*.jpg
 !recordings/.gitkeep
 test_*.mp4
 

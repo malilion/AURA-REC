@@ -13,7 +13,15 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin
 
 # 搜尋可用的 Python 3（優先尋找帶有 Tkinter 的 Python 環境）
 CANDIDATE_PYS=(
+    "/opt/homebrew/bin/python3.13"
+    "/opt/homebrew/bin/python3.12"
+    "/opt/homebrew/bin/python3.11"
+    "/opt/homebrew/bin/python3.10"
     "/opt/homebrew/bin/python3"
+    "/usr/local/bin/python3.13"
+    "/usr/local/bin/python3.12"
+    "/usr/local/bin/python3.11"
+    "/usr/local/bin/python3.10"
     "/usr/local/bin/python3"
     "$HOME/.pyenv/shims/python3"
     "$HOME/miniforge3/bin/python3"
@@ -24,14 +32,27 @@ CANDIDATE_PYS=(
 )
 
 CHOSEN_PY=""
+# 第一輪：優先尋找支援現代化 Tk 8.6+ 的 Python 環境（杜絕黑屏問題）
 for candidate in "${CANDIDATE_PYS[@]}"; do
     if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-        if "$candidate" -c "import tkinter, subprocess, threading" 2>/dev/null; then
+        if "$candidate" -c "import tkinter; assert getattr(tkinter, 'TkVersion', 0) >= 8.6" 2>/dev/null; then
             CHOSEN_PY="$candidate"
             break
         fi
     fi
 done
+
+# 第二輪：退回任何具備 tkinter 的 Python
+if [ -z "$CHOSEN_PY" ]; then
+    for candidate in "${CANDIDATE_PYS[@]}"; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            if "$candidate" -c "import tkinter, subprocess, threading" 2>/dev/null; then
+                CHOSEN_PY="$candidate"
+                break
+            fi
+        fi
+    done
+fi
 
 if [ -z "$CHOSEN_PY" ]; then
     # 彈出友善的 macOS 原生對話框
