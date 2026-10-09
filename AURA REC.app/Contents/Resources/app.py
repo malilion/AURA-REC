@@ -22,6 +22,7 @@ from pathlib import Path
 
 from recorder import ScreenRecorder
 from editor_window import VideoEditorWindow
+from aura_widgets import AuraButton, AuraCheck
 from platform_utils import (
     IS_MAC,
     IS_WINDOWS,
@@ -116,7 +117,7 @@ class LiteRecorderApp:
 
     def _quiet_button(self, parent, text, command, fg=None):
         style = "Danger.TButton" if fg == UI["red"] else "Link.TButton"
-        return ttk.Button(parent, text=text, command=command, style=style, cursor="hand2")
+        return AuraButton(parent, text=text, command=command, style=style)
 
     def _show_shortcuts(self):
         messagebox.showinfo(
@@ -165,8 +166,8 @@ class LiteRecorderApp:
 
         self.status_badge = tk.Label(
             header_frame,
-            text="就緒",
-            font=self.fonts["bold"],
+            text="●  就緒",
+            font=self.fonts["badge"],
             fg=UI["ok"],
             bg=UI["bg"],
         )
@@ -210,11 +211,10 @@ class LiteRecorderApp:
         )
         self.timer_hint.pack(pady=(6, 0))
 
-        self.record_btn = ttk.Button(
+        self.record_btn = AuraButton(
             self.timer_card,
             text="開始錄影",
             style="Primary.TButton",
-            cursor="hand2",
             command=self.toggle_recording,
             state=tk.DISABLED,
         )
@@ -260,7 +260,7 @@ class LiteRecorderApp:
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
         ):
-            ttk.Checkbutton(checks, text=text, variable=variable, style="App.TCheckbutton").pack(anchor="w")
+            AuraCheck(checks, text=text, variable=variable).pack(anchor="w")
 
         self.recent_card = self._card(self.main_container)
         self.recent_card.pack(fill=tk.BOTH, expand=True)
@@ -312,7 +312,7 @@ class LiteRecorderApp:
         self.mini_time_label = tk.Label(
             self.mini_container,
             text="REC 00:00",
-            font=self.fonts["subtitle"],
+            font=self.fonts["mono"],
             fg=UI["red"],
             bg=UI["mini"],
         )
@@ -324,12 +324,12 @@ class LiteRecorderApp:
         self.mini_vu_canvas.pack(side=tk.LEFT, padx=4)
         self._draw_mini_vu_idle()
 
-        ttk.Button(
+        AuraButton(
             self.mini_container,
             text="停止",
             style="Stop.TButton",
             command=self.stop_recording,
-        ).pack(side=tk.RIGHT, padx=8, pady=6)
+        ).pack(side=tk.RIGHT, padx=8, pady=5)
 
     def _start_drag(self, event):
         self.drag_x = event.x
@@ -449,7 +449,7 @@ class LiteRecorderApp:
         def count_step(val):
             if val > 0:
                 self.timer_display.config(text=str(val), fg=UI["warn"])
-                self.status_badge.config(text=f"倒數 {val}", fg=UI["warn"])
+                self.status_badge.config(text=f"●  倒數 {val}", fg=UI["warn"])
                 play_system_alert("ready")
                 self.root.after(1000, lambda: count_step(val - 1))
             else:
@@ -522,7 +522,7 @@ class LiteRecorderApp:
 
         self._stopping = True
         self._pending_mini = False
-        self.status_badge.config(text="正在儲存", fg=UI["warn"])
+        self.status_badge.config(text="●  正在儲存", fg=UI["warn"])
         self.record_btn.config(state=tk.DISABLED)
         self.root.update_idletasks()
 
@@ -558,7 +558,7 @@ class LiteRecorderApp:
 
     def _update_ui_state(self, recording=False):
         if recording:
-            self.status_badge.config(text="錄製中", fg=UI["red"])
+            self.status_badge.config(text="●  錄製中", fg=UI["red"])
             self.record_btn.config(text="停止錄影", style="Stop.TButton")
             self.timer_display.config(fg=UI["red"])
             self.timer_hint.config(text=f"錄製中。{self.shortcut_hint} 可以停止")
@@ -567,7 +567,7 @@ class LiteRecorderApp:
             self.res_combo.config(state=tk.DISABLED)
             self.fps_combo.config(state=tk.DISABLED)
         else:
-            self.status_badge.config(text="就緒", fg=UI["ok"])
+            self.status_badge.config(text="●  就緒", fg=UI["ok"])
             self.record_btn.config(text="開始錄影", style="Primary.TButton")
             self.timer_display.config(text="00:00:00", fg=UI["white"])
             self.timer_hint.config(text=self._idle_hint())
