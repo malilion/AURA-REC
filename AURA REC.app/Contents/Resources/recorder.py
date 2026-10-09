@@ -45,6 +45,9 @@ class ScreenRecorder:
 
         self.process = None
         self.is_recording = False
+        self.paused = False
+        self.pause_started = None
+        self.paused_total = 0.0
         self.start_time = None
         self.current_output_file = None
         self.last_recorded_file = None
@@ -138,6 +141,7 @@ class ScreenRecorder:
         fps=30,
         resolution="native",
         use_hardware_accel=True,
+        capture_cursor=True,
         output_file=None,
         profile=None,
     ):
@@ -159,7 +163,7 @@ class ScreenRecorder:
             input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
             cmd.extend([
                 "-f", "avfoundation",
-                "-capture_cursor", "1",
+                "-capture_cursor", "1" if capture_cursor else "0",
                 "-framerate", str(fps),
                 "-i", input_spec,
             ])
@@ -168,7 +172,7 @@ class ScreenRecorder:
                 cmd.extend([
                     "-f", "gdigrab",
                     "-framerate", str(fps),
-                    "-draw_mouse", "1",
+                    "-draw_mouse", "1" if capture_cursor else "0",
                     "-i", "desktop",
                 ])
             else:
@@ -183,7 +187,7 @@ class ScreenRecorder:
             cmd.extend([
                 "-f", "x11grab",
                 "-framerate", str(fps),
-                "-draw_mouse", "1",
+                "-draw_mouse", "1" if capture_cursor else "0",
                 "-i", ":0.0",
             ])
             if has_audio:
@@ -200,7 +204,15 @@ class ScreenRecorder:
         cmd.append(str(output_file))
         return cmd
 
-    def start_recording(self, video_idx=None, audio_idx=None, fps=30, resolution="native", use_hardware_accel=True):
+    def start_recording(
+        self,
+        video_idx=None,
+        audio_idx=None,
+        fps=30,
+        resolution="native",
+        use_hardware_accel=True,
+        capture_cursor=True,
+    ):
         """
         跨平台啟動錄影程序
         """
@@ -208,6 +220,9 @@ class ScreenRecorder:
             return False, "錄影已在進行中"
         if not self.ffmpeg_ok():
             return False, explain_ffmpeg_failure("", code="missing")
+        self.paused = False
+        self.pause_started = None
+        self.paused_total = 0.0
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}.mp4"
@@ -217,6 +232,7 @@ class ScreenRecorder:
             fps=fps,
             resolution=resolution,
             use_hardware_accel=use_hardware_accel,
+            capture_cursor=capture_cursor,
             output_file=self.current_output_file,
         )
 
@@ -272,6 +288,8 @@ class ScreenRecorder:
             return None
         tail = self.stderr_tail()
         self.is_recording = False
+        self.paused = False
+        self.pause_started = None
         self.last_recorded_file = self.current_output_file
         self.process = None
         usable = False
@@ -289,6 +307,8 @@ class ScreenRecorder:
         """
         if not self.is_recording or self.process is None:
             return False, "目前未在錄影"
+
+        self._resume_process_if_paused()
 
         try:
             # 發送 'q' 進行優雅關閉
@@ -320,15 +340,72 @@ class ScreenRecorder:
                         self.process.kill()
 
             self.is_recording = False
+            self.paused = False
+            self.pause_started = None
             self.last_recorded_file = self.current_output_file
             self.process = None
             return True, str(self.last_recorded_file)
         except Exception as e:
             self.is_recording = False
+            self.paused = False
             self.process = None
             return False, f"停止錄影時出錯: {str(e)}"
+
+    def pause_recording(self):
+        """暫停擷取。同一支檔案之後可以繼續，暫停的時間不計入長度。"""
+        if not self.is_recording or self.process is None:
+            return False, "目前未在錄影"
+        if self.paused:
+            return True, ""
+        if not self._set_process_suspended(True):
+            return False, "這個系統沒辦法暫停錄影"
+        self.paused = True
+        self.pause_started = time.time()
+        return True, ""
+
+    def resume_recording(self):
+        if not self.is_recording or not self.paused:
+            return False, "目前沒有暫停"
+        if not self._set_process_suspended(False):
+            return False, "沒辦法繼續錄影"
+        if self.pause_started is not None:
+            self.paused_total += time.time() - self.pause_started
+        self.pause_started = None
+        self.paused = False
+        return True, ""
+
+    def _resume_process_if_paused(self):
+        if not self.paused:
+            return
+        self._set_process_suspended(False)
+        self.paused = False
+        self.pause_started = None
+
+    def _set_process_suspended(self, suspended):
+        proc = self.process
+        if proc is None or proc.poll() is not None:
+            return False
+        try:
+            if IS_WINDOWS:
+                import ctypes
+                access = 0x0800  # PROCESS_SUSPEND_RESUME
+                kernel32 = ctypes.windll.kernel32
+                ntdll = ctypes.windll.ntdll
+                handle = kernel32.OpenProcess(access, False, proc.pid)
+                if not handle:
+                    return False
+                try:
+                    fn = ntdll.NtSuspendProcess if suspended else ntdll.NtResumeProcess
+                    return int(fn(handle)) == 0
+                finally:
+                    kernel32.CloseHandle(handle)
+            proc.send_signal(signal.SIGSTOP if suspended else signal.SIGCONT)
+            return True
+        except Exception:
+            return False
 
     def get_duration(self):
         if not self.is_recording or self.start_time is None:
             return 0
-        return int(time.time() - self.start_time)
+        now = self.pause_started if self.paused and self.pause_started is not None else time.time()
+        return int(max(0, now - self.start_time - self.paused_total))
