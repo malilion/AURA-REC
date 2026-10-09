@@ -8,7 +8,7 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 - 支援自訂解析度 (原生 / 2K / 1080p / 720p) 與 FPS (15 / 30 / 60)
 - 支援懸浮膠囊迷你模式 (Mini Floating Pill)，不遮擋畫面
 - 支援暫停與繼續、錄製游標開關，並記住上次的裝置與畫質
-- 支援自訂錄影範圍、畫質、MP4 / MOV，以及到時自動停止
+- 支援自訂錄影範圍、選擇視窗、畫質、MP4 / MOV，以及到時自動停止
 - 支援截圖、錄影中顯示檔案大小，空間不足時會先詢問
 - 支援錄影中展開小條、預估每分鐘大小、分段存檔，以及替最近的檔案改名
 - 倒數可以取消。錄影時不讓電腦睡著，並記住視窗位置
@@ -28,7 +28,7 @@ from pathlib import Path
 from recorder import LOW_DISK_BYTES, ScreenRecorder, format_bytes, free_disk_bytes, save_still
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
-from region_picker import pick_screen_region
+from region_picker import capture_screen_index, pick_capture_window, pick_screen_region, resolve_window_box
 from platform_utils import (
     IS_MAC,
     IS_WINDOWS,
@@ -105,6 +105,7 @@ class LiteRecorderApp:
         self._normal_size = (560, 800)
         self._saved = load_settings()
         self.region = self._saved_region()
+        self.capture_window = self._saved_window()
         self._auto_stop_sec = None
         self._segment_sec = None
         self.auto_mini_var = tk.BooleanVar(value=self._flag("auto_mini", True))
@@ -175,7 +176,8 @@ class LiteRecorderApp:
             "開始或停止錄影：\n"
             f"{self.shortcut_hint}\n\n"
             "暫停或繼續：F8\n\n"
-            "截圖：F7。有自訂範圍時只截那一塊。\n\n"
+            "截圖：F7。有自訂範圍或視窗時只截那一塊。\n\n"
+            "選單裡的「選擇視窗」會錄下那個視窗開始時的位置，檔名也會帶上程式名稱。\n\n"
             "倒數時再按一次，或按 Esc，就會取消。\n\n"
             "錄影中的小條可以拖曳挪開。按「展開」或 Esc 回到完整視窗，選單裡的「收成小條」可以再縮回去。",
         )
@@ -190,6 +192,7 @@ class LiteRecorderApp:
         file_menu.add_command(label="展開錄影畫面", command=self._expand_from_mini, accelerator="Esc")
         file_menu.add_command(label="收成小條", command=self._collapse_to_mini)
         file_menu.add_command(label="截圖", command=self.take_screenshot, accelerator="F7")
+        file_menu.add_command(label="選擇視窗…", command=self._pick_window)
         file_menu.add_command(label="剪輯影片…", command=self.open_editor)
         file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
         file_menu.add_separator()
@@ -344,6 +347,8 @@ class LiteRecorderApp:
             area_row, text="", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], anchor="w"
         )
         self.area_label.pack(side=tk.LEFT)
+        self.window_btn = self._quiet_button(area_row, "選視窗", self._pick_window)
+        self.window_btn.pack(side=tk.RIGHT, padx=(4, 0))
         self.reselect_btn = self._quiet_button(area_row, "重選範圍", self._pick_region)
         self.reselect_btn.pack(side=tk.RIGHT)
         self._update_area_label()
@@ -543,6 +548,8 @@ class LiteRecorderApp:
             self.timer_hint.config(text=self._idle_hint())
         if not self.recorder.is_recording and not self.countdown_active:
             self.record_btn.config(state=tk.NORMAL)
+        if not busy:
+            self._refresh_window_target()
 
     def _switch_to_mini_mode(self):
         """收合為置頂懸浮膠囊"""
@@ -610,7 +617,7 @@ class LiteRecorderApp:
         return default
 
     def _saved_region(self):
-        if self._saved.get("area_mode") != 1:
+        if self._saved.get("area_mode") not in (1, 2):
             return None
         raw = self._saved.get("region")
         if not isinstance(raw, (list, tuple)) or len(raw) != 4:
@@ -623,22 +630,70 @@ class LiteRecorderApp:
             return None
         return box
 
+    def _saved_window(self):
+        if self._saved.get("area_mode") != 2:
+            return None
+        try:
+            window_id = int(self._saved.get("window_id"))
+        except (TypeError, ValueError):
+            return None
+        owner = self._saved.get("window_owner")
+        title = self._saved.get("window_title")
+        return {
+            "id": window_id,
+            "owner": owner if isinstance(owner, str) else "",
+            "title": title if isinstance(title, str) else "",
+        }
+
+    def _area_mode(self):
+        if self.capture_window and self.region:
+            return 2
+        if self.region:
+            return 1
+        return 0
+
+    def _capture_screen_index(self):
+        if not hasattr(self, "video_combo"):
+            return 0
+        return capture_screen_index(self.video_combo.get())
+
     def _update_area_label(self):
-        if not self.region:
-            self.area_combo["values"] = ["整個螢幕", "自訂範圍"]
-            self.area_combo.current(0)
-            self.area_label.config(text="自訂範圍只錄這個螢幕")
+        mode = self._area_mode()
+        if self.region and mode == 1:
+            custom = f"自訂 {self.region[2]}×{self.region[3]}"
+        else:
+            custom = "自訂範圍"
+        if mode == 2:
+            owner = self.capture_window.get("owner") or "視窗"
+            window = f"視窗 {owner}"
+        else:
+            window = "某個視窗"
+        self.area_combo["values"] = ["整個螢幕", custom, window]
+        self.area_combo.current(mode)
+        if mode == 0:
+            self.area_label.config(text="拖曳範圍，或選一個視窗")
             return
         _x, _y, w, h = self.region
-        self.area_combo["values"] = ["整個螢幕", f"自訂 {w}×{h}"]
-        self.area_combo.current(1)
-        self.area_label.config(text=f"{w}×{h} 像素，這個螢幕")
+        if mode == 1:
+            self.area_label.config(text=f"{w}×{h} 像素，這個螢幕")
+            return
+        title = self.capture_window.get("title") or ""
+        owner = self.capture_window.get("owner") or "視窗"
+        name = owner if not title else f"{owner} — {title}"
+        if len(name) > 28:
+            name = name[:27] + "…"
+        self.area_label.config(text=f"{name}　{w}×{h}，開始時的位置")
 
     def _on_area_choice(self):
-        if self.area_combo.current() == 1:
+        choice = self.area_combo.current()
+        if choice == 1:
             self._pick_region()
             return
+        if choice == 2:
+            self._pick_window()
+            return
         self.region = None
+        self.capture_window = None
         self._update_area_label()
         self._save_capture_settings()
 
@@ -646,13 +701,60 @@ class LiteRecorderApp:
         if self.recorder.is_recording or self.countdown_active:
             return
         rect = pick_screen_region(self.root)
-        if rect is None and not self.region:
-            self.area_combo.current(0)
-        elif rect is not None:
+        if rect is not None:
+            self.capture_window = None
             self.region = rect
-            self.area_combo.current(1)
         self._update_area_label()
         self._save_capture_settings()
+
+    def _source_is_screen(self):
+        name = self.video_combo.get().lower() if hasattr(self, "video_combo") else ""
+        return "screen" in name or "desktop" in name or "螢幕" in self.video_combo.get()
+
+    def _pick_window(self):
+        if self.recorder.is_recording or self.countdown_active:
+            return
+        if hasattr(self, "video_combo") and self.video_combo.get() and not self._source_is_screen():
+            messagebox.showinfo("選視窗", "請先把來源改成螢幕，再選視窗。")
+            self._update_area_label()
+            return
+        picked = pick_capture_window(self.root, self._capture_screen_index())
+        if picked is not None:
+            self.capture_window = {
+                "id": picked["id"],
+                "owner": picked["owner"],
+                "title": picked["title"],
+            }
+            self.region = tuple(picked["box"])
+        self._update_area_label()
+        self._save_capture_settings()
+
+    def _refresh_window_target(self):
+        if not self.capture_window:
+            return
+        box, _error = resolve_window_box(self.capture_window["id"], self._capture_screen_index())
+        if box:
+            self.region = box
+            self._update_area_label()
+            return
+        self.capture_window = None
+        self._update_area_label()
+        self._save_capture_settings()
+
+    def _prepare_region(self):
+        """開始錄或截圖前決定範圍。視窗會先重量位置。回傳 (可以繼續, 範圍或 None)。"""
+        mode = self.area_combo.current() if hasattr(self, "area_combo") else 0
+        if mode <= 0:
+            return True, None
+        if mode == 2 and self.capture_window:
+            box, error = resolve_window_box(self.capture_window["id"], self._capture_screen_index())
+            if error:
+                messagebox.showwarning("選視窗", error)
+                return False, None
+            self.region = box
+            self._update_area_label()
+            return True, box
+        return True, self.region
 
     def _save_capture_settings(self):
         video = self.video_combo.get()
@@ -670,6 +772,9 @@ class LiteRecorderApp:
             "segment_index": self.segment_combo.current(),
             "area_mode": self.area_combo.current(),
             "region": list(self.region) if self.region else None,
+            "window_id": self.capture_window["id"] if self.capture_window else None,
+            "window_owner": self.capture_window.get("owner", "") if self.capture_window else "",
+            "window_title": self.capture_window.get("title", "") if self.capture_window else "",
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -810,8 +915,15 @@ class LiteRecorderApp:
         limit_map = {1: 60, 2: 300, 3: 600, 4: 1800, 5: 3600}
         self._auto_stop_sec = limit_map.get(self.limit_combo.current())
         self._segment_sec = self._segment_seconds()
-        region = self.region if self.area_combo.current() == 1 else None
+        ready, region = self._prepare_region()
+        if not ready:
+            self._set_capture_locked(False)
+            self.record_btn.config(text="開始錄影", style="Primary.TButton", state=tk.NORMAL)
+            return
 
+        label = None
+        if self.area_combo.current() == 2 and self.capture_window:
+            label = self.capture_window.get("owner") or ""
         play_system_alert("start")
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
@@ -824,6 +936,7 @@ class LiteRecorderApp:
             quality=quality,
             container=container,
             segment_sec=self._segment_sec,
+            label=label,
         )
 
         if not ok:
@@ -931,8 +1044,10 @@ class LiteRecorderApp:
             self.segment_combo,
         ):
             combo.config(state=state)
-        if hasattr(self, "reselect_btn"):
-            self.reselect_btn.config(state=tk.DISABLED if locked else tk.NORMAL)
+        for button_name in ("reselect_btn", "window_btn"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.config(state=tk.DISABLED if locked else tk.NORMAL)
 
     def _update_ui_state(self, recording=False):
         if recording:
@@ -1263,7 +1378,11 @@ class LiteRecorderApp:
             return
         self._shooting = True
         self.shot_btn.config(state=tk.DISABLED)
-        region = self.region if self.area_combo.current() == 1 else None
+        ready, region = self._prepare_region()
+        if not ready:
+            self._shooting = False
+            self.shot_btn.config(state=tk.NORMAL)
+            return
         output_dir = self.recorder.output_dir
         ffmpeg_bin = self.recorder.ffmpeg_bin
         geometry = self.root.geometry()
