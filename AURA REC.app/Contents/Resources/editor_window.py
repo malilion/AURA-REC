@@ -14,7 +14,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
-from video_editor import VideoEditor, aspect_crop_filter, parse_aspect_choice
+from video_editor import VideoEditor, parse_aspect_choice, preview_video_filter
 from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from platform_utils import (
     get_ui_fonts,
@@ -225,8 +225,8 @@ class VideoEditorWindow:
         self.speed_combo = labeled_combo(0, 0, "速度", ["1.0x", "0.5x", "1.5x", "2.0x"], 6)
         self.ratio_combo = labeled_combo(
             0, 1, "比例",
-            ["原始比例", "直式 9:16 左", "直式 9:16 中", "直式 9:16 右", "16:9 橫式", "1:1 方形"],
-            12,
+            ["原始比例", "直式 9:16 完整", "直式裁切 左", "直式裁切 中", "直式裁切 右", "16:9 橫式", "1:1 方形"],
+            14,
         )
         self.ratio_combo.bind("<<ComboboxSelected>>", lambda _event: self._request_preview(self.current_time))
         self.color_combo = labeled_combo(1, 0, "色彩", ["原色", "鮮豔", "高對比"], 8)
@@ -298,16 +298,16 @@ class VideoEditorWindow:
         )
         self._request_preview(new_time)
 
-    def _preview_crop(self):
+    def _preview_filter(self):
         if not hasattr(self, "ratio_combo"):
             return None
         ratio, anchor = parse_aspect_choice(self.ratio_combo.get())
-        return aspect_crop_filter(ratio, anchor)
+        return preview_video_filter(ratio, anchor)
 
     def _request_preview(self, sec):
         if not self.current_file:
             return
-        self._preview_pending = (sec, self._preview_crop())
+        self._preview_pending = (sec, self._preview_filter())
         if self._preview_thread is None or not self._preview_thread.is_alive():
             self._preview_thread = threading.Thread(target=self._worker_fetch_preview, daemon=True)
             self._preview_thread.start()
@@ -323,7 +323,7 @@ class VideoEditorWindow:
             target_sec, crop = pending
 
             ppm_data = self.editor.get_frame_ppm(
-                self.current_file, target_sec, width=320, height=180, crop_filter=crop,
+                self.current_file, target_sec, width=320, height=180, video_filter=crop,
             )
             if ppm_data:
                 self.window.after(0, lambda data=ppm_data: self._update_preview_image(data))
