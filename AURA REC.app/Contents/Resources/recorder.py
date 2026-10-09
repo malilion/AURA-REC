@@ -36,6 +36,17 @@ from platform_utils import (
 )
 
 
+def recording_label(text):
+    """檔名用的程式名稱。拿掉路徑和不能用的符號。"""
+    cleaned = []
+    for ch in str(text or ""):
+        if ch in '\\/:*?"<>|' or ord(ch) < 32:
+            cleaned.append(" ")
+        else:
+            cleaned.append(ch)
+    return " ".join("".join(cleaned).split()).strip(" .")[:24]
+
+
 class ScreenRecorder:
     def __init__(self, output_dir=None):
         if output_dir:
@@ -245,6 +256,7 @@ class ScreenRecorder:
         quality="standard",
         container="mp4",
         segment_sec=None,
+        label=None,
     ):
         """
         跨平台啟動錄影程序
@@ -273,7 +285,9 @@ class ScreenRecorder:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
         piece = "_%03d" if self._segment_seconds else ""
-        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}{piece}{suffix}"
+        stamp = recording_label(label)
+        prefix = f"螢幕錄影_{stamp}_" if stamp else "螢幕錄影_"
+        self.current_output_file = self.output_dir / f"{prefix}{timestamp}{piece}{suffix}"
         self._capture_kwargs = {
             "video_idx": video_idx,
             "audio_idx": audio_idx,
