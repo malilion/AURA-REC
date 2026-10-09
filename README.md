@@ -51,7 +51,7 @@
 - 最近錄影列表：播放、剪輯、在資料夾中顯示、刪除。
 - 懸浮膠囊。開始錄影後收成小條，停止後回到主面板。
 - 3 秒倒數。空白鍵、`F9`、`Cmd + R`（macOS）或 `Ctrl + R`（Windows）開始或停止。
-- 解析度：原生、2K、1080p、720p。幀率：15、30、60。
+- 解析度：原生、2K、1080p、720p。幀率：15、30、60。一般文書電腦會自動用較輕的畫質：8GB 或 4 核心以下是 720p / 15 FPS，編碼也限制只用一部分 CPU，避免拖慢 Word 這類程式。原生解析度和 60 FPS 仍可手動選。
 - 剪輯：時間軸預覽、起點與終點、無損裁切、靜音、GIF、抽出音訊。比例含 16:9、9:16、1:1。
 - macOS 用 AVFoundation 與 VideoToolbox。Windows 用 GDI，並可走 NVENC、QSV 或 AMF。
 
@@ -105,4 +105,4 @@ macOS：
 - `editor_window.py` — 桌面剪輯視窗。
 - `video_editor.py` — 裁切、GIF、音訊分離。
 - `ScreenRecorder.command` / `ScreenRecorder.bat` / `run.sh` — 啟動桌面程式。
-- `recordings/` — 桌面程式的預設儲存目錄。
+- `recordings/` — 從專案直接執行時的預設儲存目錄。用 `AURA REC.app` 開啟時改存到「影片 / AURA REC」，避免寫進應用程式裡面。改過的路徑會記住。

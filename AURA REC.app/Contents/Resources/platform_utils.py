@@ -6,6 +6,7 @@ platform_utils.py - 跨平台輔助模組 (macOS & Windows & Linux)
 處理系統相依的二進制檔案路徑、字型、系統提示音、檔案開啟/資料夾定位與 DPI 縮放設定
 """
 
+import json
 import os
 import platform
 import shutil
@@ -162,26 +163,306 @@ def open_file_or_dir(path, reveal=False):
         print(f"[open_file_or_dir] Error: {e}")
 
 
+_ENCODER_CACHE = {}
+
+
 def detect_best_video_encoder(ffmpeg_bin):
     """
-    偵測系統最佳硬體加速影像編碼器
+    偵測系統最佳硬體加速影像編碼器。結果會記住，避免每次開錄都再掃一次。
     - macOS: h264_videotoolbox
     - Windows: h264_nvenc (NVIDIA) > h264_qsv (Intel) > h264_amf (AMD) > libx264
     """
     if IS_MAC:
         return "h264_videotoolbox"
 
-    # Windows / Linux 檢查支援的硬體編碼器
+    cached = _ENCODER_CACHE.get(ffmpeg_bin)
+    if cached:
+        return cached
+
+    enc = "libx264"
     try:
-        res = subprocess.run([ffmpeg_bin, "-encoders"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, errors="ignore")
+        res = subprocess.run(
+            [ffmpeg_bin, "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            errors="ignore",
+            timeout=8,
+        )
         out = res.stdout
         if "h264_nvenc" in out:
-            return "h264_nvenc"
+            enc = "h264_nvenc"
         elif "h264_qsv" in out:
-            return "h264_qsv"
+            enc = "h264_qsv"
         elif "h264_amf" in out:
-            return "h264_amf"
+            enc = "h264_amf"
     except Exception:
         pass
 
-    return "libx264"
+    _ENCODER_CACHE[ffmpeg_bin] = enc
+    return enc
+
+
+def running_inside_bundle(script_file=None):
+    """從 .app 或 PyInstaller 單檔執行時，不該把錄影寫進套件裡面。"""
+    if getattr(sys, "frozen", False):
+        return True
+    path = str(script_file or Path(__file__).resolve())
+    return ".app/Contents/" in path or ".app\\Contents\\" in path
+
+
+def app_support_dir():
+    """使用者設定放在家目錄，不放進專案或 .app。"""
+    if IS_MAC:
+        base = Path.home() / "Library" / "Application Support" / "AURA REC"
+    elif IS_WINDOWS:
+        base = Path(os.environ.get("APPDATA", str(Path.home()))) / "AURA REC"
+    else:
+        base = Path.home() / ".config" / "aura-rec"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def load_settings():
+    path = app_support_dir() / "settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_settings(updates):
+    path = app_support_dir() / "settings.json"
+    data = load_settings()
+    data.update(updates)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def default_recordings_dir():
+    """系統影片資料夾。macOS 用「影片」，Windows 用 Videos。"""
+    if IS_WINDOWS:
+        base = Path.home() / "Videos"
+    elif IS_MAC:
+        base = Path.home() / "Movies"
+    else:
+        base = Path.home() / "Videos"
+    return base / "AURA REC"
+
+
+def resolve_recordings_dir(script_file):
+    """
+    已記住的資料夾優先。
+    從 .app 啟動時改存到「影片 / AURA REC」，避免寫進應用程式套件。
+    從專案目錄直接執行時，仍用專案裡的 recordings/。
+    """
+    saved = load_settings().get("output_dir")
+    if saved:
+        chosen = Path(saved).expanduser()
+        try:
+            chosen.mkdir(parents=True, exist_ok=True)
+            return chosen
+        except Exception:
+            pass
+
+    if running_inside_bundle(script_file):
+        dest = default_recordings_dir()
+    else:
+        dest = Path(script_file).resolve().parent / "recordings"
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+def ffmpeg_is_available(ffmpeg_bin):
+    if not ffmpeg_bin:
+        return False
+    if os.path.isfile(ffmpeg_bin):
+        return True
+    return shutil.which(ffmpeg_bin) is not None
+
+
+def system_memory_gb():
+    """讀不到記憶體時當成 8GB 文書電腦，寧可預設輕一點。"""
+    try:
+        if IS_WINDOWS:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return stat.ullTotalPhys / (1024 ** 3)
+        else:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page = os.sysconf("SC_PAGE_SIZE")
+            return (pages * page) / (1024 ** 3)
+    except Exception:
+        return 8.0
+    return 8.0
+
+
+def machine_profile():
+    """
+    light：一般文書電腦（約 4 核心或 8GB）。
+    balanced：日常筆電。
+    high：核心和記憶體都比較夠。
+    """
+    cores = os.cpu_count() or 2
+    ram = system_memory_gb()
+    if cores <= 4 or ram <= 8.5:
+        return "light"
+    if cores <= 8 or ram <= 16.5:
+        return "balanced"
+    return "high"
+
+
+def encode_threads(profile):
+    cores = os.cpu_count() or 2
+    if profile == "light":
+        return max(1, min(2, cores))
+    if profile == "balanced":
+        return max(1, min(3, max(1, cores // 2)))
+    return max(1, min(4, max(1, cores - 2)))
+
+
+def scale_filter(resolution):
+    sizes = {"720p": "1280:-2", "1080p": "1920:-2", "2K": "2560:-2"}
+    spec = sizes.get(resolution)
+    if not spec:
+        return None
+    return f"scale={spec}:flags=fast_bilinear"
+
+
+def capture_bitrate_k(resolution, profile):
+    table = {"720p": 1400, "1080p": 2200, "2K": 3600, "native": 2800}
+    rate = table.get(resolution, 2200)
+    if profile == "light":
+        rate = int(rate * 0.8)
+    elif profile == "high":
+        rate = int(rate * 1.2)
+    return max(800, rate)
+
+
+def audio_bitrate(profile):
+    return "96k" if profile == "light" else "128k"
+
+
+def recommended_capture(profile=None):
+    """文書電腦預設 720p/15，不要一開就抓全螢幕原生。"""
+    profile = profile or machine_profile()
+    if profile == "light":
+        return {"resolution": "720p", "fps": 15, "res_index": 3, "fps_index": 2, "label": "順暢 720p / 15 FPS"}
+    if profile == "balanced":
+        return {"resolution": "1080p", "fps": 30, "res_index": 2, "fps_index": 0, "label": "平衡 1080p / 30 FPS"}
+    return {"resolution": "1080p", "fps": 30, "res_index": 2, "fps_index": 0, "label": "1080p / 30 FPS"}
+
+
+_VT_FLAGS = {}
+
+
+def _videotoolbox_speed_flags(ffmpeg_bin):
+    cached = _VT_FLAGS.get(ffmpeg_bin)
+    if cached is not None:
+        return cached
+    flags = []
+    try:
+        res = subprocess.run(
+            [ffmpeg_bin, "-h", "encoder=h264_videotoolbox"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="ignore",
+            timeout=5,
+        )
+        text = res.stdout or ""
+        if "-realtime" in text:
+            flags += ["-realtime", "1"]
+        if "prio_speed" in text:
+            flags += ["-prio_speed", "1"]
+    except Exception:
+        pass
+    _VT_FLAGS[ffmpeg_bin] = flags
+    return flags
+
+
+def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced"):
+    """即時錄影用的編碼參數。文書電腦留一半 CPU 給別的程式。"""
+    threads = encode_threads(profile)
+    enc = detect_best_video_encoder(ffmpeg_bin) if use_hardware else "libx264"
+    rate = f"{int(bitrate_k)}k"
+    if enc == "h264_videotoolbox":
+        return ["-c:v", "h264_videotoolbox", "-b:v", rate, "-pix_fmt", "yuv420p", *_videotoolbox_speed_flags(ffmpeg_bin)]
+    if enc == "h264_nvenc":
+        preset = "p1" if profile != "high" else "p4"
+        cq = "30" if profile == "light" else "26"
+        return ["-c:v", "h264_nvenc", "-preset", preset, "-cq", cq, "-b:v", rate, "-pix_fmt", "yuv420p"]
+    if enc == "h264_qsv":
+        quality = "32" if profile == "light" else "26"
+        return ["-c:v", "h264_qsv", "-global_quality", quality, "-pix_fmt", "nv12"]
+    if enc == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "speed", "-b:v", rate, "-pix_fmt", "yuv420p"]
+    preset = "ultrafast" if profile != "high" else "veryfast"
+    crf = "32" if profile == "light" else ("28" if profile == "balanced" else "24")
+    return [
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-tune", "zerolatency",
+        "-crf", crf,
+        "-threads", str(threads),
+        "-pix_fmt", "yuv420p",
+    ]
+
+
+def lower_process_priority(pid):
+    """錄影行程讓路，文書軟體才不會被拖卡。"""
+    try:
+        if IS_WINDOWS:
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x0200, False, int(pid))
+            if handle:
+                ctypes.windll.kernel32.SetPriorityClass(handle, 0x00004000)
+                ctypes.windll.kernel32.CloseHandle(handle)
+        else:
+            subprocess.run(
+                ["renice", "-n", "10", "-p", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        pass
+
+
+def explain_ffmpeg_failure(tail, code=None):
+    """把 FFmpeg 最後幾行錯誤翻成使用者看得懂的話。"""
+    text = (tail or "").strip()
+    lower = text.lower()
+    extra = ""
+    if code == "missing" and not text:
+        text = "找不到 FFmpeg。"
+        lower = text.lower()
+    if any(token in lower for token in ("not authorized", "operation not permitted", "permission denied")):
+        if IS_MAC:
+            extra = "\n\n請打開「系統設定 → 隱私權與安全性 → 螢幕錄製」，允許「終端機」或「AURA REC」，然後重新開啟程式。"
+        else:
+            extra = "\n\n系統拒絕了螢幕或音訊的存取，請在隱私設定裡允許這個程式。"
+    elif "no such file" in lower or code == "missing":
+        if IS_MAC:
+            extra = "\n\n請先安裝 FFmpeg：brew install ffmpeg"
+        elif IS_WINDOWS:
+            extra = "\n\n請先安裝 FFmpeg：winget install Gyan.FFmpeg"
+        else:
+            extra = "\n\n請先安裝 FFmpeg，並確認終端機打得出 ffmpeg。"
+    body = text or (f"FFmpeg 已結束（代碼 {code}）。" if code is not None else "FFmpeg 已結束。")
+    return body + extra
