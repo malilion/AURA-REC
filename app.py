@@ -11,6 +11,7 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 - 支援自訂錄影範圍、畫質、MP4 / MOV，以及到時自動停止
 - 支援截圖、錄影中顯示檔案大小，空間不足時會先詢問
 - 支援錄影中展開小條、預估每分鐘大小、分段存檔，以及替最近的檔案改名
+- 倒數可以取消。錄影時不讓電腦睡著，並記住視窗位置
 - 支援 3 秒倒數準備、快速鍵 (Space / F7 / F8 / F9 / Ctrl+R / Cmd+R / Esc)
 - 支援即時影片剪輯與匯出 GIF / 提取音訊
 """
@@ -40,6 +41,9 @@ from platform_utils import (
     recommended_capture,
     capture_bitrate_k,
     machine_profile,
+    fit_window_geometry,
+    hold_awake,
+    release_awake,
     UI,
     apply_widget_style,
     use_dark_appearance,
@@ -58,6 +62,23 @@ def renamed_path(path, typed):
     if any(ch in name for ch in '/\\:\0<>"|?*'):
         return None
     return path.with_name(name + suffix)
+
+
+def disk_time_text(free_bytes, bits_per_second):
+    """以目前的碼率估計這個磁碟還能錄多久。"""
+    try:
+        free_bytes = int(free_bytes)
+        bits_per_second = int(bits_per_second)
+    except (TypeError, ValueError):
+        return ""
+    if free_bytes <= 0 or bits_per_second <= 0:
+        return ""
+    seconds = free_bytes / (bits_per_second / 8)
+    if seconds >= 48 * 3600:
+        return "還可錄 48 小時以上"
+    if seconds >= 3600:
+        return f"還可錄約 {max(1, round(seconds / 3600))} 小時"
+    return f"還可錄約 {max(1, round(seconds / 60))} 分鐘"
 
 
 class LiteRecorderApp:
@@ -110,6 +131,7 @@ class LiteRecorderApp:
 
         # 註冊關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._apply_saved_window()
 
         # 啟動計時更新迴圈
         self._timer_tick()
@@ -154,6 +176,7 @@ class LiteRecorderApp:
             f"{self.shortcut_hint}\n\n"
             "暫停或繼續：F8\n\n"
             "截圖：F7。有自訂範圍時只截那一塊。\n\n"
+            "倒數時再按一次，或按 Esc，就會取消。\n\n"
             "錄影中的小條可以拖曳挪開。按「展開」或 Esc 回到完整視窗，選單裡的「收成小條」可以再縮回去。",
         )
 
@@ -554,6 +577,9 @@ class LiteRecorderApp:
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
 
     def _on_escape(self, _event=None):
+        if self.countdown_active:
+            self._cancel_countdown()
+            return "break"
         if self.is_mini_mode and not self._stopping:
             self._switch_to_normal_mode()
             return "break"
@@ -700,6 +726,7 @@ class LiteRecorderApp:
 
     def toggle_recording(self):
         if self.countdown_active:
+            self._cancel_countdown()
             return
 
         if self.recorder.is_recording:
@@ -711,14 +738,18 @@ class LiteRecorderApp:
                 self.start_recording()
 
     def _start_countdown_and_record(self):
-        """執行 3 秒倒數準備動畫"""
+        """執行 3 秒倒數準備動畫。再按一次或按 Esc 可以取消。"""
+        self._countdown_token = getattr(self, "_countdown_token", 0) + 1
+        token = self._countdown_token
         self.countdown_active = True
-        self.record_btn.config(state=tk.DISABLED)
+        self.record_btn.config(text="取消", state=tk.NORMAL)
         self.shot_btn.config(state=tk.DISABLED)
         self._set_capture_locked(True)
-        count = 3
+        self.timer_hint.config(text="再按一次或按 Esc 取消")
 
         def count_step(val):
+            if token != self._countdown_token or not self.countdown_active:
+                return
             if val > 0:
                 self.timer_display.config(text=str(val), fg=UI["warn"])
                 self.status_badge.config(text=f"●  倒數 {val}", fg=UI["warn"])
@@ -726,10 +757,19 @@ class LiteRecorderApp:
                 self.root.after(1000, lambda: count_step(val - 1))
             else:
                 self.countdown_active = False
-                self.record_btn.config(state=tk.NORMAL)
+                self.record_btn.config(text="開始錄影", style="Primary.TButton", state=tk.NORMAL)
                 self.start_recording()
 
-        count_step(count)
+        count_step(3)
+
+    def _cancel_countdown(self):
+        if not self.countdown_active:
+            return
+        self.countdown_active = False
+        self._countdown_token = getattr(self, "_countdown_token", 0) + 1
+        self._update_ui_state(recording=False)
+        self.record_btn.config(state=tk.NORMAL)
+        self.timer_hint.config(text="已取消倒數")
 
     def _confirm_disk_space(self):
         free = free_disk_bytes(self.recorder.output_dir)
@@ -742,8 +782,11 @@ class LiteRecorderApp:
         if not self._confirm_disk_space():
             self._set_capture_locked(False)
             if not self.recorder.is_recording:
-                self.record_btn.config(state=tk.NORMAL)
+                self.record_btn.config(text="開始錄影", style="Primary.TButton", state=tk.NORMAL)
                 self.shot_btn.config(state=tk.NORMAL)
+                self.timer_display.config(text="00:00:00", fg=UI["white"])
+                self.status_badge.config(text="●  就緒", fg=UI["ok"])
+                self.timer_hint.config(text=self._idle_hint())
             return
         v_idx = None
         if self.video_combo.current() >= 0 and self.video_devices:
@@ -785,10 +828,13 @@ class LiteRecorderApp:
 
         if not ok:
             self._segment_sec = None
+            release_awake()
             messagebox.showerror("錄影啟動失敗", msg)
             self._update_ui_state(recording=False)
             return
 
+        if self.recorder.process is not None:
+            hold_awake(self.recorder.process.pid)
         self._pending_mini = self.auto_mini_var.get()
         self._update_ui_state(recording=True)
         self.timer_hint.config(text="正在確認錄影有順利開始…")
@@ -833,6 +879,7 @@ class LiteRecorderApp:
 
     def _finish_stop(self, ok, msg, offer_editor):
         self._stopping = False
+        release_awake()
         play_system_alert("stop")
 
         if self.is_mini_mode:
@@ -934,19 +981,24 @@ class LiteRecorderApp:
             x = 2 + i * (bar_w + gap)
             self.mini_vu_canvas.create_rectangle(x, 4, x + bar_w, 10, fill=UI["meter_idle"], outline="")
 
-    def _size_estimate_text(self):
+    def _capture_kbps(self):
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
         resolution = res_map.get(self.res_combo.current(), "1080p")
         quality_scale = {1: 0.7, 2: 1.35}.get(self.quality_combo.current(), 1.0)
         video_k = max(280, int(capture_bitrate_k(resolution, machine_profile()) * quality_scale))
         audio_k = 96 if self.audio_combo.current() > 0 else 0
+        return video_k, audio_k
+
+    def _size_estimate_text(self):
+        video_k, audio_k = self._capture_kbps()
         per_min = (video_k + audio_k) * 60 / 8 / 1024
         return f"約 {max(1, round(per_min))} MB/分"
 
     def _idle_hint(self):
-        folder = self.recorder.output_dir.name
         label = self.capture_advice["label"]
-        return f"{label}  ·  {self._size_estimate_text()}  ·  {folder}"
+        remain = disk_time_text(free_disk_bytes(self.recorder.output_dir), sum(self._capture_kbps()) * 1000)
+        tail = remain or self.recorder.output_dir.name
+        return f"{label}  ·  {self._size_estimate_text()}  ·  {tail}"
 
     def _draw_vu_active(self, tick_count):
         """只重畫看得到的那一條，錄影時少佔主執行緒。"""
@@ -1027,6 +1079,13 @@ class LiteRecorderApp:
             if getattr(self, '_was_recording', False):
                 self._draw_vu_idle()
                 self._draw_mini_vu_idle()
+            if (
+                self.vu_tick_count % 30 == 0
+                and not self.countdown_active
+                and not self._shooting
+                and "偵測" not in self.video_combo.get()
+            ):
+                self.timer_hint.config(text=self._idle_hint())
             interval = 500
 
         self._was_recording = self.recorder.is_recording
@@ -1116,9 +1175,12 @@ class LiteRecorderApp:
 
             top = tk.Frame(row, bg=UI["card"])
             top.pack(fill=tk.X)
-            tk.Label(
-                top, text=display_name, font=self.fonts["body"], fg=UI["text"], bg=UI["card"], anchor="w"
-            ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 4))
+            name = tk.Label(
+                top, text=display_name, font=self.fonts["body"], fg=UI["text"], bg=UI["card"],
+                anchor="w", cursor="hand2",
+            )
+            name.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 4))
+            name.bind("<Double-Button-1>", lambda _e, f=p: open_file_or_dir(str(f)))
             self._quiet_button(top, "刪除", lambda f=p: self._delete_recording(f), fg=UI["red"]).pack(side=tk.RIGHT)
             if p.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}:
                 self._quiet_button(top, "剪輯", lambda f=p: self.open_editor(str(f))).pack(side=tk.RIGHT)
@@ -1294,7 +1356,29 @@ class LiteRecorderApp:
             path = "~" + path[len(home):]
         self.save_path_label.config(text=path)
 
+    def _apply_saved_window(self):
+        spec = fit_window_geometry(
+            self._saved.get("window"),
+            self.root.winfo_screenwidth(),
+            self.root.winfo_screenheight(),
+        )
+        if spec:
+            self.root.geometry(spec)
+
+    def _remember_window(self):
+        if self.is_mini_mode:
+            width, height = self._normal_size
+        else:
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
+        if width < 100 or height < 40:
+            return
+        save_settings({
+            "window": f"{int(width)}x{int(height)}+{int(self.root.winfo_x())}+{int(self.root.winfo_y())}"
+        })
+
     def _on_close(self):
+        self._remember_window()
         if self.recorder.is_recording:
             if not messagebox.askyesno("正在錄影", "錄影還沒停。要停下來並結束嗎？"):
                 return
@@ -1302,10 +1386,15 @@ class LiteRecorderApp:
 
             def work():
                 self.recorder.stop_recording()
-                self.root.after(0, self.root.destroy)
+                self.root.after(0, self._destroy_after_stop)
 
             threading.Thread(target=work, daemon=True).start()
             return
+        release_awake()
+        self.root.destroy()
+
+    def _destroy_after_stop(self):
+        release_awake()
         self.root.destroy()
 
 
