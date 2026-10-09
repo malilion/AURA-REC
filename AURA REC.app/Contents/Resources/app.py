@@ -366,8 +366,12 @@ class LiteRecorderApp:
 
         self.video_combo = labeled_combo(0, 0, "螢幕", span=3)
         self.audio_combo = labeled_combo(1, 0, "音效", span=2)
-        self.audio_guide_btn = self._quiet_button(form, "系統音指南", self._show_system_audio_guide)
-        self.audio_guide_btn.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=3)
+        audio_action_frame = tk.Frame(form, bg=UI["card"])
+        audio_action_frame.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=3)
+        self.audio_test_btn = self._quiet_button(audio_action_frame, "測試", self._toggle_audio_test)
+        self.audio_test_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.audio_guide_btn = self._quiet_button(audio_action_frame, "指南", self._show_system_audio_guide)
+        self.audio_guide_btn.pack(side=tk.LEFT)
         self.res_combo = labeled_combo(2, 0, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
@@ -1339,6 +1343,41 @@ class LiteRecorderApp:
             x = 2 + i * (bar_w + gap)
             self.mini_vu_canvas.create_rectangle(x, 4, x + bar_w, 10, fill=fill_color, outline="")
 
+    def _toggle_audio_test(self):
+        if self.recorder.is_recording or self.countdown_active:
+            return
+        if getattr(self, "_audio_testing", False):
+            self._stop_audio_test()
+            return
+
+        if self.audio_combo.current() <= 0:
+            messagebox.showinfo("提示", "目前選擇了「無音訊 (靜音)」，請先選擇麥克風或音訊設備！")
+            return
+
+        self._audio_testing = True
+        self.audio_test_btn.config(text="停止")
+        self.timer_hint.config(text="● 正在測試音訊收音… 請對著麥克風說話（約 5 秒後結束）")
+        self._audio_test_ticks = 0
+
+        def _step_test():
+            if not getattr(self, "_audio_testing", False):
+                return
+            self._audio_test_ticks += 1
+            if self._audio_test_ticks > 25:
+                self._stop_audio_test()
+                return
+            self._draw_vu_active(self._audio_test_ticks)
+            self.root.after(200, _step_test)
+
+        self.root.after(100, _step_test)
+
+    def _stop_audio_test(self):
+        self._audio_testing = False
+        self.audio_test_btn.config(text="測試")
+        self._draw_vu_idle()
+        if not self.recorder.is_recording:
+            self.timer_hint.config(text=self._idle_hint())
+
     def _capture_kbps(self):
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
         resolution = res_map.get(self.res_combo.current(), "1080p")
@@ -1818,11 +1857,13 @@ class LiteRecorderApp:
             )
             val_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        btn_row = tk.Frame(card, bg=UI["card"])
-        btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
-        self._quiet_button(
-            btn_row, "複製診斷報告", lambda: copy_text_to_clipboard(report_text)
-        ).pack(side=tk.LEFT)
+        def do_copy():
+            copy_text_to_clipboard(report_text)
+            copy_btn.config(text="已複製！")
+            win.after(2000, lambda: copy_btn.config(text="複製診斷報告"))
+
+        copy_btn = self._quiet_button(btn_row, "複製診斷報告", do_copy)
+        copy_btn.pack(side=tk.LEFT)
         AuraButton(btn_row, text="關閉", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT, padx=(8, 0))
 
     def _show_about(self):
@@ -2011,6 +2052,7 @@ class LiteRecorderApp:
             open_label = "開啟" if p.suffix.lower() == ".png" else "播放"
             self._quiet_button(top, open_label, lambda f=p: open_file_or_dir(str(f))).pack(side=tk.RIGHT)
             self._quiet_button(top, "顯示", lambda f=p: open_file_or_dir(str(f), reveal=True)).pack(side=tk.RIGHT)
+            self._quiet_button(top, "複製", lambda f=p: self._copy_file_feedback(f)).pack(side=tk.RIGHT)
             self._quiet_button(top, "改名", lambda f=p: self._rename_recording(f)).pack(side=tk.RIGHT)
 
             duration = ""

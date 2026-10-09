@@ -63,8 +63,8 @@ class VideoEditorWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title("剪輯 — AURA REC")
-        self.window.geometry("720x780")
-        self.window.minsize(640, 700)
+        self.window.geometry("740x840")
+        self.window.minsize(660, 720)
         self.window.configure(bg=UI["bg"])
         self.fonts = get_ui_fonts()
         apply_widget_style(ttk.Style(self.window), self.fonts)
@@ -146,6 +146,24 @@ class VideoEditorWindow:
             self.main_frame, text="00:00.0 / 00:00.0", font=self.fonts["body"], fg=UI["muted"], bg=UI["bg"]
         )
         self.lbl_cur_time.pack(anchor="w")
+
+        # 故事板膠卷縮圖預覽列 (Filmstrip)
+        self.filmstrip_frame = tk.Frame(self.main_frame, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        self.filmstrip_frame.pack(fill=tk.X, pady=(2, 4))
+        self.filmstrip_labels = []
+        self.filmstrip_images = []
+        for _ in range(5):
+            lbl = tk.Label(
+                self.filmstrip_frame,
+                text="‧‧‧",
+                font=self.fonts["badge"],
+                fg=UI["muted"],
+                bg=UI["card"],
+                cursor="hand2",
+                height=2,
+            )
+            lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=2)
+            self.filmstrip_labels.append(lbl)
 
         slider_frame = tk.Frame(self.main_frame, bg=UI["bg"])
         slider_frame.pack(fill=tk.X, pady=(0, 4))
@@ -300,6 +318,26 @@ class VideoEditorWindow:
                 self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton")
                 return "break"
 
+        def on_frame_back(event):
+            if not _in_entry(event):
+                self._nudge_time(-0.033)
+                return "break"
+
+        def on_frame_fwd(event):
+            if not _in_entry(event):
+                self._nudge_time(0.033)
+                return "break"
+
+        def on_home(event):
+            if not _in_entry(event):
+                self._jump_to_time(0.0)
+                return "break"
+
+        def on_end(event):
+            if not _in_entry(event):
+                self._jump_to_time(self.total_duration)
+                return "break"
+
         w.bind("<space>", on_space)
         w.bind("<i>", on_in_key)
         w.bind("<I>", on_in_key)
@@ -309,6 +347,18 @@ class VideoEditorWindow:
         w.bind("<Right>", on_right)
         w.bind("<Shift-Left>", on_shift_left)
         w.bind("<Shift-Right>", on_shift_right)
+        w.bind("<comma>", on_frame_back)
+        w.bind("<less>", on_frame_back)
+        w.bind("<period>", on_frame_fwd)
+        w.bind("<greater>", on_frame_fwd)
+        w.bind("<Home>", on_home)
+        w.bind("<End>", on_end)
+        w.bind("<j>", on_shift_left)
+        w.bind("<J>", on_shift_left)
+        w.bind("<k>", on_space)
+        w.bind("<K>", on_space)
+        w.bind("<l>", on_shift_right)
+        w.bind("<L>", on_shift_right)
         w.bind("<Command-e>", on_export)
         w.bind("<Control-e>", on_export)
         w.bind("<Escape>", on_escape)
@@ -354,6 +404,52 @@ class VideoEditorWindow:
 
         self._update_selection_length_label()
         self._request_preview(0.0)
+        self._load_filmstrip()
+
+    def _jump_to_time(self, sec):
+        sec = max(0.0, min(self.total_duration, float(sec)))
+        self.current_time = sec
+        self.time_slider.set(sec)
+        self.lbl_cur_time.config(
+            text=f"{sec_to_time_str(sec)} / {sec_to_time_str(self.total_duration)}"
+        )
+        self._request_preview(sec)
+
+    def _load_filmstrip(self):
+        if not self.current_file or self.total_duration <= 0:
+            return
+        video_path = self.current_file
+        duration = self.total_duration
+
+        def work():
+            fractions = [0.05, 0.25, 0.50, 0.75, 0.95]
+            thumbs = []
+            for frac in fractions:
+                t = duration * frac
+                ppm = self.editor.get_frame_ppm(video_path, t, width=128, height=72)
+                thumbs.append((t, ppm))
+
+            def apply():
+                if self.current_file != video_path:
+                    return
+                self.filmstrip_images = []
+                for i, (t, ppm) in enumerate(thumbs):
+                    if i < len(self.filmstrip_labels) and ppm:
+                        try:
+                            img = tk.PhotoImage(data=ppm)
+                            self.filmstrip_images.append(img)
+                            lbl = self.filmstrip_labels[i]
+                            lbl.config(image=img, text="")
+                            lbl.bind("<Button-1>", lambda _e, target=t: self._jump_to_time(target))
+                        except Exception:
+                            pass
+
+            try:
+                self.window.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_slider_move(self, val):
         sec = float(val)
