@@ -154,8 +154,8 @@ class VideoEditorWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title("剪輯工作站 — AURA REC")
-        self.window.geometry("1020x760")
-        self.window.minsize(920, 680)
+        self.window.geometry("1060x820")
+        self.window.minsize(960, 720)
         self.window.configure(bg=UI["bg"])
         self.fonts = get_ui_fonts()
         apply_widget_style(ttk.Style(self.window), self.fonts)
@@ -172,6 +172,14 @@ class VideoEditorWindow:
         self.current_theme = "aurora"
         self.current_ratio = "original"
         self.show_mockup_header = tk.BooleanVar(value=True)
+
+        # 智慧運鏡與自動縮放 (Auto Zoom) 狀態
+        self.zoom_mode_var = tk.StringVar(value="關閉 (1.0x)")
+        self.zoom_level_var = tk.StringVar(value="1.5x (推薦)")
+        self.zoom_pos_var = tk.StringVar(value="畫面中心")
+        self.zoom_focus_x = 0.5
+        self.zoom_focus_y = 0.5
+        self.preview_zoom_var = tk.BooleanVar(value=False)
 
         # 預覽執行緒與影像
         self.preview_image = None
@@ -284,15 +292,17 @@ class VideoEditorWindow:
         )
         self.mockup_title_lbl.pack(side=tk.LEFT, padx=4)
 
-        # 影片預覽畫面本體
-        self.preview_label = tk.Label(
+        # 影片預覽畫面本體 (支援畫布點擊/拖曳設定運鏡焦點與十字發光準星)
+        self.preview_canvas = tk.Canvas(
             self.mockup_frame,
-            text="等待載入影片…",
-            font=self.fonts["body"],
-            fg=UI["muted"],
             bg=UI["preview"],
+            highlightthickness=0,
+            bd=0,
+            cursor="crosshair",
         )
-        self.preview_label.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas.bind("<Button-1>", self._on_canvas_click)
+        self.preview_canvas.bind("<B1-Motion>", self._on_canvas_click)
 
         # (B) 數位碼錶與選取範圍資訊
         time_row = tk.Frame(left_col, bg=UI["bg"])
@@ -414,7 +424,61 @@ class VideoEditorWindow:
             command=self._toggle_mockup_header,
         ).pack(anchor="w", padx=10, pady=(2, 8))
 
-        # 卡片 2：【剪輯範圍數值 (Trim Points)】
+        # 卡片 2：【智慧運鏡與自動縮放 (Auto Zoom & Pan)】
+        zoom_card = self._inspector_card(right_col, "智慧運鏡與縮放 (Auto Zoom)")
+
+        # 運鏡模式
+        tk.Label(zoom_card, text="運鏡模式", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).pack(anchor="w", padx=10, pady=(2, 2))
+        self.zoom_mode_combo = ttk.Combobox(
+            zoom_card, style="App.TCombobox", state="readonly", textvariable=self.zoom_mode_var,
+            values=["關閉 (1.0x)", "平滑推進與退回 (In & Out 推薦)", "平滑推進特寫 (Smooth In)", "全程特寫 (Static Zoom)"]
+        )
+        self.zoom_mode_combo.pack(fill=tk.X, padx=10, pady=(0, 4))
+        self.zoom_mode_combo.bind("<<ComboboxSelected>>", self._on_zoom_mode_or_level_changed)
+
+        zoom_sub_grid = tk.Frame(zoom_card, bg=UI["card"])
+        zoom_sub_grid.pack(fill=tk.X, padx=10, pady=(0, 4))
+        zoom_sub_grid.columnconfigure(1, weight=1)
+        zoom_sub_grid.columnconfigure(3, weight=1)
+
+        # 縮放倍率
+        tk.Label(zoom_sub_grid, text="特寫倍率", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=0, column=0, sticky="w", padx=(0, 4), pady=2)
+        self.zoom_level_combo = ttk.Combobox(
+            zoom_sub_grid, style="App.TCombobox", state="readonly", width=11, textvariable=self.zoom_level_var,
+            values=["1.5x (推薦)", "1.25x (微距)", "1.8x (深層)", "2.0x (高倍)"]
+        )
+        self.zoom_level_combo.grid(row=0, column=1, sticky="ew", pady=2)
+        self.zoom_level_combo.bind("<<ComboboxSelected>>", self._on_zoom_mode_or_level_changed)
+
+        # 焦點位置
+        tk.Label(zoom_sub_grid, text="焦點", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=0, column=2, sticky="w", padx=(6, 4), pady=2)
+        self.zoom_pos_combo = ttk.Combobox(
+            zoom_sub_grid, style="App.TCombobox", state="readonly", width=11, textvariable=self.zoom_pos_var,
+            values=["畫面中心", "左上角", "右上角", "左下角", "右下角", "上方中", "下方中", "🎯 自訂 / 點擊畫面"]
+        )
+        self.zoom_pos_combo.grid(row=0, column=3, sticky="ew", pady=2)
+        self.zoom_pos_combo.bind("<<ComboboxSelected>>", self._on_zoom_pos_changed)
+
+        # 焦點座標與智慧偵測按鈕
+        coord_row = tk.Frame(zoom_card, bg=UI["card"])
+        coord_row.pack(fill=tk.X, padx=10, pady=(2, 4))
+        self.lbl_zoom_coords = tk.Label(
+            coord_row, text="焦點座標: X 50% · Y 50%", font=self.fonts["badge"], fg=UI["blue"], bg=UI["card"]
+        )
+        self.lbl_zoom_coords.pack(side=tk.LEFT)
+
+        self.btn_detect_focus = self._tool_button(coord_row, "🎯 智慧偵測焦點", self._detect_action_focus)
+        self.btn_detect_focus.pack(side=tk.RIGHT)
+
+        # 即時預覽特寫開關
+        AuraCheck(
+            zoom_card,
+            text="預覽畫面即時顯示特寫效果",
+            variable=self.preview_zoom_var,
+            command=self._on_zoom_mode_or_level_changed,
+        ).pack(anchor="w", padx=10, pady=(2, 6))
+
+        # 卡片 3：【剪輯範圍數值 (Trim Points)】
         trim_card = self._inspector_card(right_col, "精準剪輯範圍")
         time_edit_frame = tk.Frame(trim_card, bg=UI["card"])
         time_edit_frame.pack(fill=tk.X, padx=10, pady=(4, 8))
@@ -538,7 +602,7 @@ class VideoEditorWindow:
 
     def _toggle_mockup_header(self):
         if self.show_mockup_header.get():
-            self.mockup_header.pack(fill=tk.X, before=self.preview_label)
+            self.mockup_header.pack(fill=tk.X, before=self.preview_canvas)
         else:
             self.mockup_header.pack_forget()
 
@@ -729,7 +793,11 @@ class VideoEditorWindow:
 
     def _preview_filter(self):
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
-        return preview_video_filter(cfg["aspect"], cfg["anchor"], width=cfg["preview_w"], height=cfg["preview_h"])
+        zoom_cfg = self._get_zoom_config() if getattr(self, "preview_zoom_var", None) and self.preview_zoom_var.get() else None
+        return preview_video_filter(
+            cfg["aspect"], cfg["anchor"], width=cfg["preview_w"], height=cfg["preview_h"],
+            zoom_config=zoom_cfg,
+        )
 
     def _request_preview(self, sec):
         if not self.current_file:
@@ -761,9 +829,153 @@ class VideoEditorWindow:
     def _update_preview_image(self, ppm_data):
         try:
             self.preview_image = tk.PhotoImage(data=ppm_data)
-            self.preview_label.config(image=self.preview_image, text="", width=0, height=0)
+            self._redraw_preview_canvas()
         except Exception as e:
             print("Preview render error:", e)
+
+    def _redraw_preview_canvas(self):
+        self.preview_canvas.delete("all")
+        cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+        cw = cfg["preview_w"]
+        ch = cfg["preview_h"]
+        if self.preview_image:
+            self.preview_canvas.create_image(cw // 2, ch // 2, image=self.preview_image)
+        else:
+            self.preview_canvas.create_text(
+                cw // 2, ch // 2, text="等待載入影片…", fill=UI["muted"], font=self.fonts["body"]
+            )
+
+        # 若有啟用 Auto Zoom 且未開啟「預覽即時特寫」，在畫面上繪製目標焦點環 (Crosshair Reticle)
+        if self._is_zoom_active() and not self.preview_zoom_var.get():
+            self._draw_focus_reticle(cw, ch)
+
+    def _draw_focus_reticle(self, cw, ch):
+        fx = getattr(self, "zoom_focus_x", 0.5)
+        fy = getattr(self, "zoom_focus_y", 0.5)
+        cx = int(cw * fx)
+        cy = int(ch * fy)
+
+        # 外圈發光環 (Neon Cyan)
+        self.preview_canvas.create_oval(cx - 20, cy - 20, cx + 20, cy + 20, outline="#00f0ff", width=2)
+        # 中心綠點
+        self.preview_canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3, fill="#00ff9d", outline="")
+        # 十字標線
+        self.preview_canvas.create_line(cx - 26, cy, cx - 10, cy, fill="#00f0ff", width=1)
+        self.preview_canvas.create_line(cx + 10, cy, cx + 26, cy, fill="#00f0ff", width=1)
+        self.preview_canvas.create_line(cx, cy - 26, cx, cy - 10, fill="#00f0ff", width=1)
+        self.preview_canvas.create_line(cx, cy + 10, cx, cy + 26, fill="#00f0ff", width=1)
+
+        # 標籤泡泡
+        badge_text = f"🎯 焦點 ({int(fx * 100)}%, {int(fy * 100)}%)"
+        self.preview_canvas.create_rectangle(
+            cx - 44, cy + 22, cx + 44, cy + 38, fill="#0a0c10", outline="#00f0ff"
+        )
+        self.preview_canvas.create_text(
+            cx, cy + 30, text=badge_text, fill="#00f0ff", font=self.fonts["badge"]
+        )
+
+    def _on_canvas_click(self, event):
+        cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+        cw = max(1, cfg["preview_w"])
+        ch = max(1, cfg["preview_h"])
+        fx = max(0.05, min(0.95, round(event.x / cw, 2)))
+        fy = max(0.05, min(0.95, round(event.y / ch, 2)))
+        self.zoom_focus_x = fx
+        self.zoom_focus_y = fy
+        self.zoom_pos_combo.set("🎯 自訂 / 點擊畫面")
+        self._update_focus_coord_label()
+        if self.zoom_mode_combo.get().startswith("關閉"):
+            self.zoom_mode_combo.current(1)
+        self._redraw_preview_canvas()
+        if self.preview_zoom_var.get():
+            self._request_preview(self.current_time)
+
+    def _update_focus_coord_label(self):
+        fx = getattr(self, "zoom_focus_x", 0.5)
+        fy = getattr(self, "zoom_focus_y", 0.5)
+        if hasattr(self, "lbl_zoom_coords"):
+            self.lbl_zoom_coords.config(text=f"焦點座標: X {int(fx * 100)}% · Y {int(fy * 100)}%")
+
+    def _on_zoom_pos_changed(self, _event=None):
+        pos_val = self.zoom_pos_combo.get()
+        mapping = {
+            "畫面中心": (0.50, 0.50),
+            "左上角": (0.25, 0.25),
+            "右上角": (0.75, 0.25),
+            "左下角": (0.25, 0.75),
+            "右下角": (0.75, 0.75),
+            "上方中": (0.50, 0.25),
+            "下方中": (0.50, 0.75),
+        }
+        for k, (x, y) in mapping.items():
+            if k in pos_val:
+                self.zoom_focus_x = x
+                self.zoom_focus_y = y
+                break
+        self._update_focus_coord_label()
+        self._redraw_preview_canvas()
+        if self.preview_zoom_var.get():
+            self._request_preview(self.current_time)
+
+    def _on_zoom_mode_or_level_changed(self, _event=None):
+        self._update_focus_coord_label()
+        self._redraw_preview_canvas()
+        if self.preview_zoom_var.get() or self._is_zoom_active():
+            self._request_preview(self.current_time)
+
+    def _detect_action_focus(self):
+        if not self.current_file or self.total_duration <= 0:
+            return
+        self.btn_detect_focus.config(text="偵測中…", state=tk.DISABLED)
+
+        def work():
+            fx, fy = self.editor.detect_motion_focus(
+                self.current_file, self.start_sec, self.end_sec
+            )
+            def done():
+                self.zoom_focus_x = fx
+                self.zoom_focus_y = fy
+                self.zoom_pos_combo.set("🎯 自訂 / 點擊畫面")
+                self._update_focus_coord_label()
+                if self.zoom_mode_combo.get().startswith("關閉"):
+                    self.zoom_mode_combo.current(1)
+                self.btn_detect_focus.config(text="🎯 智慧偵測焦點", state=tk.NORMAL)
+                self._redraw_preview_canvas()
+                if self.preview_zoom_var.get():
+                    self._request_preview(self.current_time)
+
+            self.window.after(0, done)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _get_zoom_config(self):
+        if not hasattr(self, "zoom_mode_combo"):
+            return {"enabled": False, "mode": "off"}
+        mode_val = self.zoom_mode_combo.get()
+        if "關閉" in mode_val:
+            return {"enabled": False, "mode": "off"}
+
+        mode = "smooth_in_out"
+        if "推進特寫" in mode_val:
+            mode = "smooth_in"
+        elif "全程" in mode_val or "固定" in mode_val:
+            mode = "static"
+
+        lvl_val = self.zoom_level_combo.get()
+        m_lvl = re.search(r"(\d+(\.\d+)?)", lvl_val)
+        level = float(m_lvl.group(1)) if m_lvl else 1.5
+
+        return {
+            "enabled": True,
+            "mode": mode,
+            "level": level,
+            "focus_x": getattr(self, "zoom_focus_x", 0.5),
+            "focus_y": getattr(self, "zoom_focus_y", 0.5),
+        }
+
+    def _is_zoom_active(self):
+        cfg = self._get_zoom_config()
+        return cfg.get("enabled", False)
 
     def set_in_point(self):
         self.start_sec = self.current_time
@@ -920,12 +1132,14 @@ class VideoEditorWindow:
             elif "720p" in scale_str:
                 scale_res = "720p"
 
+            zoom_cfg = self._get_zoom_config()
             picture_change = (
                 rat != "original"
                 or abs(spd - 1.0) > 0.001
                 or mute
                 or abs(vol - 1.0) > 0.001
                 or scale_res != "original"
+                or zoom_cfg.get("enabled", False)
             )
             export_mode = mode
             switched = export_mode == "lossless" and picture_change
@@ -942,11 +1156,13 @@ class VideoEditorWindow:
                         mute_audio=mute,
                         volume=vol,
                         target_resolution=scale_res,
+                        zoom_config=zoom_cfg,
                     )
                 elif export_mode == "gif":
                     ok, msg = self.editor.export_gif(
                         self.current_file, out_path, self.start_sec, self.end_sec,
                         aspect_ratio=rat, anchor=anchor,
+                        zoom_config=zoom_cfg,
                     )
                 elif export_mode == "audio":
                     ok, msg = self.editor.extract_audio(
