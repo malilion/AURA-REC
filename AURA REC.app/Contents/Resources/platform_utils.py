@@ -486,7 +486,16 @@ def play_system_alert(sound_type="ready"):
     def _play():
         try:
             if IS_MAC:
-                sound_name = "Hero" if sound_type == "start" else ("Glass" if sound_type == "stop" else "Tink")
+                if sound_type == "start":
+                    sound_name = "Hero"
+                elif sound_type == "stop":
+                    sound_name = "Glass"
+                elif sound_type in ("shot", "snap"):
+                    sound_name = "Pop"
+                elif sound_type == "complete":
+                    sound_name = "Ping"
+                else:
+                    sound_name = "Tink"
                 sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
                 if os.path.exists(sound_path):
                     subprocess.run(["afplay", sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

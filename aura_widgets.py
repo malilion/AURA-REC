@@ -285,14 +285,16 @@ class AuraRadio(tk.Frame):
 
 
 class AuraScale(tk.Canvas):
-    """深色軌道、青色已播放段、圓形播放頭。"""
+    """深色軌道、青色已播放段、綠色選取裁切段 (IN/OUT 範圍)、圓形播放頭。"""
 
     def __init__(self, parent, from_=0.0, to=100.0, command=None, orient=tk.HORIZONTAL, **_ignored):
         bg = _parent_bg(parent)
-        super().__init__(parent, height=22, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        super().__init__(parent, height=24, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
         self._from = float(from_)
         self._to = float(to)
         self._value = self._from
+        self._range_start = None
+        self._range_end = None
         self._command = command
         self.bind("<Configure>", lambda _e: self._draw())
         self.bind("<Button-1>", self._pointer)
@@ -301,6 +303,12 @@ class AuraScale(tk.Canvas):
 
     def set(self, value):
         self._value = self._clamp(float(value))
+        self._draw()
+
+    def set_range(self, start, end):
+        """設定起點與終點範圍標記"""
+        self._range_start = float(start) if start is not None else None
+        self._range_end = float(end) if end is not None else None
         self._draw()
 
     def get(self):
@@ -346,10 +354,28 @@ class AuraScale(tk.Canvas):
             return
         pad = 9
         center = height / 2
-        portion = (self._value - self._from) / max(self._to - self._from, 1e-6)
+        total_span = max(self._to - self._from, 1e-6)
+
+        # 基礎軌道
+        self.create_line(pad, center, width - pad, center, fill=UI["line"], width=4, capstyle=tk.ROUND)
+
+        # 選取範圍（起點至終點）- 翠綠色高亮區段
+        if self._range_start is not None and self._range_end is not None and self._range_end > self._range_start:
+            r_start = min(1.0, max(0.0, (self._range_start - self._from) / total_span))
+            r_end = min(1.0, max(0.0, (self._range_end - self._from) / total_span))
+            rx1 = pad + r_start * (width - pad * 2)
+            rx2 = pad + r_end * (width - pad * 2)
+            if rx2 > rx1 + 1:
+                self.create_line(rx1, center, rx2, center, fill=UI["ok"], width=6, capstyle=tk.ROUND)
+                self.create_line(rx1, center - 6, rx1, center + 6, fill=UI["ok"], width=2)
+                self.create_line(rx2, center - 6, rx2, center + 6, fill=UI["red"], width=2)
+
+        # 已播放段 (青藍色)
+        portion = (self._value - self._from) / total_span
         portion = min(1.0, max(0.0, portion))
         head = pad + portion * (width - pad * 2)
-        self.create_line(pad, center, width - pad, center, fill=UI["line"], width=4, capstyle=tk.ROUND)
         if head > pad + 1:
-            self.create_line(pad, center, head, center, fill=UI["blue"], width=4, capstyle=tk.ROUND)
+            self.create_line(pad, center, head, center, fill=UI["blue"], width=3, capstyle=tk.ROUND)
+
+        # 播放頭圓鈕
         self.create_oval(head - 7, center - 7, head + 7, center + 7, fill=UI["blue"], outline=self["bg"], width=2)

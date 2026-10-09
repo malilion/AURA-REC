@@ -153,6 +153,7 @@ class LiteRecorderApp:
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
         self.auto_copy_screenshot_var = tk.BooleanVar(value=self._flag("auto_copy_screenshot", True))
+        self.sound_alert_var = tk.BooleanVar(value=self._flag("sound_alerts", True))
 
         self.video_devices = []
         self.audio_devices = []
@@ -423,6 +424,7 @@ class LiteRecorderApp:
             ("錄影時縮成小視窗", self.auto_mini_var),
             ("錄下游標", self.capture_cursor_var),
             ("截圖自動複製", self.auto_copy_screenshot_var),
+            ("音效提示", self.sound_alert_var),
         )):
             AuraCheck(
                 checks, text=text, variable=variable, command=self._save_capture_settings
@@ -932,6 +934,7 @@ class LiteRecorderApp:
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
             "auto_copy_screenshot": bool(self.auto_copy_screenshot_var.get()),
+            "sound_alerts": bool(self.sound_alert_var.get()),
             "quality_index": self.quality_combo.current(),
             "format_index": self.format_combo.current(),
             "limit_index": self.limit_combo.current(),
@@ -995,6 +998,10 @@ class LiteRecorderApp:
         else:
             self.record_btn.pack(fill=tk.X)
 
+    def _play_alert(self, sound_type):
+        if getattr(self, "sound_alert_var", None) is None or self.sound_alert_var.get():
+            play_system_alert(sound_type)
+
     def toggle_recording(self):
         if self.countdown_active:
             self._cancel_countdown()
@@ -1024,7 +1031,7 @@ class LiteRecorderApp:
             if val > 0:
                 self.timer_display.config(text=str(val), fg=UI["warn"])
                 self.status_badge.config(text=f"●  倒數 {val}", fg=UI["warn"])
-                play_system_alert("ready")
+                self._play_alert("ready")
                 self.root.after(1000, lambda: count_step(val - 1))
             else:
                 self.countdown_active = False
@@ -1122,7 +1129,7 @@ class LiteRecorderApp:
                 outside = self._mini_origin_outside(region)
                 if outside:
                     parked_at = outside
-        play_system_alert("start")
+        self._play_alert("start")
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
             audio_idx=a_idx,
@@ -1207,7 +1214,7 @@ class LiteRecorderApp:
     def _finish_stop(self, ok, msg, offer_editor):
         self._stopping = False
         release_awake()
-        play_system_alert("stop")
+        self._play_alert("stop")
         self._restore_conceal()
 
         if self.is_mini_mode:
@@ -1415,6 +1422,15 @@ class LiteRecorderApp:
                 and not self.recorder.paused
             ):
                 self.stop_recording()
+            if self.vu_tick_count % 10 == 0 and not self._stopping:
+                free_bytes = free_disk_bytes(self.recorder.output_dir)
+                if free_bytes < 150 * 1024 * 1024:
+                    self.stop_recording()
+                    messagebox.showwarning(
+                        "磁碟空間即將耗盡",
+                        f"儲存目錄磁碟剩餘空間不足 150 MB（目前僅剩 {format_bytes(free_bytes)}）。\n"
+                        "為保護資料完整性，已自動安全結束並封裝錄影！",
+                    )
             if self.vu_tick_count % 4 == 0 and not self._stopping:
                 self.timer_hint.config(text=self._recording_hint())
             if self.recorder.paused:
@@ -1910,6 +1926,7 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="截圖後自動複製至剪貼簿", variable=self.auto_copy_screenshot_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="錄製滑鼠游標", variable=self.capture_cursor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用晶片 GPU 硬體加速", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="啟用錄影與截圖音效提示", variable=self.sound_alert_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
 
         def save_and_close():
             val = ent_prefix.get().strip() or "螢幕錄影"
@@ -1992,11 +2009,87 @@ class LiteRecorderApp:
                 anchor="w",
             )
             meta.pack(fill=tk.X, padx=6)
+
+            # 懸浮微光回饋
+            def _bind_row_hover(r=row, t=top, n=name, m=meta):
+                def _enter(_e):
+                    for w in (r, t, n, m):
+                        try:
+                            w.config(bg=UI["hover"])
+                        except Exception:
+                            pass
+
+                def _leave(e):
+                    try:
+                        rx, ry = r.winfo_rootx(), r.winfo_rooty()
+                        rw, rh = r.winfo_width(), r.winfo_height()
+                        if rx <= e.x_root <= rx + rw and ry <= e.y_root <= ry + rh:
+                            return
+                    except Exception:
+                        pass
+                    for w in (r, t, n, m):
+                        try:
+                            w.config(bg=UI["card"])
+                        except Exception:
+                            pass
+
+                for w in (r, t, n, m):
+                    w.bind("<Enter>", _enter)
+                    w.bind("<Leave>", _leave)
+
+            _bind_row_hover()
+
+            # 右鍵選單與點兩下開啟
+            row.bind("<Double-Button-1>", lambda _e, f=p: open_file_or_dir(str(f)))
+            meta.bind("<Double-Button-1>", lambda _e, f=p: open_file_or_dir(str(f)))
+            for w in (row, top, name, meta):
+                w.bind("<Button-2>", lambda e, f=p: self._show_recording_context_menu(e, f))
+                w.bind("<Button-3>", lambda e, f=p: self._show_recording_context_menu(e, f))
+
             if cache_key and not duration:
                 pending.append((p, cache_key, meta))
         self.root.after_idle(self._sync_recent_scroll)
         if pending:
             self._queue_durations(pending, self._recent_generation)
+
+    def _show_recording_context_menu(self, event, file_path):
+        menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            bg=UI["card"],
+            fg=UI["text"],
+            activebackground=UI["hover"],
+            activeforeground=UI["blue"],
+            bd=1,
+            relief=tk.SOLID,
+        )
+        p = Path(file_path)
+        is_vid = p.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}
+        lbl_open = "開啟圖片" if p.suffix.lower() == ".png" else "播放檔案"
+        menu.add_command(label=lbl_open, command=lambda f=p: open_file_or_dir(str(f)))
+        if is_vid:
+            menu.add_command(label="剪輯影片…", command=lambda f=p: self.open_editor(str(f)))
+        menu.add_separator()
+        menu.add_command(label="在資料夾中顯示", command=lambda f=p: open_file_or_dir(str(f), reveal=True))
+        menu.add_command(label="複製檔案 (可直接貼上)", command=lambda f=p: self._copy_file_feedback(f))
+        menu.add_command(label="複製完整路徑", command=lambda f=p: self._copy_path_feedback(f))
+        menu.add_separator()
+        menu.add_command(label="重新命名…", command=lambda f=p: self._rename_recording(f))
+        menu.add_command(label="刪除檔案", command=lambda f=p: self._delete_recording(f))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _copy_file_feedback(self, p):
+        if copy_file(str(p)):
+            self.timer_hint.config(text=f"已複製檔案至剪貼簿：{p.name}")
+        else:
+            self.timer_hint.config(text=f"複製檔案失敗")
+
+    def _copy_path_feedback(self, p):
+        copy_text_to_clipboard(str(p.resolve()))
+        self.timer_hint.config(text=f"已複製檔案路徑：{p.name}")
 
     def _queue_durations(self, pending, generation):
         def work():
@@ -2132,6 +2225,7 @@ class LiteRecorderApp:
         self.root.lift()
         self.shot_btn.config(state=tk.NORMAL)
         if path:
+            self._play_alert("shot")
             self.refresh_recent_list()
             copied = False
             if self.auto_copy_screenshot_var.get():

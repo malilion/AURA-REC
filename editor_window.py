@@ -17,8 +17,11 @@ from pathlib import Path
 from video_editor import VideoEditor, parse_aspect_choice, preview_video_filter
 from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from platform_utils import (
+    IS_MAC,
     get_ui_fonts,
     open_file_or_dir,
+    copy_file,
+    play_system_alert,
     UI,
     apply_widget_style,
 )
@@ -81,10 +84,10 @@ class VideoEditorWindow:
         self._preview_thread = None
         self._preview_pending = None
 
-        # 播放進程
         self._playing_process = None
 
         self._build_ui()
+        self._bind_shortcuts()
 
         if self.current_file and os.path.exists(self.current_file):
             self.load_video(self.current_file)
@@ -157,7 +160,7 @@ class VideoEditorWindow:
         self._tool_button(nudge_frame, "−0.1 秒", lambda: self._nudge_time(-0.1)).pack(side=tk.LEFT, padx=4)
         self.btn_play_seg = AuraButton(
             nudge_frame,
-            text="播放",
+            text="播放 [Space]",
             style="Play.TButton",
             command=self.preview_play_selection,
         )
@@ -185,8 +188,8 @@ class VideoEditorWindow:
             self._tool_button(row, command[0], command[1]).pack(side=tk.LEFT)
             return entry
 
-        self.ent_start = time_row(trim_card, "起點", ("設為起點", self.set_in_point))
-        self.ent_end = time_row(trim_card, "終點", ("設為終點", self.set_out_point))
+        self.ent_start = time_row(trim_card, "起點", ("設為起點 [I]", self.set_in_point))
+        self.ent_end = time_row(trim_card, "終點", ("設為終點 [O]", self.set_out_point))
         self.lbl_selected_len = tk.Label(
             trim_card, text="長度 00:00.0", font=self.fonts["body"], fg=UI["text"], bg=UI["card"]
         )
@@ -234,11 +237,79 @@ class VideoEditorWindow:
 
         self.btn_export = AuraButton(
             self.main_frame,
-            text="匯出",
+            text=self._export_btn_label(),
             style="Primary.TButton",
             command=self.perform_export,
         )
         self.btn_export.pack(fill=tk.X, pady=(0, 4))
+
+    def _export_btn_label(self):
+        return "匯出 (⌘E)" if IS_MAC else "匯出 (Ctrl+E)"
+
+    def _bind_shortcuts(self):
+        w = self.window
+
+        def _in_entry(event):
+            return isinstance(event.widget, (tk.Entry, ttk.Entry))
+
+        def on_space(event):
+            if not _in_entry(event):
+                self.preview_play_selection()
+                return "break"
+
+        def on_in_key(event):
+            if not _in_entry(event):
+                self.set_in_point()
+                return "break"
+
+        def on_out_key(event):
+            if not _in_entry(event):
+                self.set_out_point()
+                return "break"
+
+        def on_left(event):
+            if not _in_entry(event):
+                self._nudge_time(-0.1)
+                return "break"
+
+        def on_right(event):
+            if not _in_entry(event):
+                self._nudge_time(0.1)
+                return "break"
+
+        def on_shift_left(event):
+            if not _in_entry(event):
+                self._nudge_time(-1.0)
+                return "break"
+
+        def on_shift_right(event):
+            if not _in_entry(event):
+                self._nudge_time(1.0)
+                return "break"
+
+        def on_export(event):
+            self.perform_export()
+            return "break"
+
+        def on_escape(event):
+            if self._playing_process and self._playing_process.poll() is None:
+                self._playing_process.terminate()
+                self._playing_process = None
+                self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton")
+                return "break"
+
+        w.bind("<space>", on_space)
+        w.bind("<i>", on_in_key)
+        w.bind("<I>", on_in_key)
+        w.bind("<o>", on_out_key)
+        w.bind("<O>", on_out_key)
+        w.bind("<Left>", on_left)
+        w.bind("<Right>", on_right)
+        w.bind("<Shift-Left>", on_shift_left)
+        w.bind("<Shift-Right>", on_shift_right)
+        w.bind("<Command-e>", on_export)
+        w.bind("<Control-e>", on_export)
+        w.bind("<Escape>", on_escape)
 
     def select_video_file(self):
         file_path = filedialog.askopenfilename(
@@ -271,6 +342,7 @@ class VideoEditorWindow:
 
         self.time_slider.config(from_=0.0, to=self.total_duration)
         self.time_slider.set(0.0)
+        self.time_slider.set_range(self.start_sec, self.end_sec)
 
         self.ent_start.delete(0, tk.END)
         self.ent_start.insert(0, sec_to_time_str(0.0))
@@ -346,6 +418,7 @@ class VideoEditorWindow:
 
         self.ent_start.delete(0, tk.END)
         self.ent_start.insert(0, sec_to_time_str(self.start_sec))
+        self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
 
     def set_out_point(self):
@@ -357,6 +430,7 @@ class VideoEditorWindow:
 
         self.ent_end.delete(0, tk.END)
         self.ent_end.insert(0, sec_to_time_str(self.end_sec))
+        self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
 
     def _update_times_from_entries(self):
@@ -372,6 +446,7 @@ class VideoEditorWindow:
         self.ent_start.insert(0, sec_to_time_str(self.start_sec))
         self.ent_end.delete(0, tk.END)
         self.ent_end.insert(0, sec_to_time_str(self.end_sec))
+        self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
 
     def _update_selection_length_label(self):
@@ -384,7 +459,7 @@ class VideoEditorWindow:
         if self._playing_process and self._playing_process.poll() is None:
             self._playing_process.terminate()
             self._playing_process = None
-            self.btn_play_seg.config(text="播放", style="Play.TButton")
+            self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton")
             return
 
         dur = self.end_sec - self.start_sec
@@ -398,12 +473,12 @@ class VideoEditorWindow:
             open_file_or_dir(self.current_file)
             return
 
-        self.btn_play_seg.config(text="停止", style="Stop.TButton")
+        self.btn_play_seg.config(text="停止 [Space]", style="Stop.TButton")
 
         def monitor_process():
             if self._playing_process:
                 self._playing_process.wait()
-            self.window.after(0, lambda: self.btn_play_seg.config(text="播放", style="Play.TButton"))
+            self.window.after(0, lambda: self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton"))
 
         threading.Thread(target=monitor_process, daemon=True).start()
 
@@ -511,17 +586,64 @@ class VideoEditorWindow:
         threading.Thread(target=run_export_thread, daemon=True).start()
 
     def _on_export_finished(self, ok, msg, out_path, switched=False):
-        self.btn_export.config(text="匯出", state=tk.NORMAL)
+        self.btn_export.config(text=self._export_btn_label(), state=tk.NORMAL)
         if ok:
-            note = "\n\n比例或色彩需要重新編碼，已改用重新編碼。" if switched else ""
-            ans = messagebox.askyesno(
-                "匯出完成",
-                f"已儲存：\n{out_path}{note}\n\n要在資料夾裡顯示嗎？",
-            )
-            if ans:
-                open_file_or_dir(out_path, reveal=True)
+            play_system_alert("complete")
+            self._show_export_success_card(out_path, switched)
         else:
             messagebox.showerror("匯出失敗", f"匯出過程發生錯誤：\n{msg}")
+
+    def _show_export_success_card(self, out_path, switched=False):
+        card = tk.Toplevel(self.window)
+        card.title("匯出完成 — AURA REC")
+        card.configure(bg=UI["bg"])
+        card.resizable(False, False)
+        card.transient(self.window)
+        card.grab_set()
+
+        fonts = self.fonts
+        p = Path(out_path)
+        sz = p.stat().st_size / (1024 * 1024) if p.exists() else 0
+        sz_text = f"{sz:.1f} MB" if sz >= 0.1 else f"{max(1, int(p.stat().st_size / 1024))} KB"
+
+        box = tk.Frame(card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        box.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+
+        hdr = tk.Frame(box, bg=UI["card"])
+        hdr.pack(fill=tk.X, padx=16, pady=(16, 6))
+        tk.Label(hdr, text="●  匯出成功", font=fonts["subtitle"], fg=UI["ok"], bg=UI["card"]).pack(side=tk.LEFT)
+
+        tk.Label(box, text=p.name, font=fonts["bold"], fg=UI["text"], bg=UI["card"], wraplength=460, justify=tk.LEFT).pack(anchor="w", padx=16, pady=(0, 2))
+        tk.Label(box, text=f"大小：{sz_text}   ·   路徑：{p.parent}", font=fonts["body"], fg=UI["muted"], bg=UI["card"], wraplength=460, justify=tk.LEFT).pack(anchor="w", padx=16, pady=(0, 6))
+
+        if switched:
+            tk.Label(box, text="💡 由於包含比例裁切或濾鏡調色，已自動為您使用精準重編碼匯出。", font=fonts["badge"], fg=UI["warn"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
+
+        sep = tk.Frame(box, bg=UI["line"], height=1)
+        sep.pack(fill=tk.X, padx=16, pady=8)
+
+        btn_row = tk.Frame(box, bg=UI["card"])
+        btn_row.pack(fill=tk.X, padx=16, pady=(0, 16))
+
+        AuraButton(btn_row, text="播放", style="Play.TButton", command=lambda: open_file_or_dir(out_path)).pack(side=tk.LEFT, padx=(0, 6))
+        AuraButton(btn_row, text="在資料夾中顯示", style="Ghost.TButton", command=lambda: open_file_or_dir(out_path, reveal=True)).pack(side=tk.LEFT, padx=6)
+
+        def do_copy(btn):
+            if copy_file(out_path):
+                btn.config(text="已複製！")
+                btn.after(2000, lambda: btn.config(text="複製檔案"))
+
+        copy_btn = AuraButton(btn_row, text="複製檔案", style="Ghost.TButton", command=lambda: do_copy(copy_btn))
+        copy_btn.pack(side=tk.LEFT, padx=6)
+
+        AuraButton(btn_row, text="完成", style="Ghost.TButton", command=card.destroy).pack(side=tk.RIGHT, padx=(6, 0))
+
+        card.update_idletasks()
+        w = max(500, card.winfo_reqwidth())
+        h = max(210, card.winfo_reqheight())
+        x = self.window.winfo_x() + (self.window.winfo_width() - w) // 2
+        y = self.window.winfo_y() + (self.window.winfo_height() - h) // 2
+        card.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
 
     def _on_close(self):
         if self._playing_process and self._playing_process.poll() is None:
