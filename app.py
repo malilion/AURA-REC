@@ -441,9 +441,10 @@ class LiteRecorderApp:
 
         recent_header = tk.Frame(self.recent_card, bg=UI["card"])
         recent_header.pack(fill=tk.X, padx=8, pady=(8, 0))
-        tk.Label(
+        self.lbl_recent_title = tk.Label(
             recent_header, text="最近的錄影", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
-        ).pack(side=tk.LEFT, padx=6)
+        )
+        self.lbl_recent_title.pack(side=tk.LEFT, padx=6)
         self._quiet_button(recent_header, "重新整理", self.refresh_recent_list).pack(side=tk.RIGHT)
         self.btn_play_last = self._quiet_button(recent_header, "播放最新", self.play_last_recording)
         self.btn_play_last.config(state=tk.DISABLED)
@@ -590,17 +591,30 @@ class LiteRecorderApp:
             self.record_btn.config(state=tk.DISABLED)
             return
 
-        v_names = [f"[{d['index']}] {d['name']}" for d in v_devs]
+        v_names = []
+        for d in v_devs:
+            name = d["name"]
+            low = name.lower()
+            tag = ""
+            if any(k in low for k in ("capture screen", "desktop", "螢幕", "display")):
+                tag = " (螢幕畫面)"
+            elif any(k in low for k in ("camera", "webcam", "facetime", "鏡頭", "相機")):
+                tag = " (視訊鏡頭)"
+            v_names.append(f"[{d['index']}] {name}{tag}")
+
         self.video_combo["values"] = v_names or ["預設主螢幕"]
         screen_at = 0
         for i, name in enumerate(v_names):
             lowered = name.lower()
-            if "capture screen" in lowered or "desktop" in lowered or "螢幕" in name:
+            if "螢幕畫面" in name or "capture screen" in lowered or "desktop" in lowered or "螢幕" in name:
                 screen_at = i
                 break
         saved_video = self._saved.get("video_device")
-        if isinstance(saved_video, str) and saved_video in v_names:
-            screen_at = v_names.index(saved_video)
+        if isinstance(saved_video, str):
+            for idx, item in enumerate(v_names):
+                if item == saved_video or (saved_video.startswith("[") and item.split("]")[0] == saved_video.split("]")[0]):
+                    screen_at = idx
+                    break
         self.video_combo.current(screen_at)
         busy = self.recorder.is_recording or self.countdown_active or self._stopping
         self.video_combo.config(state=tk.DISABLED if busy else "readonly")
@@ -1950,9 +1964,16 @@ class LiteRecorderApp:
             found = []
             for pattern in patterns:
                 found.extend(self.recorder.output_dir.glob(pattern))
-            files = sorted(found, key=lambda x: x.stat().st_mtime, reverse=True)[:8]
+            files = sorted(found, key=lambda x: x.stat().st_mtime, reverse=True)[:24]
         except Exception:
             files = []
+            found = []
+
+        if hasattr(self, "lbl_recent_title"):
+            total_count = len(found)
+            self.lbl_recent_title.config(
+                text=f"最近的錄影 (共 {total_count} 個檔案)" if total_count > 0 else "最近的錄影"
+            )
 
         self._recent_generation += 1
         pending = []

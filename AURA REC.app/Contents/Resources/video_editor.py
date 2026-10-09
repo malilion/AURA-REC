@@ -283,10 +283,12 @@ class VideoEditor:
         contrast=1.0,
         saturation=1.0,
         mute_audio=False,
-        use_hardware_accel=True
+        use_hardware_accel=True,
+        volume=1.0,
+        target_resolution="original",
     ):
         """
-        高級精準幀剪輯 (支援倍速、比例裁切、色彩增強、硬體加速)
+        高級精準幀剪輯 (支援倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -311,6 +313,11 @@ class VideoEditor:
         if brightness != 0.0 or contrast != 1.0 or saturation != 1.0:
             vf_list.append(f"eq=brightness={brightness:.2f}:contrast={contrast:.2f}:saturation={saturation:.2f}")
 
+        if target_resolution == "1080p":
+            vf_list.append("scale='min(1920,iw)':-2:flags=fast_bilinear")
+        elif target_resolution == "720p":
+            vf_list.append("scale='min(1280,iw)':-2:flags=fast_bilinear")
+
         if aspect_ratio == "9:16" and anchor == "fit":
             canvas_w, canvas_h = vertical_canvas_size(profile)
             graph = vertical_fit_graph(canvas_w, canvas_h)
@@ -327,7 +334,7 @@ class VideoEditor:
         cmd.extend(["-threads", str(encode_threads(profile))])
         cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, export_rate, profile))
 
-        # 音訊處理與倍速
+        # 音訊處理、倍速與音量增益
         if mute_audio:
             cmd.append("-an")
         else:
@@ -340,6 +347,9 @@ class VideoEditor:
                     af_list.append("atempo=2.0,atempo=" + str(speed / 2.0))
                 elif speed < 0.5:
                     af_list.append("atempo=0.5,atempo=" + str(speed / 0.5))
+
+            if volume != 1.0:
+                af_list.append(f"volume={volume:.2f}")
 
             if af_list:
                 cmd.extend(["-af", ",".join(af_list)])
@@ -404,9 +414,9 @@ class VideoEditor:
         except Exception as e:
             return False, f"GIF 匯出發生異常: {str(e)}"
 
-    def extract_audio(self, input_file, output_file, start_sec=None, end_sec=None):
+    def extract_audio(self, input_file, output_file, start_sec=None, end_sec=None, volume=1.0):
         """
-        提取純音訊為 MP3 或 M4A
+        提取純音訊為 MP3 或 M4A (支援音量增益)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -416,6 +426,9 @@ class VideoEditor:
             cmd.extend(["-ss", f"{start_sec:.3f}", "-i", input_file, "-t", f"{end_sec - start_sec:.3f}"])
         else:
             cmd.extend(["-i", input_file])
+
+        if volume != 1.0:
+            cmd.extend(["-af", f"volume={volume:.2f}"])
 
         cmd.extend(["-vn", "-c:a", "libmp3lame" if output_file.endswith(".mp3") else "aac", output_file])
 

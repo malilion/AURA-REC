@@ -92,12 +92,12 @@ def pick_screen_region(parent):
     canvas.pack(fill=tk.BOTH, expand=True)
     hint = canvas.create_text(
         40, 36, anchor="w",
-        text="拖曳選取範圍    Esc 取消",
+        text="拖曳選取  ·  Shift 正方形  ·  按 1 [16:9]  2 [9:16]  3 [1:1]  A [全螢幕]  ·  Esc 取消",
         fill=UI["blue"],
         font=fonts["subtitle"],
     )
     size_text = canvas.create_text(40, 64, anchor="w", text="", fill=UI["white"], font=fonts["badge"])
-    origin = {"x": 0, "y": 0, "item": None}
+    origin = {"x": 0, "y": 0, "item": None, "last_x": 0, "last_y": 0}
 
     def clear_band():
         if origin["item"] is not None:
@@ -107,30 +107,87 @@ def pick_screen_region(parent):
     def on_press(event):
         origin["x"] = event.x
         origin["y"] = event.y
+        origin["last_x"] = event.x
+        origin["last_y"] = event.y
+        chosen["pending"] = None
         clear_band()
 
     def on_drag(event):
         clear_band()
         x1, y1 = origin["x"], origin["y"]
+        dx = event.x - x1
+        dy = event.y - y1
+        if (event.state & 0x0001) or (getattr(event, 'keysym', '') == 'Shift_L'):
+            side = max(abs(dx), abs(dy))
+            cur_x = x1 + (side if dx >= 0 else -side)
+            cur_y = y1 + (side if dy >= 0 else -side)
+        else:
+            cur_x = event.x
+            cur_y = event.y
+
+        origin["last_x"] = cur_x
+        origin["last_y"] = cur_y
         origin["item"] = canvas.create_rectangle(
-            x1, y1, event.x, event.y, outline=UI["blue"], width=2
+            x1, y1, cur_x, cur_y, outline=UI["blue"], width=2
         )
-        width = abs(event.x - x1)
-        height = abs(event.y - y1)
-        canvas.coords(size_text, event.x + 12, event.y + 12)
+        scale = display_scale()
+        width = int(abs(cur_x - x1) * scale)
+        height = int(abs(cur_y - y1) * scale)
+        canvas.coords(size_text, cur_x + 14, cur_y + 14)
         canvas.itemconfigure(size_text, text=f"{width} × {height}")
 
     def on_release(event):
-        width = abs(event.x - origin["x"])
-        height = abs(event.y - origin["y"])
-        if width < 48 or height < 48:
+        x1, y1 = origin["x"], origin["y"]
+        last_x = origin.get("last_x", event.x)
+        last_y = origin.get("last_y", event.y)
+        width = abs(last_x - x1)
+        height = abs(last_y - y1)
+        if width < 32 or height < 32:
             clear_band()
-            canvas.itemconfigure(size_text, text="再拖大一點")
+            canvas.itemconfigure(size_text, text="拖曳範圍過小，請重新拖曳")
             return
         scale = display_scale()
-        x = min(origin["x"], event.x) * scale
-        y = min(origin["y"], event.y) * scale
-        chosen["rect"] = even_box(x, y, width * scale, height * scale)
+        rx = min(x1, last_x) * scale
+        ry = min(y1, last_y) * scale
+        chosen["rect"] = even_box(rx, ry, width * scale, height * scale)
+        win.destroy()
+
+    def apply_preset(w_ratio, h_ratio):
+        clear_band()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        if w_ratio >= h_ratio:
+            tw = int(sw * 0.70)
+            th = int(tw * h_ratio / w_ratio)
+        else:
+            th = int(sh * 0.75)
+            tw = int(th * w_ratio / h_ratio)
+        x1 = (sw - tw) // 2
+        y1 = (sh - th) // 2
+        x2 = x1 + tw
+        y2 = y1 + th
+        origin["x"], origin["y"] = x1, y1
+        origin["last_x"], origin["last_y"] = x2, y2
+        origin["item"] = canvas.create_rectangle(x1, y1, x2, y2, outline=UI["ok"], width=3)
+        scale = display_scale()
+        canvas.coords(size_text, x2 - 120, y2 + 18)
+        canvas.itemconfigure(size_text, text=f"{int(tw * scale)} × {int(th * scale)}（按 Enter 確認）")
+        chosen["pending"] = (x1, y1, tw, th)
+
+    def on_enter_key(_event=None):
+        if chosen.get("pending"):
+            x1, y1, tw, th = chosen["pending"]
+            scale = display_scale()
+            chosen["rect"] = even_box(x1 * scale, y1 * scale, tw * scale, th * scale)
+            win.destroy()
+        else:
+            on_full_screen()
+
+    def on_full_screen(_event=None):
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        scale = display_scale()
+        chosen["rect"] = even_box(0, 0, sw * scale, sh * scale)
         win.destroy()
 
     def on_cancel(_event=None):
@@ -140,6 +197,13 @@ def pick_screen_region(parent):
     canvas.bind("<ButtonPress-1>", on_press)
     canvas.bind("<B1-Motion>", on_drag)
     canvas.bind("<ButtonRelease-1>", on_release)
+    win.bind("<Key-1>", lambda _e: apply_preset(16, 9))
+    win.bind("<Key-2>", lambda _e: apply_preset(9, 16))
+    win.bind("<Key-3>", lambda _e: apply_preset(1, 1))
+    win.bind("<Key-4>", lambda _e: apply_preset(4, 3))
+    win.bind("<a>", on_full_screen)
+    win.bind("<A>", on_full_screen)
+    win.bind("<Return>", on_enter_key)
     win.bind("<Escape>", on_cancel)
     win.protocol("WM_DELETE_WINDOW", on_cancel)
     win.grab_set()
