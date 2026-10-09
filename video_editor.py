@@ -78,7 +78,7 @@ def vertical_fit_graph(canvas_w, canvas_h):
     )
 
 
-def preview_video_filter(aspect_ratio, anchor="center", width=320, height=180):
+def preview_video_filter(aspect_ratio, anchor="center", width=512, height=288):
     """預覽用的濾鏡。直式完整會先排成直式，再放進橫向預覽格。"""
     pad = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"

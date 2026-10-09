@@ -105,10 +105,14 @@ class AuraButton(tk.Canvas):
     def _fit_width(self):
         spec = self._spec()
         tk.Canvas.configure(self, height=spec["height"])
-        if spec["kind"] in ("link", "ghost"):
-            measured = tkfont.Font(font=self._font()).measure(self._text)
-            pad = 28 if spec["kind"] == "ghost" else 16
-            tk.Canvas.configure(self, width=max(measured + pad, 36))
+        measured = tkfont.Font(font=self._font()).measure(self._text)
+        if spec["kind"] == "link":
+            tk.Canvas.configure(self, width=max(measured + 16, 36))
+        elif spec["kind"] == "ghost":
+            tk.Canvas.configure(self, width=max(measured + 28, 36))
+        else:
+            pad = 32
+            tk.Canvas.configure(self, width=max(measured + pad, 64))
 
     def configure(self, cnf=None, **kwargs):
         if isinstance(cnf, dict):

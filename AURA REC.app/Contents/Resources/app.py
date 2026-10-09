@@ -18,6 +18,7 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 
 import math
 import os
+import re
 import subprocess
 import threading
 import time
@@ -65,6 +66,11 @@ from platform_utils import (
     UI,
     apply_widget_style,
     use_dark_appearance,
+    get_mac_screen_details,
+    get_screen_full_info,
+    create_placeholder_ppm,
+    capture_device_preview_ppm,
+    flash_screen_badges,
 )
 
 
@@ -364,7 +370,13 @@ class LiteRecorderApp:
             combo.grid(row=row, column=column + 1, columnspan=span, sticky="ew", pady=3)
             return combo
 
-        self.video_combo = labeled_combo(0, 0, "螢幕", span=3)
+        self.video_combo = labeled_combo(0, 0, "螢幕", span=2)
+        video_action_frame = tk.Frame(form, bg=UI["card"])
+        video_action_frame.grid(row=0, column=3, sticky="e", padx=(4, 0), pady=3)
+        self.video_preview_btn = self._quiet_button(video_action_frame, "預覽", self._show_screen_preview)
+        self.video_preview_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.video_identify_btn = self._quiet_button(video_action_frame, "識別", self._flash_screen_identify)
+        self.video_identify_btn.pack(side=tk.LEFT)
         self.audio_combo = labeled_combo(1, 0, "音效", span=2)
         audio_action_frame = tk.Frame(form, bg=UI["card"])
         audio_action_frame.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=3)
@@ -433,11 +445,61 @@ class LiteRecorderApp:
             AuraCheck(
                 checks, text=text, variable=variable, command=self._save_capture_settings
             ).grid(row=index // 2, column=index % 2, sticky="w")
+
+        # 即時畫面縮圖卡片
+        self.preview_card = tk.Frame(settings_card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        self.preview_card.pack(fill=tk.X, padx=14, pady=(0, 10))
+
+        preview_header = tk.Frame(self.preview_card, bg=UI["card"])
+        preview_header.pack(fill=tk.X, padx=10, pady=(6, 4))
+
+        self.lbl_preview_title = tk.Label(
+            preview_header,
+            text="畫面即時縮圖",
+            font=self.fonts["badge"],
+            fg=UI["muted"],
+            bg=UI["card"],
+            anchor="w",
+        )
+        self.lbl_preview_title.pack(side=tk.LEFT)
+
+        preview_actions = tk.Frame(preview_header, bg=UI["card"])
+        preview_actions.pack(side=tk.RIGHT)
+
+        self._quiet_button(preview_actions, "全景對比 ⤢", self._show_screen_preview).pack(side=tk.LEFT, padx=(0, 4))
+        self._quiet_button(preview_actions, "刷新 ↻", self._refresh_inline_preview).pack(side=tk.LEFT)
+
+        self.preview_canvas_frame = tk.Frame(self.preview_card, bg="#0d0d11")
+        self.preview_canvas_frame.pack(padx=10, pady=(0, 4))
+
+        self.preview_canvas = tk.Canvas(
+            self.preview_canvas_frame,
+            width=288,
+            height=162,
+            bg="#0d0d11",
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self.preview_canvas.pack()
+        self.preview_canvas.bind("<Button-1>", lambda _e: self._show_screen_preview())
+        self._preview_photo = None
+
+        self.lbl_preview_device = tk.Label(
+            self.preview_card,
+            text="點擊縮圖開啟多螢幕大圖對比 · 或點上方「識別」查看螢幕編號",
+            font=self.fonts["badge"],
+            fg=UI["muted"],
+            bg=UI["card"],
+            anchor="center",
+        )
+        self.lbl_preview_device.pack(fill=tk.X, padx=10, pady=(0, 6))
+
         for combo in (
-            self.video_combo, self.audio_combo, self.res_combo, self.fps_combo,
+            self.audio_combo, self.res_combo, self.fps_combo,
             self.quality_combo, self.format_combo, self.limit_combo, self.segment_combo,
         ):
             combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
+        self.video_combo.bind("<<ComboboxSelected>>", lambda _e: (self._save_capture_settings(), self._refresh_inline_preview(), self._refresh_window_target()))
         self.area_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_area_choice())
 
         self.recent_card = self._card(self.main_container)
@@ -599,12 +661,18 @@ class LiteRecorderApp:
             return
 
         v_names = []
+        screen_details = get_mac_screen_details() if IS_MAC else {}
         for d in v_devs:
             name = d["name"]
             low = name.lower()
             tag = ""
             if any(k in low for k in ("capture screen", "desktop", "螢幕", "display")):
-                tag = " (螢幕畫面)"
+                m = re.search(r"screen\s*(\d+)", low)
+                s_idx = int(m.group(1)) if m else None
+                if s_idx is not None and s_idx in screen_details:
+                    tag = f" ({screen_details[s_idx]})"
+                else:
+                    tag = " (螢幕畫面)"
             elif any(k in low for k in ("camera", "webcam", "facetime", "鏡頭", "相機")):
                 tag = " (視訊鏡頭)"
             v_names.append(f"[{d['index']}] {name}{tag}")
@@ -654,6 +722,7 @@ class LiteRecorderApp:
             self.record_btn.config(state=tk.NORMAL)
         if not busy:
             self._refresh_window_target()
+            self._refresh_inline_preview()
 
     def _switch_to_mini_mode(self, origin=None):
         """收合為置頂懸浮膠囊。origin 是小條要出現的點座標。"""
@@ -1292,7 +1361,7 @@ class LiteRecorderApp:
             self.segment_combo,
         ):
             combo.config(state=state)
-        for button_name in ("reselect_btn", "window_btn"):
+        for button_name in ("reselect_btn", "window_btn", "video_preview_btn", "video_identify_btn"):
             button = getattr(self, button_name, None)
             if button is not None:
                 button.config(state=tk.DISABLED if locked else tk.NORMAL)
@@ -1657,6 +1726,275 @@ class LiteRecorderApp:
         self._quiet_button(sub_btns, "在資料夾中顯示", do_reveal).pack(side=tk.LEFT, padx=4)
         self._quiet_button(sub_btns, "複製檔案", do_copy).pack(side=tk.LEFT, padx=4)
         self._quiet_button(sub_btns, "完成", win.destroy).pack(side=tk.RIGHT)
+
+    def _flash_screen_identify(self):
+        """在所有實體螢幕中央瞬間閃爍大型發光識別編號卡"""
+        try:
+            flash_screen_badges(self.root, duration_ms=2500)
+        except Exception as e:
+            print(f"[Error] flash_screen_badges failed: {e}")
+
+    def _refresh_inline_preview(self):
+        """非同步抓取當前選取螢幕/攝影機的縮圖並更新卡片"""
+        if not hasattr(self, "video_combo") or not hasattr(self, "preview_canvas"):
+            return
+        if self.recorder.is_recording or self.countdown_active or self._stopping:
+            return
+
+        item = self.video_combo.get()
+        if not item or "正在偵測" in item or "找不到" in item:
+            return
+
+        disp_title = item.split("] ")[-1] if "] " in item else item
+        if hasattr(self, "lbl_preview_title"):
+            self.lbl_preview_title.config(text=f"畫面縮圖：{disp_title} (更新中…)")
+
+        def worker():
+            try:
+                ppm_data = capture_device_preview_ppm(
+                    self.recorder.ffmpeg_bin, item, width=288, height=162
+                )
+            except Exception:
+                ppm_data = None
+
+            def update_ui():
+                if not hasattr(self, "preview_canvas") or not self.preview_canvas.winfo_exists():
+                    return
+                if ppm_data:
+                    try:
+                        self._preview_photo = tk.PhotoImage(data=ppm_data)
+                        self.preview_canvas.delete("all")
+                        self.preview_canvas.create_image(144, 81, image=self._preview_photo)
+                        if hasattr(self, "lbl_preview_title"):
+                            self.lbl_preview_title.config(text=f"畫面縮圖：{disp_title}")
+                        return
+                    except Exception:
+                        pass
+                if hasattr(self, "lbl_preview_title"):
+                    self.lbl_preview_title.config(text=f"畫面縮圖：{disp_title}")
+
+            self.root.after(0, update_ui)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_screen_preview(self):
+        """開啟所有螢幕與鏡頭即時預覽畫廊對話框，支援一鍵切換與實體螢幕識別"""
+        if self.recorder.is_recording or self.countdown_active or self._stopping:
+            messagebox.showinfo("正在錄影", "錄影進行中無法變更預覽螢幕。")
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("所有畫面即時預覽與切換 — AURA REC")
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        win_w = 780
+        win_h = 580
+        win.minsize(580, 460)
+        self.root.update_idletasks()
+        rx = max(0, self.root.winfo_rootx() + (self.root.winfo_width() - win_w) // 2)
+        ry = max(0, self.root.winfo_rooty() + (self.root.winfo_height() - win_h) // 2)
+        win.geometry(f"{win_w}x{win_h}+{rx}+{ry}")
+
+        outer_card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        outer_card.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
+        self._accent_bar(outer_card)
+
+        # 頂部控制列
+        top_bar = tk.Frame(outer_card, bg=UI["card"])
+        top_bar.pack(fill=tk.X, padx=16, pady=(12, 8))
+
+        top_left = tk.Frame(top_bar, bg=UI["card"])
+        top_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        tk.Label(
+            top_left, text="SCREEN PREVIEW", font=self.fonts["badge"], fg=UI["blue"], bg=UI["card"]
+        ).pack(anchor="w")
+        tk.Label(
+            top_left, text="所有螢幕與鏡頭即時畫面", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(anchor="w", pady=(2, 0))
+        tk.Label(
+            top_left, text="點選下方任一螢幕卡片即可直接切換錄製來源", font=self.fonts["body"], fg=UI["muted"], bg=UI["card"]
+        ).pack(anchor="w")
+
+        top_right = tk.Frame(top_bar, bg=UI["card"])
+        top_right.pack(side=tk.RIGHT)
+
+        def do_identify():
+            self._flash_screen_identify()
+
+        self._quiet_button(top_right, "實體螢幕識別 🔔", do_identify).pack(side=tk.LEFT, padx=(0, 6))
+        refresh_btn = self._quiet_button(top_right, "重新擷取 ↻", lambda: load_all_thumbnails())
+        refresh_btn.pack(side=tk.LEFT, padx=(0, 6))
+        self._quiet_button(top_right, "關閉 ✕", win.destroy).pack(side=tk.LEFT)
+
+        # 滾動預覽區域
+        scroll_container = tk.Frame(outer_card, bg=UI["card"])
+        scroll_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
+
+        canvas = tk.Canvas(scroll_container, bg=UI["card"], highlightthickness=0, bd=0)
+        v_scroll = ttk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=canvas.yview)
+        cards_grid = tk.Frame(canvas, bg=UI["card"])
+
+        canvas_window = canvas.create_window((0, 0), window=cards_grid, anchor="nw")
+
+        def on_configure(_e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def on_canvas_resize(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        cards_grid.bind("<Configure>", on_configure)
+        canvas.bind("<Configure>", on_canvas_resize)
+        canvas.configure(xscrollcommand=None, yscrollcommand=v_scroll.set)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        combo_values = list(self.video_combo["values"]) if hasattr(self, "video_combo") else []
+        current_idx = self.video_combo.current() if hasattr(self, "video_combo") else 0
+
+        photo_cache = []
+
+        def select_and_close(target_index):
+            if 0 <= target_index < len(combo_values):
+                self.video_combo.current(target_index)
+                self._save_capture_settings()
+                self._refresh_inline_preview()
+                self._refresh_window_target()
+            win.destroy()
+
+        card_widgets = []
+
+        for idx, item_text in enumerate(combo_values):
+            if "正在偵測" in item_text or "找不到" in item_text:
+                continue
+
+            is_selected = (idx == current_idx)
+            border_color = UI["blue"] if is_selected else UI["edge"]
+            border_width = 2 if is_selected else 1
+
+            card_frame = tk.Frame(
+                cards_grid,
+                bg=UI["card"],
+                highlightbackground=border_color,
+                highlightthickness=border_width,
+                cursor="hand2",
+            )
+            card_frame.pack(fill=tk.X, pady=8, padx=4)
+
+            # 頂部狀態列
+            chdr = tk.Frame(card_frame, bg=UI["card"])
+            chdr.pack(fill=tk.X, padx=12, pady=(8, 6))
+
+            disp_label = item_text.split("] ")[-1] if "] " in item_text else item_text
+            tk.Label(
+                chdr, text=f"來源 [{idx}]  {disp_label}", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+            ).pack(side=tk.LEFT)
+
+            if is_selected:
+                tk.Label(
+                    chdr, text="● 目前選取中", font=self.fonts["badge"], fg=UI["ok"], bg=UI["card"]
+                ).pack(side=tk.RIGHT)
+
+            # 畫面內容列
+            body_frame = tk.Frame(card_frame, bg=UI["card"])
+            body_frame.pack(fill=tk.X, padx=12, pady=(0, 10))
+
+            preview_w, preview_h = 320, 180
+            thumb_canvas = tk.Canvas(
+                body_frame,
+                width=preview_w,
+                height=preview_h,
+                bg="#0d0d11",
+                highlightthickness=1,
+                highlightbackground=UI["edge"],
+                cursor="hand2",
+            )
+            thumb_canvas.pack(side=tk.LEFT, padx=(0, 14))
+
+            thumb_canvas.create_text(
+                preview_w // 2, preview_h // 2,
+                text="擷取畫面中…", fill=UI["muted"], font=self.fonts["body"]
+            )
+
+            # 右側資訊欄
+            info_frame = tk.Frame(body_frame, bg=UI["card"])
+            info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+            tk.Label(
+                info_frame, text=item_text, font=self.fonts["body"], fg=UI["text"], bg=UI["card"],
+                justify="left", wraplength=340, anchor="w"
+            ).pack(fill=tk.X, pady=(4, 8))
+
+            if is_selected:
+                tk.Label(
+                    info_frame, text="✔ 此設備為目前錄影所選取的螢幕來源",
+                    font=self.fonts["badge"], fg=UI["ok"], bg=UI["card"], anchor="w"
+                ).pack(fill=tk.X, pady=(0, 12))
+            else:
+                tk.Label(
+                    info_frame, text="💡 點選按鈕或雙擊縮圖立即套用為錄影來源",
+                    font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], anchor="w"
+                ).pack(fill=tk.X, pady=(0, 12))
+
+            action_row = tk.Frame(info_frame, bg=UI["card"])
+            action_row.pack(fill=tk.X, pady=(10, 0))
+
+            if is_selected:
+                AuraButton(action_row, text="已選取此螢幕", style="Ghost.TButton", state=tk.DISABLED).pack(side=tk.LEFT)
+            else:
+                AuraButton(
+                    action_row, text="選擇此螢幕", style="Primary.TButton",
+                    command=lambda i=idx: select_and_close(i)
+                ).pack(side=tk.LEFT)
+
+            for w in (card_frame, body_frame, thumb_canvas, info_frame):
+                w.bind("<Double-Button-1>", lambda _e, i=idx: select_and_close(i))
+                w.bind("<Button-1>", lambda _e, i=idx: select_and_close(i))
+
+            card_widgets.append((idx, item_text, thumb_canvas))
+
+        def load_all_thumbnails():
+            refresh_btn.config(state=tk.DISABLED)
+
+            def bg_load():
+                results = []
+                for idx, item_text, t_canvas in card_widgets:
+                    try:
+                        ppm = capture_device_preview_ppm(
+                            self.recorder.ffmpeg_bin, item_text, width=320, height=180
+                        )
+                    except Exception:
+                        ppm = None
+                    results.append((idx, ppm, t_canvas))
+
+                def apply_results():
+                    if not win.winfo_exists():
+                        return
+                    refresh_btn.config(state=tk.NORMAL)
+                    for idx, ppm, t_canvas in results:
+                        if not t_canvas.winfo_exists():
+                            continue
+                        if ppm:
+                            try:
+                                photo = tk.PhotoImage(data=ppm)
+                                photo_cache.append(photo)
+                                t_canvas.delete("all")
+                                t_canvas.create_image(160, 90, image=photo)
+                                continue
+                            except Exception:
+                                pass
+                        t_canvas.delete("all")
+                        t_canvas.create_text(
+                            160, 90, text="無法擷取畫面", fill=UI["muted"], font=self.fonts["body"]
+                        )
+
+                self.root.after(0, apply_results)
+
+            threading.Thread(target=bg_load, daemon=True).start()
+
+        win.after(100, load_all_thumbnails)
 
     def _show_system_audio_guide(self):
         """開啟系統內部聲音錄製指南對話框"""

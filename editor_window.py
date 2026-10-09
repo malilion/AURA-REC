@@ -2,48 +2,60 @@
 # -*- coding: utf-8 -*-
 
 """
-EditorWindow - 影片編輯與剪輯視窗 (macOS & Windows 跨平台支援)
-包含：畫面影格即時預覽、時間軸精準滑桿、起點/終點設定、無損極速裁剪、精確重編碼、GIF 匯出與音訊提取
+VideoEditorWindow - Recordly / Screen Studio 風格專業影片剪輯工作站
+- 舞台式畫布即時預覽 (Canvas Stage Preview)
+- 擬真 macOS 視窗外框模型 (🔴🟡🟢 Window Mockup)
+- 5 大頂級設計師背景主題 (極光霓虹、薄暮紫霞、深海琉璃、黑曜玄武、極簡純黑)
+- 一鍵比例切換 (16:9 YouTube 橫式 / 9:16 Shorts 直式 / 1:1 方形 / 原始)
+- 全寬膠卷故事板縮圖列 (Filmstrip Storyboard)
+- 雙色高亮範圍時間軸 (In/Out 裁切標記與發光指針)
+- 專業屬性檢查器側邊欄 (Inspector Panel)
+- 0.5秒極速無損裁切、精準轉碼、倍速、音量增益、高畫質 GIF 導出
 """
 
 import os
-import subprocess
+import re
 import threading
 import time
+from datetime import datetime
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from pathlib import Path
 
-from video_editor import VideoEditor, parse_aspect_choice, preview_video_filter
-from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from platform_utils import (
+    UI,
     IS_MAC,
     get_ui_fonts,
-    open_file_or_dir,
-    copy_file,
     play_system_alert,
-    UI,
+    copy_file,
+    open_file_or_dir,
     apply_widget_style,
+)
+from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
+from video_editor import (
+    VideoEditor,
+    parse_aspect_choice,
+    preview_video_filter,
 )
 
 
 def sec_to_time_str(seconds):
-    """將秒數格式化為 HH:MM:SS.s 或 MM:SS.s"""
+    """秒數轉分:秒.毫秒 (例如 01:23.4)"""
     if seconds is None:
         return "00:00.0"
     seconds = max(0.0, float(seconds))
-    hrs = int(seconds // 3600)
-    mins = int((seconds % 3600) // 60)
-    secs = seconds % 60
-    if hrs > 0:
-        return f"{hrs:02d}:{mins:02d}:{secs:04.1f}"
-    return f"{mins:02d}:{secs:04.1f}"
+    m = int(seconds // 60)
+    s = seconds % 60
+    return f"{m:02d}:{s:04.1f}"
 
 
 def time_str_to_sec(time_str):
-    """解析 MM:SS.s 或 秒數 字串為 float"""
+    """時間字串 (mm:ss.s 或 hh:mm:ss.s) 轉秒數"""
+    if not time_str:
+        return None
+    time_str = str(time_str).strip()
     try:
-        parts = time_str.strip().split(":")
+        parts = time_str.split(":")
         if len(parts) == 1:
             return float(parts[0])
         elif len(parts) == 2:
@@ -55,6 +67,85 @@ def time_str_to_sec(time_str):
     return None
 
 
+THEMES = {
+    "aurora": {
+        "name": "極光",
+        "icon": "🌌",
+        "stage_bg": "#061a22",
+        "frame_border": "#00f0ff",
+        "frame_header": "#0c2630",
+        "accent": "#00ff9d",
+    },
+    "sunset": {
+        "name": "薄暮",
+        "icon": "🌆",
+        "stage_bg": "#1c0d24",
+        "frame_border": "#ff2a6d",
+        "frame_header": "#281335",
+        "accent": "#f43f5e",
+    },
+    "ocean": {
+        "name": "深海",
+        "icon": "🌊",
+        "stage_bg": "#081628",
+        "frame_border": "#38bdf8",
+        "frame_header": "#0f233d",
+        "accent": "#38bdf8",
+    },
+    "obsidian": {
+        "name": "黑曜",
+        "icon": "🌑",
+        "stage_bg": "#0d1117",
+        "frame_border": "#30363d",
+        "frame_header": "#161b22",
+        "accent": "#58a6ff",
+    },
+    "studio": {
+        "name": "純黑",
+        "icon": "🎬",
+        "stage_bg": "#000000",
+        "frame_border": "#222222",
+        "frame_header": "#111111",
+        "accent": "#ffffff",
+    },
+}
+
+RATIO_CONFIGS = {
+    "16:9": {
+        "label": "16:9",
+        "sub": "橫式桌面",
+        "aspect": "16:9",
+        "anchor": "center",
+        "preview_w": 480,
+        "preview_h": 270,
+    },
+    "9:16": {
+        "label": "9:16",
+        "sub": "直式短影音",
+        "aspect": "9:16",
+        "anchor": "fit",
+        "preview_w": 180,
+        "preview_h": 320,
+    },
+    "1:1": {
+        "label": "1:1",
+        "sub": "方形社群",
+        "aspect": "1:1",
+        "anchor": "center",
+        "preview_w": 280,
+        "preview_h": 280,
+    },
+    "original": {
+        "label": "原始",
+        "sub": "原生無裁切",
+        "aspect": "original",
+        "anchor": "center",
+        "preview_w": 480,
+        "preview_h": 270,
+    },
+}
+
+
 class VideoEditorWindow:
     def __init__(self, parent, video_path=None, on_close=None):
         self.parent = parent
@@ -62,28 +153,31 @@ class VideoEditorWindow:
         self.editor = VideoEditor()
 
         self.window = tk.Toplevel(parent)
-        self.window.title("剪輯 — AURA REC")
-        self.window.geometry("740x840")
-        self.window.minsize(660, 720)
+        self.window.title("剪輯工作站 — AURA REC")
+        self.window.geometry("1020x760")
+        self.window.minsize(920, 680)
         self.window.configure(bg=UI["bg"])
         self.fonts = get_ui_fonts()
         apply_widget_style(ttk.Style(self.window), self.fonts)
 
-        # 影片資訊與狀態
+        # 狀態
         self.video_info = None
         self.current_file = str(video_path) if video_path else None
         self.total_duration = 0.0
         self.current_time = 0.0
-
         self.start_sec = 0.0
         self.end_sec = 0.0
 
-        # 預覽影像快取與更新執行緒鎖
+        # Recordly 舞台風格狀態
+        self.current_theme = "aurora"
+        self.current_ratio = "original"
+        self.show_mockup_header = tk.BooleanVar(value=True)
+
+        # 預覽執行緒與影像
         self.preview_image = None
         self._preview_lock = threading.Lock()
         self._preview_thread = None
         self._preview_pending = None
-
         self._playing_process = None
 
         self._build_ui()
@@ -101,55 +195,124 @@ class VideoEditorWindow:
 
     def _build_ui(self):
         self.main_frame = tk.Frame(self.window, bg=UI["bg"])
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=10)
 
+        # 1. 頂部工具列 (Top Header)
         top_bar = tk.Frame(self.main_frame, bg=UI["bg"])
-        top_bar.pack(fill=tk.X, pady=(0, 8))
+        top_bar.pack(fill=tk.X, pady=(0, 10))
 
-        name_col = tk.Frame(top_bar, bg=UI["bg"])
-        name_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        title_row = tk.Frame(name_col, bg=UI["bg"])
-        title_row.pack(anchor="w", fill=tk.X)
+        brand_frame = tk.Frame(top_bar, bg=UI["bg"])
+        brand_frame.pack(side=tk.LEFT)
+
         tk.Label(
-            title_row, text="EDIT", font=self.fonts["badge"], fg=UI["blue"], bg=UI["bg"]
-        ).pack(side=tk.LEFT, padx=(0, 8))
+            brand_frame, text="AURA", font=self.fonts["title"], fg=UI["white"], bg=UI["bg"]
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            brand_frame, text="STUDIO", font=self.fonts["badge"], fg=UI["blue"], bg="#10262C",
+            padx=6, pady=2
+        ).pack(side=tk.LEFT, padx=(6, 12))
+
+        file_meta_col = tk.Frame(top_bar, bg=UI["bg"])
+        file_meta_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         self.lbl_filename = tk.Label(
-            title_row, text="未載入影片", font=self.fonts["bold"], fg=UI["white"], bg=UI["bg"], anchor="w"
+            file_meta_col, text="未載入影片", font=self.fonts["bold"], fg=UI["white"], bg=UI["bg"], anchor="w"
         )
-        self.lbl_filename.pack(side=tk.LEFT)
+        self.lbl_filename.pack(anchor="w")
         self.lbl_meta = tk.Label(
-            name_col, text="請選擇要編輯的影片", font=self.fonts["body"], fg=UI["muted"], bg=UI["bg"], anchor="w"
+            file_meta_col, text="點擊右上方「開啟影片」開始編輯", font=self.fonts["badge"], fg=UI["muted"], bg=UI["bg"], anchor="w"
         )
-        self.lbl_meta.pack(anchor="w", pady=(2, 0))
+        self.lbl_meta.pack(anchor="w", pady=(1, 0))
 
-        self._tool_button(top_bar, "開啟…", self.select_video_file).pack(side=tk.RIGHT, padx=(8, 0))
+        # 頂部操作按鈕群
+        top_actions = tk.Frame(top_bar, bg=UI["bg"])
+        top_actions.pack(side=tk.RIGHT)
 
-        preview_container = tk.Frame(
-            self.main_frame,
-            bg=UI["preview"],
-            highlightbackground=UI["edge"],
+        self._tool_button(top_actions, "開啟影片…", self.select_video_file).pack(side=tk.LEFT, padx=(0, 8))
+        self.btn_play_seg = AuraButton(
+            top_actions, text="播放 [Space]", style="Play.TButton", command=self.preview_play_selection
+        )
+        self.btn_play_seg.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.btn_export = AuraButton(
+            top_actions, text=self._export_btn_label(), style="Primary.TButton", command=self.perform_export
+        )
+        self.btn_export.pack(side=tk.LEFT)
+
+        # 2. 雙欄工作區 (Workspace: Left Canvas + Right Inspector)
+        workspace = tk.Frame(self.main_frame, bg=UI["bg"])
+        workspace.pack(fill=tk.BOTH, expand=True)
+
+        # === 左側欄：Recordly 舞台預覽與時間軸 (70% 寬度) ===
+        left_col = tk.Frame(workspace, bg=UI["bg"])
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+
+        # (A) 舞台畫布容器 (Stage Canvas Stage)
+        theme = THEMES[self.current_theme]
+        self.stage_container = tk.Frame(
+            left_col,
+            bg=theme["stage_bg"],
+            highlightbackground=theme["frame_border"],
+            highlightthickness=1,
+            height=370,
+        )
+        self.stage_container.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        self.stage_container.pack_propagate(False)
+
+        # 擬真 macOS 視窗模型 (Mockup Window Frame)
+        self.mockup_frame = tk.Frame(
+            self.stage_container,
+            bg=theme["frame_header"],
+            highlightbackground=theme["frame_border"],
             highlightthickness=1,
         )
-        preview_container.pack(fill=tk.X, pady=(0, 6))
+        self.mockup_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+        # 視窗頂部標題列 (紅黃綠三圓點 🔴🟡🟢)
+        self.mockup_header = tk.Frame(self.mockup_frame, bg=theme["frame_header"], height=24)
+        self.mockup_header.pack(fill=tk.X)
+        self.mockup_header.pack_propagate(False)
+
+        self.mockup_dots_canvas = tk.Canvas(
+            self.mockup_header, width=48, height=14, bg=theme["frame_header"], highlightthickness=0, bd=0
+        )
+        self.mockup_dots_canvas.pack(side=tk.LEFT, padx=(8, 4), pady=5)
+        self._draw_traffic_dots()
+
+        self.mockup_title_lbl = tk.Label(
+            self.mockup_header, text="AURA STAGE", font=self.fonts["badge"], fg=UI["muted"], bg=theme["frame_header"]
+        )
+        self.mockup_title_lbl.pack(side=tk.LEFT, padx=4)
+
+        # 影片預覽畫面本體
         self.preview_label = tk.Label(
-            preview_container,
-            text="預覽會顯示在這裡",
+            self.mockup_frame,
+            text="等待載入影片…",
             font=self.fonts["body"],
             fg=UI["muted"],
             bg=UI["preview"],
-            width=64,
-            height=8,
         )
-        self.preview_label.pack(pady=4)
+        self.preview_label.pack(fill=tk.BOTH, expand=True)
+
+        # (B) 數位碼錶與選取範圍資訊
+        time_row = tk.Frame(left_col, bg=UI["bg"])
+        time_row.pack(fill=tk.X, pady=(2, 4))
 
         self.lbl_cur_time = tk.Label(
-            self.main_frame, text="00:00.0 / 00:00.0", font=self.fonts["body"], fg=UI["muted"], bg=UI["bg"]
+            time_row, text="00:00.0 / 00:00.0", font=self.fonts["bold"], fg=UI["white"], bg=UI["bg"]
         )
-        self.lbl_cur_time.pack(anchor="w")
+        self.lbl_cur_time.pack(side=tk.LEFT)
 
-        # 故事板膠卷縮圖預覽列 (Filmstrip)
-        self.filmstrip_frame = tk.Frame(self.main_frame, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
-        self.filmstrip_frame.pack(fill=tk.X, pady=(2, 4))
+        self.lbl_selected_len = tk.Label(
+            time_row, text="選取長度 00:00.0", font=self.fonts["badge"], fg=UI["ok"], bg=UI["card"], padx=8, pady=2
+        )
+        self.lbl_selected_len.pack(side=tk.RIGHT)
+
+        # (C) 故事板膠卷縮圖預覽列 (Filmstrip)
+        self.filmstrip_frame = tk.Frame(left_col, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1, height=76)
+        self.filmstrip_frame.pack(fill=tk.X, pady=(0, 4))
+        self.filmstrip_frame.pack_propagate(False)
+
         self.filmstrip_labels = []
         self.filmstrip_images = []
         for _ in range(5):
@@ -160,111 +323,233 @@ class VideoEditorWindow:
                 fg=UI["muted"],
                 bg=UI["card"],
                 cursor="hand2",
-                height=2,
             )
-            lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=2)
+            lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
             self.filmstrip_labels.append(lbl)
 
-        slider_frame = tk.Frame(self.main_frame, bg=UI["bg"])
-        slider_frame.pack(fill=tk.X, pady=(0, 4))
+        # (D) 時間軸滑桿 (Aura Timeline Scale)
         self.time_slider = AuraScale(
-            slider_frame, from_=0.0, to=100.0, command=self._on_slider_move
+            left_col, from_=0.0, to=100.0, command=self._on_slider_move
         )
-        self.time_slider.pack(fill=tk.X)
+        self.time_slider.pack(fill=tk.X, pady=(0, 6))
 
-        nudge_frame = tk.Frame(self.main_frame, bg=UI["bg"])
-        nudge_frame.pack(fill=tk.X, pady=(0, 6))
-        self._tool_button(nudge_frame, "−1 秒", lambda: self._nudge_time(-1.0)).pack(side=tk.LEFT, padx=(0, 4))
-        self._tool_button(nudge_frame, "−0.1 秒", lambda: self._nudge_time(-0.1)).pack(side=tk.LEFT, padx=4)
-        self.btn_play_seg = AuraButton(
-            nudge_frame,
-            text="播放 [Space]",
-            style="Play.TButton",
-            command=self.preview_play_selection,
+        # (E) 傳輸微調與範圍按鈕列 (Transport Controls)
+        ctrl_row = tk.Frame(left_col, bg=UI["bg"])
+        ctrl_row.pack(fill=tk.X)
+
+        self._tool_button(ctrl_row, "−1 秒", lambda: self._nudge_time(-1.0)).pack(side=tk.LEFT, padx=(0, 4))
+        self._tool_button(ctrl_row, "−0.1 秒", lambda: self._nudge_time(-0.1)).pack(side=tk.LEFT, padx=2)
+
+        self.btn_in_quick = AuraButton(ctrl_row, text="[ 設為起點 (I)", style="Ghost.TButton", command=self.set_in_point)
+        self.btn_in_quick.pack(side=tk.LEFT, padx=6)
+        self.btn_out_quick = AuraButton(ctrl_row, text="設為終點 (O) ]", style="Ghost.TButton", command=self.set_out_point)
+        self.btn_out_quick.pack(side=tk.LEFT, padx=2)
+
+        self._tool_button(ctrl_row, "+0.1 秒", lambda: self._nudge_time(0.1)).pack(side=tk.LEFT, padx=2)
+        self._tool_button(ctrl_row, "+1 秒", lambda: self._nudge_time(1.0)).pack(side=tk.LEFT, padx=4)
+
+        hint_lbl = tk.Label(
+            ctrl_row, text="Space 播放 · I/O 設範圍 · ←/→ 微調 · ⌘E 匯出",
+            font=self.fonts["badge"], fg=UI["muted"], bg=UI["bg"]
         )
-        self.btn_play_seg.pack(side=tk.LEFT, padx=8)
-        self._tool_button(nudge_frame, "+0.1 秒", lambda: self._nudge_time(0.1)).pack(side=tk.LEFT, padx=4)
-        self._tool_button(nudge_frame, "+1 秒", lambda: self._nudge_time(1.0)).pack(side=tk.LEFT, padx=4)
+        hint_lbl.pack(side=tk.RIGHT)
 
-        trim_card = tk.Frame(self.main_frame, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
-        trim_card.pack(fill=tk.X, pady=(0, 10))
-        tk.Label(trim_card, text="選取範圍", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", padx=12, pady=(8, 2))
+        # === 右側欄：Recordly 屬性檢查器 Inspector (310px 寬度) ===
+        right_col = tk.Frame(workspace, bg=UI["bg"], width=310)
+        right_col.pack(side=tk.RIGHT, fill=tk.Y)
+        right_col.pack_propagate(False)
 
-        def time_row(parent, label, command):
-            row = tk.Frame(parent, bg=UI["card"])
-            row.pack(fill=tk.X, padx=12, pady=2)
-            tk.Label(row, text=label, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"], width=4, anchor="w").pack(side=tk.LEFT)
-            entry = tk.Entry(
-                row, font=self.fonts["badge"], width=12, bg=UI["field"], fg=UI["text"],
+        # 卡片 1：【畫布與比例 (Canvas & Ratio)】
+        style_card = self._inspector_card(right_col, "畫布與視覺風格")
+
+        # (1-1) 比例快捷切換
+        tk.Label(style_card, text="畫面比例", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).pack(anchor="w", padx=10, pady=(4, 2))
+        ratio_btn_row = tk.Frame(style_card, bg=UI["card"])
+        ratio_btn_row.pack(fill=tk.X, padx=10, pady=(0, 6))
+
+        self.ratio_buttons = {}
+        for r_key, r_info in RATIO_CONFIGS.items():
+            btn = tk.Button(
+                ratio_btn_row,
+                text=r_info["label"],
+                font=self.fonts["badge"],
+                bg=UI["field"],
+                fg=UI["text"],
+                activebackground=UI["hover"],
+                activeforeground=UI["white"],
+                relief=tk.FLAT,
+                bd=0,
+                cursor="hand2",
+                command=lambda k=r_key: self._set_ratio(k),
+            )
+            btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
+            self.ratio_buttons[r_key] = btn
+
+        # (1-2) 背景桌布主題
+        tk.Label(style_card, text="背景主題", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).pack(anchor="w", padx=10, pady=(2, 2))
+        theme_btn_row = tk.Frame(style_card, bg=UI["card"])
+        theme_btn_row.pack(fill=tk.X, padx=10, pady=(0, 6))
+
+        self.theme_buttons = {}
+        for t_key, t_info in THEMES.items():
+            t_btn = tk.Button(
+                theme_btn_row,
+                text=f"{t_info['icon']} {t_info['name']}",
+                font=self.fonts["badge"],
+                bg=UI["field"],
+                fg=UI["text"],
+                relief=tk.FLAT,
+                bd=0,
+                cursor="hand2",
+                command=lambda k=t_key: self._set_theme(k),
+            )
+            t_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
+            self.theme_buttons[t_key] = t_btn
+
+        # (1-3) 視窗外框開關
+        AuraCheck(
+            style_card,
+            text="顯示 macOS 視窗外框 (🔴🟡🟢)",
+            variable=self.show_mockup_header,
+            command=self._toggle_mockup_header,
+        ).pack(anchor="w", padx=10, pady=(2, 8))
+
+        # 卡片 2：【剪輯範圍數值 (Trim Points)】
+        trim_card = self._inspector_card(right_col, "精準剪輯範圍")
+        time_edit_frame = tk.Frame(trim_card, bg=UI["card"])
+        time_edit_frame.pack(fill=tk.X, padx=10, pady=(4, 8))
+
+        def create_time_input(parent, col, label_text):
+            f = tk.Frame(parent, bg=UI["card"])
+            f.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+            tk.Label(f, text=label_text, font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).pack(anchor="w")
+            ent = tk.Entry(
+                f, font=self.fonts["badge"], width=10, bg=UI["field"], fg=UI["text"],
                 insertbackground=UI["blue"], relief=tk.FLAT, bd=0,
                 highlightthickness=1, highlightbackground=UI["edge"], highlightcolor=UI["blue"],
             )
-            entry.insert(0, "00:00.0")
-            entry.pack(side=tk.LEFT, padx=(4, 8), ipady=3)
-            entry.bind("<FocusOut>", lambda e: self._update_times_from_entries())
-            entry.bind("<Return>", lambda e: self._update_times_from_entries())
-            self._tool_button(row, command[0], command[1]).pack(side=tk.LEFT)
-            return entry
+            ent.insert(0, "00:00.0")
+            ent.pack(fill=tk.X, pady=(2, 0), ipady=3)
+            ent.bind("<FocusOut>", lambda e: self._update_times_from_entries())
+            ent.bind("<Return>", lambda e: self._update_times_from_entries())
+            return ent
 
-        self.ent_start = time_row(trim_card, "起點", ("設為起點 [I]", self.set_in_point))
-        self.ent_end = time_row(trim_card, "終點", ("設為終點 [O]", self.set_out_point))
-        self.lbl_selected_len = tk.Label(
-            trim_card, text="長度 00:00.0", font=self.fonts["body"], fg=UI["text"], bg=UI["card"]
-        )
-        self.lbl_selected_len.pack(anchor="w", padx=12, pady=(4, 8))
+        self.ent_start = create_time_input(time_edit_frame, 0, "起點 (In)")
+        self.ent_end = create_time_input(time_edit_frame, 1, "終點 (Out)")
 
-        export_card = tk.Frame(self.main_frame, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
-        export_card.pack(fill=tk.X, pady=(0, 10))
-        tk.Label(export_card, text="匯出", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", padx=12, pady=(8, 2))
+        # 卡片 3：【匯出規格與選項 (Export Settings)】
+        export_card = self._inspector_card(right_col, "匯出規格")
 
         self.export_mode_var = tk.StringVar(value="lossless")
         self.mute_var = tk.BooleanVar(value=False)
+
         modes = [
-            ("無損裁切（不重新編碼）", "lossless"),
-            ("重新編碼（可調速度、比例、色彩）", "precise"),
-            ("GIF", "gif"),
-            ("只輸出音訊", "audio"),
+            ("⚡ 極速無損（0.5秒直出）", "lossless"),
+            ("🎨 精準重編碼（比例/速度）", "precise"),
+            ("🎞️ 高清 GIF 動態圖", "gif"),
+            ("🎵 提取音訊 (MP3)", "audio"),
         ]
         for text, value in modes:
             AuraRadio(
                 export_card, text=text, variable=self.export_mode_var, value=value
-            ).pack(anchor="w", padx=12)
+            ).pack(anchor="w", padx=10, pady=1)
 
-        adv_frame = tk.Frame(export_card, bg=UI["card"])
-        adv_frame.pack(fill=tk.X, padx=12, pady=(4, 8))
+        opt_grid = tk.Frame(export_card, bg=UI["card"])
+        opt_grid.pack(fill=tk.X, padx=10, pady=(6, 8))
 
-        def labeled_combo(row, column, label, values, width):
-            tk.Label(
-                adv_frame, text=label, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"]
-            ).grid(row=row, column=column * 2, sticky="w", padx=(0, 4), pady=4)
-            combo = ttk.Combobox(adv_frame, style="App.TCombobox", state="readonly", width=width)
-            combo["values"] = values
-            combo.current(0)
-            combo.grid(row=row, column=column * 2 + 1, sticky="w", padx=(0, 16), pady=4)
-            return combo
+        def make_combo_row(parent, row, label, values, default_idx=0):
+            tk.Label(parent, text=label, font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(
+                row=row, column=0, sticky="w", pady=3
+            )
+            cb = ttk.Combobox(parent, style="App.TCombobox", state="readonly", width=14, values=values)
+            cb.current(default_idx)
+            cb.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=3)
+            return cb
 
-        self.speed_combo = labeled_combo(0, 0, "速度", ["1.0x", "0.5x", "1.5x", "2.0x"], 6)
-        self.ratio_combo = labeled_combo(
-            0, 1, "比例",
-            ["原始比例", "直式 9:16 完整", "直式裁切 左", "直式裁切 中", "直式裁切 右", "16:9 橫式", "1:1 方形"],
-            14,
+        self.speed_combo = make_combo_row(opt_grid, 0, "播放速度", ["1.0x (原速)", "1.5x (推薦)", "2.0x (快進)", "0.5x (慢速)"], 0)
+        self.volume_combo = make_combo_row(opt_grid, 1, "音量增益", ["100% 原始", "150% 增強", "200% 放大", "50% 降低"], 0)
+        self.scale_combo = make_combo_row(opt_grid, 2, "輸出畫質", ["原始畫質", "1080p 適合分享", "720p 節省空間"], 0)
+
+        AuraCheck(export_card, text="靜音輸出", variable=self.mute_var).pack(anchor="w", padx=10, pady=(2, 6))
+
+        # 側邊欄底部大按鈕
+        self.btn_export_side = AuraButton(
+            right_col, text="⚡ 一鍵匯出影片", style="Primary.TButton", command=self.perform_export
         )
-        self.ratio_combo.bind("<<ComboboxSelected>>", lambda _event: self._request_preview(self.current_time))
-        self.color_combo = labeled_combo(1, 0, "色彩", ["原色", "鮮豔", "高對比"], 8)
-        self.volume_combo = labeled_combo(1, 1, "音量", ["100% 原始", "150% 增強", "200% 放大", "50% 降低"], 14)
-        self.scale_combo = labeled_combo(2, 0, "尺寸", ["原始畫質", "1080p 適合分享", "720p 節省空間"], 12)
-        AuraCheck(adv_frame, text="靜音", variable=self.mute_var).grid(row=2, column=2, columnspan=2, sticky="w", pady=4)
+        self.btn_export_side.pack(fill=tk.X, pady=(6, 0))
 
-        self.btn_export = AuraButton(
-            self.main_frame,
-            text=self._export_btn_label(),
-            style="Primary.TButton",
-            command=self.perform_export,
+        # 初始化選中外觀
+        self._update_ratio_buttons_ui()
+        self._update_theme_buttons_ui()
+        self._update_mockup_geometry()
+
+    def _inspector_card(self, parent, title):
+        card = tk.Frame(parent, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(card, text=title, font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(
+            anchor="w", padx=10, pady=(8, 4)
         )
-        self.btn_export.pack(fill=tk.X, pady=(0, 4))
+        return card
+
+    def _draw_traffic_dots(self):
+        c = self.mockup_dots_canvas
+        c.delete("all")
+        dots = [("#ff5f56", 7), ("#ffbd2e", 21), ("#27c93f", 35)]
+        for color, x in dots:
+            c.create_oval(x - 4, 3, x + 4, 11, fill=color, outline="")
+
+    def _set_ratio(self, ratio_key):
+        if ratio_key not in RATIO_CONFIGS:
+            return
+        self.current_ratio = ratio_key
+        self._update_ratio_buttons_ui()
+        self._update_mockup_geometry()
+        self._request_preview(self.current_time)
+
+    def _update_ratio_buttons_ui(self):
+        for k, btn in self.ratio_buttons.items():
+            if k == self.current_ratio:
+                btn.config(bg=UI["blue"], fg=UI["ink"])
+            else:
+                btn.config(bg=UI["field"], fg=UI["text"])
+
+    def _set_theme(self, theme_key):
+        if theme_key not in THEMES:
+            return
+        self.current_theme = theme_key
+        theme = THEMES[theme_key]
+
+        # 更新舞台與視窗模型顏色
+        self.stage_container.config(bg=theme["stage_bg"], highlightbackground=theme["frame_border"])
+        self.mockup_frame.config(bg=theme["frame_header"], highlightbackground=theme["frame_border"])
+        self.mockup_header.config(bg=theme["frame_header"])
+        self.mockup_dots_canvas.config(bg=theme["frame_header"])
+        self.mockup_title_lbl.config(bg=theme["frame_header"])
+        self._draw_traffic_dots()
+
+        self._update_theme_buttons_ui()
+
+    def _update_theme_buttons_ui(self):
+        for k, btn in self.theme_buttons.items():
+            if k == self.current_theme:
+                btn.config(bg=THEMES[k]["frame_border"], fg=UI["ink"])
+            else:
+                btn.config(bg=UI["field"], fg=UI["text"])
+
+    def _toggle_mockup_header(self):
+        if self.show_mockup_header.get():
+            self.mockup_header.pack(fill=tk.X, before=self.preview_label)
+        else:
+            self.mockup_header.pack_forget()
+
+    def _update_mockup_geometry(self):
+        cfg = RATIO_CONFIGS[self.current_ratio]
+        w, h = cfg["preview_w"], cfg["preview_h"]
+        header_h = 24 if self.show_mockup_header.get() else 0
+        self.mockup_frame.config(width=w, height=h + header_h)
 
     def _export_btn_label(self):
-        return "匯出 (⌘E)" if IS_MAC else "匯出 (Ctrl+E)"
+        return "⚡ 匯出 (⌘E)" if IS_MAC else "⚡ 匯出 (Ctrl+E)"
 
     def _bind_shortcuts(self):
         w = self.window
@@ -318,26 +603,6 @@ class VideoEditorWindow:
                 self.btn_play_seg.config(text="播放 [Space]", style="Play.TButton")
                 return "break"
 
-        def on_frame_back(event):
-            if not _in_entry(event):
-                self._nudge_time(-0.033)
-                return "break"
-
-        def on_frame_fwd(event):
-            if not _in_entry(event):
-                self._nudge_time(0.033)
-                return "break"
-
-        def on_home(event):
-            if not _in_entry(event):
-                self._jump_to_time(0.0)
-                return "break"
-
-        def on_end(event):
-            if not _in_entry(event):
-                self._jump_to_time(self.total_duration)
-                return "break"
-
         w.bind("<space>", on_space)
         w.bind("<i>", on_in_key)
         w.bind("<I>", on_in_key)
@@ -347,12 +612,6 @@ class VideoEditorWindow:
         w.bind("<Right>", on_right)
         w.bind("<Shift-Left>", on_shift_left)
         w.bind("<Shift-Right>", on_shift_right)
-        w.bind("<comma>", on_frame_back)
-        w.bind("<less>", on_frame_back)
-        w.bind("<period>", on_frame_fwd)
-        w.bind("<greater>", on_frame_fwd)
-        w.bind("<Home>", on_home)
-        w.bind("<End>", on_end)
         w.bind("<j>", on_shift_left)
         w.bind("<J>", on_shift_left)
         w.bind("<k>", on_space)
@@ -385,7 +644,7 @@ class VideoEditorWindow:
         self.end_sec = self.total_duration
 
         self.lbl_filename.config(text=info["file_name"])
-        audio = "有音訊" if info["has_audio"] else "沒有音訊"
+        audio = "有音訊" if info["has_audio"] else "無音訊"
         meta_str = (
             f"{info['width']}×{info['height']}  ·  {sec_to_time_str(self.total_duration)}"
             f"  ·  {info['size_mb']} MB  ·  {audio}"
@@ -439,7 +698,7 @@ class VideoEditorWindow:
                             img = tk.PhotoImage(data=ppm)
                             self.filmstrip_images.append(img)
                             lbl = self.filmstrip_labels[i]
-                            lbl.config(image=img, text="")
+                            lbl.config(image=img, text="", width=0, height=0)
                             lbl.bind("<Button-1>", lambda _e, target=t: self._jump_to_time(target))
                         except Exception:
                             pass
@@ -469,10 +728,8 @@ class VideoEditorWindow:
         self._request_preview(new_time)
 
     def _preview_filter(self):
-        if not hasattr(self, "ratio_combo"):
-            return None
-        ratio, anchor = parse_aspect_choice(self.ratio_combo.get())
-        return preview_video_filter(ratio, anchor)
+        cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+        return preview_video_filter(cfg["aspect"], cfg["anchor"], width=cfg["preview_w"], height=cfg["preview_h"])
 
     def _request_preview(self, sec):
         if not self.current_file:
@@ -492,18 +749,19 @@ class VideoEditorWindow:
                 break
             target_sec, crop = pending
 
+            cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
             ppm_data = self.editor.get_frame_ppm(
-                self.current_file, target_sec, width=320, height=180, video_filter=crop,
+                self.current_file, target_sec, width=cfg["preview_w"], height=cfg["preview_h"], video_filter=crop,
             )
             if ppm_data:
                 self.window.after(0, lambda data=ppm_data: self._update_preview_image(data))
 
-            time.sleep(0.15)
+            time.sleep(0.12)
 
     def _update_preview_image(self, ppm_data):
         try:
             self.preview_image = tk.PhotoImage(data=ppm_data)
-            self.preview_label.config(image=self.preview_image, text="")
+            self.preview_label.config(image=self.preview_image, text="", width=0, height=0)
         except Exception as e:
             print("Preview render error:", e)
 
@@ -552,8 +810,9 @@ class VideoEditorWindow:
 
     def _update_selection_length_label(self):
         sel_dur = max(0.0, self.end_sec - self.start_sec)
+        pct = (sel_dur / self.total_duration * 100) if self.total_duration > 0 else 100
         self.lbl_selected_len.config(
-            text=f"長度 {sec_to_time_str(sel_dur)}（{sec_to_time_str(self.start_sec)} – {sec_to_time_str(self.end_sec)}）"
+            text=f"選取長度 {sec_to_time_str(sel_dur)} ({pct:.0f}%)"
         )
 
     def preview_play_selection(self):
@@ -575,7 +834,6 @@ class VideoEditorWindow:
 
         self._playing_process = self.editor.play_segment(self.current_file, self.start_sec, dur)
         if not self._playing_process:
-            # 若無 ffplay，改以系統預設播放器開啟
             open_file_or_dir(self.current_file)
             return
 
@@ -605,7 +863,6 @@ class VideoEditorWindow:
             return
 
         p = Path(self.current_file)
-
         time_tag = f"{int(self.start_sec)}s-{int(self.end_sec)}s"
         default_dir = str(p.parent)
 
@@ -628,32 +885,27 @@ class VideoEditorWindow:
             return
 
         self.btn_export.config(text="正在匯出…", state=tk.DISABLED)
+        self.btn_export_side.config(text="正在匯出…", state=tk.DISABLED)
 
         def run_export_thread():
             mute = self.mute_var.get()
             ok = False
             msg = ""
 
-            # 讀取進階參數
+            # 讀取參數
             spd = 1.0
             try:
-                spd = float(self.speed_combo.get().replace("x", ""))
+                spd_str = self.speed_combo.get().split()[0].replace("x", "")
+                spd = float(spd_str)
             except Exception:
                 pass
 
-            rat, anchor = parse_aspect_choice(self.ratio_combo.get())
-
-            col_str = self.color_combo.get()
-            br, ct, sat = 0.0, 1.0, 1.0
-            if "鮮豔" in col_str:
-                sat = 1.3
-                ct = 1.05
-            elif "高對比" in col_str:
-                ct = 1.25
-                br = -0.02
+            cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+            rat = cfg["aspect"]
+            anchor = cfg["anchor"]
 
             vol = 1.0
-            vol_str = self.volume_combo.get() if hasattr(self, "volume_combo") else "100%"
+            vol_str = self.volume_combo.get()
             if "150%" in vol_str:
                 vol = 1.5
             elif "200%" in vol_str:
@@ -662,7 +914,7 @@ class VideoEditorWindow:
                 vol = 0.5
 
             scale_res = "original"
-            scale_str = self.scale_combo.get() if hasattr(self, "scale_combo") else "原始"
+            scale_str = self.scale_combo.get()
             if "1080p" in scale_str:
                 scale_res = "1080p"
             elif "720p" in scale_str:
@@ -672,9 +924,6 @@ class VideoEditorWindow:
                 rat != "original"
                 or abs(spd - 1.0) > 0.001
                 or mute
-                or br != 0.0
-                or ct != 1.0
-                or sat != 1.0
                 or abs(vol - 1.0) > 0.001
                 or scale_res != "original"
             )
@@ -690,7 +939,6 @@ class VideoEditorWindow:
                     ok, msg = self.editor.trim_advanced(
                         self.current_file, out_path, self.start_sec, self.end_sec,
                         speed=spd, aspect_ratio=rat, anchor=anchor,
-                        brightness=br, contrast=ct, saturation=sat,
                         mute_audio=mute,
                         volume=vol,
                         target_resolution=scale_res,
@@ -720,6 +968,7 @@ class VideoEditorWindow:
 
     def _on_export_finished(self, ok, msg, out_path, switched=False):
         self.btn_export.config(text=self._export_btn_label(), state=tk.NORMAL)
+        self.btn_export_side.config(text="⚡ 一鍵匯出影片", state=tk.NORMAL)
         if ok:
             play_system_alert("complete")
             self._show_export_success_card(out_path, switched)
