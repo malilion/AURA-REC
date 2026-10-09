@@ -1,16 +1,16 @@
 @echo off
 REM ============================================================
-REM   AURA REC - Windows 一鍵編譯器 (Double-click to build .exe)
-REM   產生帶 AURA 圖示的單一執行檔 AURA-REC.exe
+REM   AURA REC - Windows 一鍵編譯與打包器
+REM   產生單一執行檔 AURA-REC.exe 與免安裝壓縮包 AURA-REC-Windows-x64.zip
 REM ============================================================
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 chcp 65001 >nul
 
 echo.
-echo   ============================================
-echo      AURA REC  -  Windows EXE 編譯器
-echo   ============================================
+echo   ====================================================
+echo      AURA REC  -  Windows 桌面應用一鍵打包器
+echo   ====================================================
 echo.
 
 REM --- 1. 檢查 Python ---
@@ -21,12 +21,12 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-echo [1/4] 已偵測到 Python
+echo [1/5] 已偵測到 Python 環境
 python --version
 
-REM --- 2. 安裝 / 升級 PyInstaller ---
+REM --- 2. 檢查並安裝 PyInstaller ---
 echo.
-echo [2/4] 檢查並安裝 PyInstaller...
+echo [2/5] 檢查 PyInstaller...
 python -m pip install --upgrade pip >nul 2>nul
 python -m pip install --upgrade pyinstaller
 if errorlevel 1 (
@@ -35,28 +35,81 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM --- 3. 編譯單一 exe（視窗模式、內嵌圖示、只附帶工作站那一個檔） ---
+REM --- 3. 檢查 FFmpeg ---
 echo.
-echo [3/4] 正在編譯 AURA-REC.exe（約需 1-2 分鐘）...
+echo [3/5] 檢查 FFmpeg 工具...
+set "LOCAL_FFMPEG="
+if exist "%~dp0ffmpeg.exe" (
+    set "LOCAL_FFMPEG=%~dp0ffmpeg.exe"
+    echo      找到專案目錄下的 ffmpeg.exe
+) else (
+    where ffmpeg >nul 2>nul
+    if not errorlevel 1 (
+        for /f "delims=" %%i in ('where ffmpeg') do set "LOCAL_FFMPEG=%%i"
+        echo      找到系統 PATH 中的 FFmpeg: !LOCAL_FFMPEG!
+    ) else (
+        echo      [提示] 未偵測到 ffmpeg.exe。使用者亦可於 Windows 執行：
+        echo             winget install Gyan.FFmpeg
+    )
+)
+
+REM --- 4. 編譯單一 EXE ---
+echo.
+echo [4/5] 正在編譯 AURA-REC.exe（約需 1-2 分鐘）...
 pyinstaller --noconfirm --onefile --windowed ^
     --name "AURA-REC" ^
     --icon "AURA-REC.ico" ^
+    --add-data "fonts;fonts" ^
     --add-data "web_studio\download\AURA-REC.html;." ^
     app.py
+
 if errorlevel 1 (
     echo [X] 編譯失敗。請把上方錯誤訊息截圖回報。
     pause
     exit /b 1
 )
 
-REM --- 4. 完成 ---
+REM --- 5. 複製相依工具並製作 ZIP / 安裝檔 ---
 echo.
-echo [4/4] 完成！
+echo [5/5] 整理發佈檔案與壓縮包...
+if not exist "%~dp0dist" mkdir "%~dp0dist"
+
+if defined LOCAL_FFMPEG (
+    if exist "!LOCAL_FFMPEG!" (
+        copy /y "!LOCAL_FFMPEG!" "%~dp0dist\ffmpeg.exe" >nul
+        echo      已將 ffmpeg.exe 複製至 dist 資料夾以供免安裝使用
+    )
+)
+
+REM 使用 PowerShell 製作免安裝 ZIP 包
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$dist = '%~dp0dist'; $zip = Join-Path $dist 'AURA-REC-Windows-x64.zip'; Remove-Item -Force -ErrorAction SilentlyContinue $zip; $files = @((Join-Path $dist 'AURA-REC.exe')); if (Test-Path (Join-Path $dist 'ffmpeg.exe')) { $files += (Join-Path $dist 'ffmpeg.exe') }; Compress-Archive -Path $files -DestinationPath $zip; Write-Host '      已建立免安裝 ZIP 包: ' $zip"
+
+REM 檢查是否有 Inno Setup 編譯器 (ISCC.exe)
+set "ISCC_PATH="
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC_PATH=C:\Program Files\Inno Setup 6\ISCC.exe"
+
+if defined ISCC_PATH (
+    echo.
+    echo      偵測到 Inno Setup，正在製作 AURA-REC-Setup.exe 安裝精靈...
+    "!ISCC_PATH!" "%~dp0installer\AURA-REC-Setup.iss" >nul
+    if not errorlevel 1 (
+        echo      [OK] 已成功產生安裝精靈：%~dp0dist\AURA-REC-Setup.exe
+    )
+)
+
 echo.
-echo   [OK] 編譯成功！你的應用程式在：
-echo        %~dp0dist\AURA-REC.exe
+echo   ====================================================
+echo      [OK] Windows 桌面應用打包完成！
+echo   ====================================================
 echo.
-echo   直接雙擊 dist\AURA-REC.exe 即可使用（可拖到桌面建立捷徑）。
+echo   檔案位於 dist 目錄：
+echo     1. 執行檔:       dist\AURA-REC.exe
+echo     2. 免安裝 ZIP:   dist\AURA-REC-Windows-x64.zip
+if exist "%~dp0dist\AURA-REC-Setup.exe" (
+echo     3. 安裝精靈:     dist\AURA-REC-Setup.exe
+)
 echo.
 pause
 endlocal

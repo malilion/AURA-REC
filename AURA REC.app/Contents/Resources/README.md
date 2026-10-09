@@ -1,121 +1,167 @@
-# 🎥 LiteScreenRecorder (跨平台輕量桌面螢幕錄製與剪輯工具)
+# AURA REC
 
-專為 **macOS** 與 **Windows** 雙平台打造的高效能、極簡輕量螢幕錄製與剪輯後製工具。採用 Python 原生 GUI 與 FFmpeg 硬體加速編碼，無肥大依賴（無需 500MB+ 的 Electron），秒速啟動、錄製順暢、資源極低！
+真正把畫面與聲音留下來的原生桌面錄影工作站。
 
----
-
-## ✨ 核心特色
-
-1. **🌐 AURA REC // 獲獎級 Web 沈浸式全螢幕錄製與剪輯工作站**
-   - **Awwwards / Webby / FWA 標準**：採用深邃黑曜石科技奢華風（Dark Neo-Brutalist & Cyber Elegance），具備 1px 賽博微光邊界與細緻毛玻璃材質。
-   - **即時螢幕標註與畫筆系統**：支援自由畫筆、矩形框、霓虹色系切換與一鍵清空，教學與演示無往不利。
-   - **電影級色彩濾鏡與倍速播放**：內建原色、賽博極光 (Cyberpunk)、黑白底片 (Noir)、暖調膠片 (Warm Film) 與 0.5x~2.0x 倍速。
-   - **自由拖曳視訊鏡頭 (Draggable Facecam PiP)**：鏡頭視窗可隨意拖放於舞台任何位置。
-   - **劇院級環境光自適應背光 (Dynamic Ambient Glow)**：即時採樣視訊主色調並柔化擴散至監視窗背景，營造極致劇院沈浸感。
-   - **雙軌非線性時間軸 (Non-linear Dual Track)**：包含影像膠卷影格條 (V1) 與 60 FPS 實時跳動的 Web Audio 音訊波形頻譜 (A1)。
-   - **合成器微互動音效**：使用純 Web Audio API 合成機械阻尼點擊音、完成弦音與倒數嗶聲。
-   - **雙擊即開**：macOS 雙擊 `open_studio.command`、Windows 雙擊 `open_studio.bat` 即刻在瀏覽器中暢享！
-2. **🌐 macOS & Windows 雙平台桌面客戶端支援**
-   - **📜 最近錄影管理藝廊 (Recent Recordings Gallery)**：主面板即時列出最近錄製檔案，支援一鍵播放 (▶)、一鍵剪輯 (✂)、檔案定位與安全刪除 (🗑)。
-   - **⚡ 進階剪輯與社群比例裁切**：支援 0.5x~2.0x 倍速調整、9:16 短影音 (Shorts/Reels/TikTok) / 16:9 / 1:1 比例裁切與色彩增強。
-   - **macOS**：原生整合 `AVFoundation` 螢幕音訊捕獲與 Apple Silicon `VideoToolbox` 硬體編碼。
-   - **Windows**：原生支援 `GDI Grab` 全螢幕擷取、DirectShow 麥克風與立體聲混音，支援 NVIDIA NVENC / Intel QSV / AMD AMF 硬體加速。
-   - **High-DPI 高解析度優化**：Windows 4K/2K 縮放不模糊、macOS Retina 超清晰字體。
-3. **💊 懸浮膠囊模式 (Mini Floating Pill)**
-   - 開始錄影後可自動收合成小巧置頂懸浮條（`● REC 00:01:23 [⏹ 停止]`），不遮擋畫面，隨意拖曳至螢幕角落。
-   - 停止錄製時自動恢復控制面板。
-3. **✂️ 內建即時影片剪輯與後製 (Video Trimmer & Editor)**
-   - **錄完立即剪輯**：錄製完成自動引導進入剪輯視窗，亦可在主介面點擊「✂️ 剪輯影片」隨時挑選歷史影片。
-   - **影格即時預覽**：拖動時間軸即時擷取畫面縮圖，支援 `±0.1s` / `±1s` 精確微調與區段播放。
-   - **起點/終點靈活裁切**：一鍵設置起點與終點，即時計算選取長度。
-   - **⚡ 無損極速剪裁**：使用 Stream Copy 技術，0.5 秒瞬間完成，畫質 100% 原始無損！
-   - **🎯 精準幀剪輯**：精確至單幀裁切，並支援「🔇 一鍵去除聲音 (靜音剪輯)」。
-   - **🎞️ 匯出為 GIF 動畫**：內建雙遍高畫質調色盤演算法，完美轉出流暢 GIF，適合分享至 GitHub、Slack、Notion。
-   - **🎵 提取純音訊**：一鍵將影片中的語音單獨提取為 MP3 / M4A 聲音檔。
-4. **🎙️ 音訊靈活錄製（支援系統聲音）**
-   - **麥克風收音**：錄製會議發言、解說旁白。
-   - **系統音效錄製**：
-     - **Windows**：直接選取「立體聲混音 (Stereo Mix)」或虛擬聲卡。
-     - **macOS**：支援 `Microsoft Teams Audio` 或 `BlackHole 2ch` 虛擬聲卡。
-   - **靜音模式**：純畫面錄影。
-5. **📐 多檔位解析度與幀率 (FPS)**
-   - **解析度**：Retina / 4K 原生解析度 (免縮放最高清)、2K (2560x1440)、1080p FHD、720p HD。
-   - **幀率**：30 FPS (平衡推薦)、60 FPS (高流暢動態)、15 FPS (極度省空間)。
-6. **⏱️ 3 秒倒數準備與系統音效回饋**
-   - 倒數 3、2、1 提示音，讓您從容切換到想錄製的視窗。
-7. **⌨️ 快捷鍵支援**
-   - 按 `Space`（空白鍵）、`F9`、`Cmd + R` (macOS) 或 `Ctrl + R` (Windows) 立即開始 / 停止錄製。
-8. **📁 智慧檔案管理**
-   - 一鍵「開啟資料夾 (Reveal in Finder / Explorer)」。
-   - 一鍵「播放最新影片 (預設播放器)」。
-   - 支援自由變更儲存目錄。
+- **桌面應用程式（主要推薦）**：支援 macOS（`AURA REC.app` / DMG / ZIP）與 Windows（`AURA-REC.exe` / ZIP）。晶片級硬體加速（Apple Silicon VideoToolbox / NVIDIA NVENC）、電腦系統聲音內錄、動態視窗追蹤、全域快捷鍵（F8/F9/F7）、錄影避讓收合與離線無損剪輯。
+- **瀏覽器工作站（免安裝體驗版）**：輕量單一檔案 `AURA-REC.html`。官網在 [malilion.github.io/Record](https://malilion.github.io/Record/)，可直接在線上或離線雙擊開啟作為快速預覽與時間軸標記工具。
 
 ---
 
-## 🚀 啟動方式
+## 為什麼選擇桌面版？
 
-### 🍎 macOS 使用者：
-- **方法 1（最推薦 · 一鍵圖示）**：直接雙擊 **`AURA REC.app`** 應用程式圖示即可開啟。
-  - 可拖到「應用程式」資料夾或 Dock，像一般 App 一樣使用。
-  - ⚠️ 首次開啟若出現「無法驗證開發者」：在 `AURA REC.app` 上**按右鍵 → 開啟 → 再按一次「開啟」**（因未經 Apple 簽章，僅首次需要）。
-- **方法 2**：在 Finder 中雙擊 **`ScreenRecorder.command`**
-- **方法 3**：在終端機執行 `./run.sh` 或 `python3 app.py`
-
-### 🪟 Windows 使用者：
-- **方法 1（最推薦 · 產生一鍵圖示 .exe）**：雙擊 **`build_windows_exe.bat`**，它會自動安裝 PyInstaller 並編譯出帶 AURA 圖示的 **`dist\AURA-REC.exe`**。
-  - 完成後雙擊 `dist\AURA-REC.exe` 即可使用，可拖到桌面建立捷徑。
-  - 僅需編譯一次；之後都直接用產生的 `.exe`。
-- **方法 2**：在檔案總管中雙擊 **`ScreenRecorder.bat`**
-- **方法 3**：在命令提示字元 (CMD) 或 PowerShell 執行 `python app.py`
-
-> 💡 **一鍵圖示 vs 腳本**：macOS 的 `AURA REC.app` 已預先打包好，開箱即點。Windows 的單一 `.exe` 因平台限制必須在 Windows 上編譯一次（這就是 `build_windows_exe.bat` 做的事）。兩者底層都是同一套 Python 引擎。
+1. **晶片級硬體加速**：Apple Silicon (M1~M4) 與 NVIDIA / Intel / AMD 原生編碼，4K 60FPS 錄製依然流暢不發燙，告別瀏覽器轉碼掉幀與 CPU 飆高。
+2. **真正的系統聲音內錄**：徹底突破 macOS 瀏覽器無法擷取電腦聲音的限制，支援系統音效與麥克風雙軌混音。
+3. **動態視窗追蹤與避讓**：錄製單一視窗時，視窗拖移會即時自動追蹤裁切位置；全螢幕錄影時控制條智慧避讓隱藏。
+4. **全域快捷鍵**：F8 暫停/繼續（暫停時間不計入總長）、F9 停止、F7 快速截圖。
+5. **串流直出 MP4 / MOV**：直接即時寫入硬碟，長錄影不爆記憶體，具備睡眠防護與斷電安全保護。
 
 ---
 
-## 🛠️ 前置需求 (FFmpeg 安裝)
+## 瀏覽器工作站
 
-本工具為極輕量化設計，僅需系統具備 Python 3 與 FFmpeg：
+### 做得到什麼
 
-- **macOS**：
-  ```bash
-  brew install ffmpeg
-  ```
-- **Windows**：
-  在 PowerShell / CMD 執行：
-  ```cmd
-  winget install Gyan.FFmpeg
-  ```
-  *(或至 [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/) 下載並將 `ffmpeg.exe` 放入專案資料夾)*
+- 錄整個螢幕、一個視窗，或一個分頁。選哪一塊，由瀏覽器的分享視窗決定。
+- 分享時可勾選系統聲音。底部的「麥克風收音」是另外一路，可以和畫面聲音混在一起。
+- 按下後先倒數 3 秒。空白鍵可以開始或停止。
+- 預覽上可以畫筆、矩形、聚光燈，顏色可換。畫幅導引有 16:9、9:16、1:1。按鍵會浮在畫面上。
+- 圓形鏡頭可以拖位置。舞台周圍的光會跟著畫面的顏色走。
+- 濾鏡：原色、賽博、黑白、暖調。播放速度 0.5x、1x、1.5x、2x。
+- 時間軸有影像條和聲音條。拖綠色起點、紅色終點，播放會在這一段循環。I 標記起點，O 標記終點，J / L 前後一秒，M 靜音，F 全螢幕。
+- 「匯出選取片段」只存時間軸起點到終點那一段 WebM。起點和終點就是整段時，直接存原來的檔。「導出精華截圖」把目前這一格連同畫筆存成 PNG。
+- 也可以按「匯入既有影片剪輯」，拿一支現成影片來預覽。
+
+瀏覽器會盡量要較高的解析度與 60 FPS。實際大小跟著你選的那塊畫面，不保證每一台都是 4K。
+
+畫筆、鏡頭和濾鏡是預覽上的看法。畫筆會進 PNG 截圖。存成 WebM 的是這次錄到的整段畫面與聲音。
+
+### 怎麼用
+
+1. 打開 [官網](https://malilion.github.io/Record/)，按下載。只會得到 `AURA-REC.html`。
+2. 雙擊那個檔。請用 Chrome、Edge 或 Brave，並允許螢幕分享。
+3. 按「開始選取並錄製」。要電腦裡的聲音，在分享視窗勾選。要自己的聲音，打開底部的麥克風。
+4. 倒數結束後開始。再按空白鍵，或按懸浮條上的「停止錄製」。
+5. 用時間軸看。要指出某一格，用左上角的畫筆。要換看法，用右上角的濾鏡和倍速。
+6. 在時間軸標好起點和終點，按「匯出選取片段」把這一段存成 WebM。要圖就按「導出精華截圖」。
+
+第一次開啟需要網路，用來載入字型與介面。本機也可以直接雙擊 `open_studio.command`（macOS）或 `open_studio.bat`（Windows），開的是同一個工作站。
 
 ---
 
-## 🎧 如何錄製電腦內部聲音（系統音效）？
+## 桌面程式
 
-- **Windows**：
-  1. 在 Windows 右下角聲音圖示按右鍵 >「聲音設定」>「更多音效設定」。
-  2. 切換到「錄製」分頁，在空白處按右鍵勾選「顯示已停用的裝置」。
-  3. 將 **「立體聲混音 (Stereo Mix)」** 按右鍵「啟用」。
-  4. 回到本工具的音訊來源下拉選單，選擇 `Stereo Mix` 即可錄製電腦內部音樂與系統音！
-- **macOS**：
-  1. 若已安裝 Microsoft Teams，直接選取 `Microsoft Teams Audio`。
-  2. 或安裝 BlackHole (`brew install blackhole-2ch`)，在「音訊 MIDI 設定」建立多重輸出裝置即可。
+要比較長的錄影、指定一個視窗、硬體編碼，或把影片裁短、轉成直式、做成 GIF 時，用這一支。
+
+### 做得到什麼
+
+- 錄整個螢幕、拖一塊範圍，或錄畫面上的某一個視窗。視窗錄的是按下開始時那個視窗的位置，檔名會帶上那個程式的名稱。
+- 解析度有原生、2K、1080p、720p，以長邊對齊並保留比例。直向的範圍不會被拉成橫的。幀率 15、30、60。
+- 一般文書電腦會自動用較輕的畫質：8GB 或 4 核心以下是 720p / 15 FPS，並少用一些 CPU。其他電腦預設 1080p / 30 FPS。原生解析度和 60 FPS 仍可自己選。硬體加速預設打開。
+- 畫質分較省、標準、較清晰。標準畫質把檔案壓小，1080p 大約一小時 400 MB。準備錄影時會顯示大約每分鐘多大，以及以這個畫質還能錄多久。
+- 存成 MP4 或 MOV。可以設 1 到 60 分鐘後自動停止。長錄影可以每 5、10 或 30 分鐘各自存成一個檔，預設不分段。
+- 可關掉「錄下游標」。錄影時顯示檔案大小。磁碟剩下不到 500 MB 會先問。錄影時不讓電腦睡著。
+- 3 秒倒數。倒數時再按一次或按 `Esc` 可以取消。
+- 錄影中可收成小條。若是在錄一個視窗，小條會先移到不擋住那個視窗的角落。`Esc` 或「展開」回到主畫面。
+- `F8` 暫停或繼續。暫停的時間不計入長度，分段也不會在暫停時換檔。
+- `F7` 截圖，和錄影放在同一個資料夾。有自訂範圍時只截那一塊。
+- 最近的檔案可以改名、雙擊播放、剪輯、在資料夾裡顯示或刪除。影片和聲音會顯示長度。剪輯匯出的 GIF、音訊和截圖若在同一個資料夾，也會列出來。
+- 「複製最新檔案」把最新一個已完成的檔放到剪貼簿，可以貼到 Finder 或其他資料夾。正在寫入的那一個不會被複製。
+- 剪輯：時間軸預覽、起點與終點、無損裁切、靜音、GIF、抽出音訊。橫向影片可放進直式 9:16，整段留在中間，上下用模糊背景補滿；也可以改成只裁左、中或右。有改比例、速度、色彩或靜音時會重新編碼。
+- 解析度、幀率、裝置、範圍、視窗和視窗位置會記住。
+- macOS 用 AVFoundation 與 VideoToolbox。Windows 用 GDI，並可走 NVENC、QSV 或 AMF。
+
+### 怎麼打開
+
+macOS：
+
+- 雙擊 `AURA REC.app`。可拖到「應用程式」或 Dock。
+- 首次若出現「無法驗證開發者」：在 `AURA REC.app` 上按右鍵，選「開啟」，再按一次「開啟」。
+- 或雙擊 `ScreenRecorder.command`，或在終端機執行 `./run.sh`。
+
+Windows：
+
+- 雙擊 `build_windows_exe.bat`，產生 `dist\AURA-REC.exe`。之後雙擊那個 exe。
+桌面程式功能選單支援「系統聲音錄製指南…」（內建 macOS BlackHole / Windows 立體聲混音快速設定）與「FFmpeg 與硬體加速檢視…」。
+
+### 怎麼錄
+
+1. 先裝好下面的 FFmpeg。
+2. 打開程式。來源選螢幕。音訊可以選麥克風、系統音訊裝置，或選「無音訊」。
+3. 範圍選「整個螢幕」、拖一塊，或選畫面上的一個視窗。視窗必須在目前這個螢幕上。
+4. 選解析度、幀率、畫質、MP4 或 MOV。需要的話再設自動停止和分段。
+5. 空白鍵、`F9`，或 `Cmd + R`（macOS）／`Ctrl + R`（Windows）開始。倒數時再按一次或 `Esc` 會取消。
+6. 錄完再按一次停止。檔案出現在最近列表。雙擊檔名播放，或按「剪輯」。
+
+捷徑：
+
+| 動作 | 按鍵 |
+| --- | --- |
+| 開始或停止 | 空白鍵、`F9`、`Cmd + R` 或 `Ctrl + R` |
+| 取消倒數 | 再按一次開始，或 `Esc` |
+| 暫停或繼續 | `F8` |
+| 截圖 | `F7` |
+| 小條回到主畫面 | `Esc` |
+| 複製最新檔案 | `Shift + Command + C`（Windows 為 `Shift + Ctrl + C`） |
+
+檔案放哪裡：從專案直接執行時，預設在 `recordings/`。用 `AURA REC.app` 開啟時改存到「影片 / AURA REC」，避免寫進應用程式裡面。Windows 從程式開啟時在「影片 / AURA REC」。改過的路徑會記住。
+
+### 怎麼剪
+
+1. 在最近列表按「剪輯」，或從選單打開剪輯。
+2. 在時間軸上設起點和終點。
+3. 比例維持原樣，或改成直式 9:16 完整（整段放進直式畫布）。只要其中一塊時，選直式裁切的左、中或右。也可以 16:9 或 1:1。
+4. 需要的話靜音、改速度、輸出 GIF，或只抽出音訊。
+5. 選存檔位置後匯出。只裁時間、沒有改比例或聲音時，走無損裁切。
+
+### 安裝 FFmpeg
+
+只要桌面程式需要。瀏覽器那個檔案不用裝。
+
+macOS：
+
+```bash
+brew install ffmpeg
+```
+
+Windows（PowerShell 或 CMD）：
+
+```cmd
+winget install Gyan.FFmpeg
+```
+
+或到 [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/) 下載，把 `ffmpeg.exe` 放到專案資料夾。
+
+### 錄電腦內部的聲音
+
+這是桌面程式的音訊來源。瀏覽器工作站改由分享視窗裡的「分享音訊」處理。
+
+Windows：
+
+1. 右下角聲音圖示按右鍵，打開「聲音設定」，再進「更多音效設定」。
+2. 切到「錄製」。在空白處按右鍵，勾選「顯示已停用的裝置」。
+3. 對「立體聲混音 (Stereo Mix)」按右鍵，選「啟用」。
+4. 回到桌面程式，音訊來源選 `Stereo Mix`。
+
+macOS：
+
+1. 若已安裝 Microsoft Teams，直接選 `Microsoft Teams Audio`。
+2. 或安裝 BlackHole（`brew install blackhole-2ch`），在「音訊 MIDI 設定」建立多重輸出裝置。
 
 ---
 
-## 📂 專案檔案結構
+## 檔案
 
-- [`web_studio/index.html`](file://web_studio/index.html) - **AURA REC 獲獎級沈浸式 Web 錄影與非線性剪輯工作站**（Awwwards / Webby / FWA 標準）。
-- `AURA REC.app` - **macOS 一鍵應用程式**（雙擊圖示即開，自包含完整引擎與 Web 工作站）。
-- `build_windows_exe.bat` - **Windows 一鍵編譯器**：雙擊自動產生帶 AURA 圖示的 `dist\AURA-REC.exe`。
-- `AURA-REC.ico` - Windows 應用程式圖示（內嵌 16–256px 多尺寸）。
-- [`open_studio.command`](file://open_studio.command) - macOS 雙擊即開 Web 工作站。
-- [`open_studio.bat`](file://open_studio.bat) - Windows 雙擊即開 Web 工作站。
-- [`app.py`](file://app.py) - 跨平台桌面客戶端 GUI、懸浮膠囊視窗、快捷鍵調度。
-- [`platform_utils.py`](file://platform_utils.py) - 跨平台輔助庫（系統偵測、字體、High-DPI、系統音效、檔案定位、GPU 編碼器探測）。
-- [`recorder.py`](file://recorder.py) - 跨平台錄影核心（macOS AVFoundation / Windows GDI & DirectShow / GPU 硬體加速）。
-- [`editor_window.py`](file://editor_window.py) - 桌面影片剪輯視窗（即時影格預覽、時間軸微調、起終點標記與多種匯出）。
-- [`video_editor.py`](file://video_editor.py) - 剪輯後製引擎（無損極速裁剪、精準重編碼、GIF 雙遍調色盤、音訊分離）。
-- [`ScreenRecorder.command`](file://ScreenRecorder.command) - macOS 桌面端雙擊即開執行檔。
-- [`ScreenRecorder.bat`](file://ScreenRecorder.bat) - Windows 桌面端雙擊即開批次檔。
-- [`run.sh`](file://run.sh) - Linux / macOS Shell 啟動腳本。
-- `recordings/` - 錄影成品預設儲存目錄。
+- `web_studio/index.html` — 官網。
+- `web_studio/download/AURA-REC.html` — 官網提供下載的那一個檔案。
+- `open_studio.command` / `open_studio.bat` — 雙擊即開那個檔案。
+- `AURA REC.app` — macOS 桌面程式。
+- `build_windows_exe.bat` — 在 Windows 上編成 `dist\AURA-REC.exe`。編譯時只帶入 `AURA-REC.html`。
+- `AURA-REC.ico` — Windows 圖示。
+- `app.py` — 桌面程式主介面。
+- `platform_utils.py` — 系統判斷、字型、High-DPI、音效、開啟檔案、GPU 編碼器。
+- `recorder.py` — 錄影。
+- `editor_window.py` — 桌面剪輯視窗。
+- `video_editor.py` — 裁切、GIF、音訊分離、直式畫布。
+- `region_picker.py` — 拖範圍、選視窗。
+- `aura_widgets.py` — 桌面程式的按鈕與外觀。
+- `ScreenRecorder.command` / `ScreenRecorder.bat` / `run.sh` — 啟動桌面程式。

@@ -8,7 +8,7 @@ import re
 import tkinter as tk
 
 from aura_widgets import AuraButton
-from platform_utils import IS_MAC, IS_WINDOWS, UI, get_ui_fonts
+from platform_utils import IS_LINUX, IS_MAC, IS_WINDOWS, UI, get_ui_fonts
 
 
 def _mac_pixel_scale(display_id):
@@ -281,6 +281,261 @@ def _mac_window_rows():
     return rows
 
 
+def follow_crop(origin_x, origin_y, width, height, frame_w, frame_h):
+    """大小維持開始時的那一塊，只把左上角跟著視窗走，並留在畫面裡。"""
+    w = max(2, int(width) - int(width) % 2)
+    h = max(2, int(height) - int(height) % 2)
+    max_x = max(0, int(frame_w) - w)
+    max_y = max(0, int(frame_h) - h)
+    x = min(max(int(round(origin_x)), 0), max_x)
+    y = min(max(int(round(origin_y)), 0), max_y)
+    x -= x % 2
+    y -= y % 2
+    if x > max_x:
+        x = max_x - (max_x % 2)
+    if y > max_y:
+        y = max_y - (max_y % 2)
+    return x, y, w, h
+
+
+def _load_x11():
+    import ctypes
+
+    try:
+        return ctypes.cdll.LoadLibrary("libX11.so.6")
+    except OSError:
+        return None
+
+
+def _linux_displays():
+    """X11 預設畫面的大小。沒有函式庫或沒有 DISPLAY 就回空的。"""
+    import ctypes
+
+    lib = _load_x11()
+    if lib is None:
+        return []
+    lib.XOpenDisplay.restype = ctypes.c_void_p
+    lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    lib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    lib.XDefaultScreen.restype = ctypes.c_int
+    lib.XDefaultScreen.argtypes = [ctypes.c_void_p]
+    lib.XDisplayWidth.restype = ctypes.c_int
+    lib.XDisplayWidth.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.XDisplayHeight.restype = ctypes.c_int
+    lib.XDisplayHeight.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    display = lib.XOpenDisplay(None)
+    if not display:
+        return []
+    try:
+        screen = int(lib.XDefaultScreen(display))
+        width = int(lib.XDisplayWidth(display, screen))
+        height = int(lib.XDisplayHeight(display, screen))
+    except Exception:
+        return []
+    finally:
+        lib.XCloseDisplay(display)
+    if width < 2 or height < 2:
+        return []
+    return [{"x": 0.0, "y": 0.0, "w": float(width), "h": float(height), "scale": 1.0}]
+
+
+def _x11_ready(lib):
+    import ctypes
+
+    lib.XOpenDisplay.restype = ctypes.c_void_p
+    lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    lib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    lib.XDefaultRootWindow.restype = ctypes.c_ulong
+    lib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    lib.XInternAtom.restype = ctypes.c_ulong
+    lib.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    lib.XGetWindowProperty.restype = ctypes.c_int
+    lib.XGetWindowProperty.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_long,
+        ctypes.c_long,
+        ctypes.c_int,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    lib.XFree.argtypes = [ctypes.c_void_p]
+    lib.XGetGeometry.restype = ctypes.c_int
+    lib.XGetGeometry.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_uint),
+        ctypes.POINTER(ctypes.c_uint),
+        ctypes.POINTER(ctypes.c_uint),
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    lib.XTranslateCoordinates.restype = ctypes.c_int
+    lib.XTranslateCoordinates.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_ulong),
+    ]
+
+
+def _x11_property(lib, display, window, atom):
+    import ctypes
+
+    actual_type = ctypes.c_ulong()
+    actual_format = ctypes.c_int()
+    count = ctypes.c_ulong()
+    after = ctypes.c_ulong()
+    data = ctypes.c_void_p()
+    status = lib.XGetWindowProperty(
+        display,
+        window,
+        atom,
+        0,
+        2048,
+        0,
+        0,
+        ctypes.byref(actual_type),
+        ctypes.byref(actual_format),
+        ctypes.byref(count),
+        ctypes.byref(after),
+        ctypes.byref(data),
+    )
+    if status != 0 or not data.value:
+        return b"", 0, 0
+    try:
+        size = int(count.value)
+        if int(actual_format.value) == 8:
+            raw = ctypes.string_at(data.value, size)
+        elif int(actual_format.value) == 32:
+            raw = ctypes.string_at(data.value, size * ctypes.sizeof(ctypes.c_ulong))
+        else:
+            raw = b""
+        return raw, int(actual_format.value), size
+    finally:
+        lib.XFree(data)
+
+
+def _linux_window_rows():
+    """X11 上的一般視窗。沒有 libX11 或沒有畫面就回空的。"""
+    import ctypes
+
+    lib = _load_x11()
+    if lib is None or not os.environ.get("DISPLAY"):
+        return []
+    try:
+        _x11_ready(lib)
+    except Exception:
+        return []
+    display = lib.XOpenDisplay(None)
+    if not display:
+        return []
+    rows = []
+    try:
+        root = lib.XDefaultRootWindow(display)
+        client_atom = lib.XInternAtom(display, b"_NET_CLIENT_LIST", 1)
+        name_atom = lib.XInternAtom(display, b"_NET_WM_NAME", 1)
+        class_atom = lib.XInternAtom(display, b"WM_CLASS", 1)
+        if not client_atom:
+            return []
+        raw, fmt, count = _x11_property(lib, display, root, client_atom)
+        if fmt != 32 or count <= 0:
+            return []
+        ident_size = ctypes.sizeof(ctypes.c_ulong)
+        for index in range(count):
+            window = int.from_bytes(raw[index * ident_size:(index + 1) * ident_size], "little")
+            if window <= 0:
+                continue
+            root_ret = ctypes.c_ulong()
+            gx = ctypes.c_int()
+            gy = ctypes.c_int()
+            width = ctypes.c_uint()
+            height = ctypes.c_uint()
+            border = ctypes.c_uint()
+            depth = ctypes.c_uint()
+            if not lib.XGetGeometry(
+                display, window, ctypes.byref(root_ret),
+                ctypes.byref(gx), ctypes.byref(gy),
+                ctypes.byref(width), ctypes.byref(height),
+                ctypes.byref(border), ctypes.byref(depth),
+            ):
+                continue
+            child = ctypes.c_ulong()
+            rx = ctypes.c_int()
+            ry = ctypes.c_int()
+            if not lib.XTranslateCoordinates(
+                display, window, root, 0, 0, ctypes.byref(rx), ctypes.byref(ry), ctypes.byref(child)
+            ):
+                continue
+            win_w = int(width.value)
+            win_h = int(height.value)
+            if win_w < 160 or win_h < 100:
+                continue
+            title = ""
+            if name_atom:
+                blob, name_fmt, _name_count = _x11_property(lib, display, window, name_atom)
+                if name_fmt == 8 and blob:
+                    title = blob.split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
+            owner = ""
+            if class_atom:
+                blob, class_fmt, _class_count = _x11_property(lib, display, window, class_atom)
+                if class_fmt == 8 and blob:
+                    parts = [part.decode("utf-8", "replace").strip() for part in blob.split(b"\x00") if part]
+                    owner = parts[-1] if parts else ""
+            if not owner:
+                owner = title or "視窗"
+            rows.append({
+                "id": window,
+                "owner": owner,
+                "title": title if title != owner else "",
+                "x": float(rx.value),
+                "y": float(ry.value),
+                "w": float(win_w),
+                "h": float(win_h),
+            })
+    except Exception:
+        return []
+    finally:
+        lib.XCloseDisplay(display)
+    return rows
+
+
+def _windows_physical_box(hwnd, left, top, width, height):
+    """系統 DPI 模式下，把別台螢幕的視窗換算成實體像素。已是每台螢幕感知就不動。"""
+    import ctypes
+
+    try:
+        awareness = ctypes.c_int()
+        if ctypes.windll.shcore.GetProcessDpiAwareness(0, ctypes.byref(awareness)) != 0:
+            return left, top, width, height
+        if int(awareness.value) >= 2:
+            return left, top, width, height
+        window_dpi = int(ctypes.windll.user32.GetDpiForWindow(hwnd) or 0)
+        system_dpi = int(ctypes.windll.user32.GetDpiForSystem() or 0)
+    except Exception:
+        return left, top, width, height
+    if window_dpi <= 0 or system_dpi <= 0 or window_dpi == system_dpi:
+        return left, top, width, height
+    ratio = window_dpi / system_dpi
+    return (
+        int(round(left * ratio)),
+        int(round(top * ratio)),
+        max(2, int(round(width * ratio))),
+        max(2, int(round(height * ratio))),
+    )
+
+
 def _windows_window_rows():
     import ctypes
     from ctypes import wintypes
@@ -301,10 +556,24 @@ def _windows_window_rows():
         buf = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buf, length + 1)
         rect = wintypes.RECT()
-        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        got_frame = False
+        try:
+            # 9 是可見範圍，不含四周的陰影。
+            if ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
+            ) == 0:
+                got_frame = True
+        except Exception:
+            got_frame = False
+        if not got_frame and not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
             return True
-        width = int(rect.right - rect.left)
-        height = int(rect.bottom - rect.top)
+        left, top, width, height = _windows_physical_box(
+            hwnd,
+            int(rect.left),
+            int(rect.top),
+            int(rect.right - rect.left),
+            int(rect.bottom - rect.top),
+        )
         if width < 160 or height < 100:
             return True
         title = buf.value.strip()
@@ -314,8 +583,8 @@ def _windows_window_rows():
             "id": int(hwnd),
             "owner": title,
             "title": "",
-            "x": int(rect.left) - vx,
-            "y": int(rect.top) - vy,
+            "x": left - vx,
+            "y": top - vy,
             "w": width,
             "h": height,
         })
@@ -332,6 +601,8 @@ def _window_rows():
             return _mac_window_rows()
         if IS_WINDOWS:
             return _windows_window_rows()
+        if IS_LINUX:
+            return _linux_window_rows()
     except Exception:
         return []
     return []
@@ -355,7 +626,69 @@ def _display_for(screen_index):
             "h": int(user32.GetSystemMetrics(79)),
             "scale": 1.0,
         }
+    if IS_LINUX:
+        displays = _linux_displays()
+        if screen_index != 0 or not displays:
+            return None
+        return displays[0]
     return None
+
+
+def list_displays():
+    """每個螢幕的點座標與像素倍率。"""
+    if IS_MAC:
+        return _mac_displays()
+    if IS_WINDOWS:
+        frame = _display_for(0)
+        return [frame] if frame else []
+    if IS_LINUX:
+        return _linux_displays()
+    return []
+
+
+def other_display_origin(capture_index, bar_w, bar_h, margin=40):
+    """另一個螢幕上放得下這條的左上角。沒有就回 None。"""
+    try:
+        chosen = int(capture_index)
+    except (TypeError, ValueError):
+        chosen = 0
+    margin = max(0.0, float(margin))
+    width = float(bar_w)
+    height = float(bar_h)
+    for index, frame in enumerate(list_displays()):
+        if index == chosen:
+            continue
+        if frame["w"] < width + margin or frame["h"] < height + margin:
+            continue
+        return (int(frame["x"] + margin), int(frame["y"] + margin))
+    return None
+
+
+def window_capture_origin(window_id, screen_index=0):
+    """視窗左上角在這個螢幕擷取像素裡的位置。可以是負的。關掉了就回 None。"""
+    try:
+        target = int(window_id)
+    except (TypeError, ValueError):
+        return None
+    display = _display_for(screen_index)
+    if display is None:
+        return None
+    scale = display["scale"] or 1
+    for row in _window_rows():
+        if row["id"] != target:
+            continue
+        return ((row["x"] - display["x"]) * scale, (row["y"] - display["y"]) * scale)
+    return None
+
+
+def window_list_hint():
+    """選不到視窗時給使用者的那一句。"""
+    if IS_LINUX:
+        if _load_x11() is None:
+            return "這台沒有 libX11，列不出視窗。\n可以改拖一塊範圍。"
+        if not os.environ.get("DISPLAY"):
+            return "沒有畫面階段，列不出視窗。\n可以改拖一塊範圍。"
+    return "這個螢幕上沒有可錄的視窗。\n可以改用拖曳範圍。"
 
 
 def display_frame(screen_index=0):
@@ -473,7 +806,7 @@ def pick_capture_window(parent, screen_index=0):
     ).pack(fill=tk.X)
     tk.Label(
         shell,
-        text="錄的是按下開始時，這個視窗在畫面上的位置。",
+        text="錄影時會跟著這個視窗移動。畫面大小維持按下開始時的那一塊。",
         font=fonts["body"],
         fg=UI["muted"],
         bg=UI["bg"],
@@ -487,7 +820,7 @@ def pick_capture_window(parent, screen_index=0):
     if not windows:
         tk.Label(
             list_card,
-            text="這個螢幕上沒有可錄的視窗。\n可以改用拖曳範圍。",
+            text=window_list_hint(),
             font=fonts["body"],
             fg=UI["muted"],
             bg=UI["card"],
