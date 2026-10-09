@@ -33,6 +33,18 @@ def enable_dpi_awareness():
                 pass
 
 
+def use_dark_appearance():
+    """macOS 標題列與選單跟著官網深色。沒有 PyObjC 就維持系統外觀。"""
+    if not IS_MAC:
+        return
+    try:
+        from AppKit import NSAppearance, NSApplication
+        appearance = NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua")
+        NSApplication.sharedApplication().setAppearance_(appearance)
+    except Exception:
+        pass
+
+
 def find_executable(name, extra_mac_paths=None, extra_win_paths=None):
     """
     跨平台智慧搜尋執行檔 (ffmpeg, ffprobe, ffplay)
@@ -95,13 +107,15 @@ def get_ui_fonts():
             "badge": (family, 9, "bold")
         }
     elif IS_MAC:
+        sans = "PingFang TC"
+        mono = "Menlo"
         return {
-            "title": ("SF Pro Display", 18, "bold"),
-            "subtitle": ("SF Pro Text", 12, "bold"),
-            "body": ("SF Pro Text", 11),
-            "bold": ("SF Pro Text", 11, "bold"),
-            "timer": ("SF Pro Display", 34, "bold"),
-            "badge": ("SF Pro Text", 10, "bold")
+            "title": (sans, 20, "bold"),
+            "subtitle": (sans, 13, "bold"),
+            "body": (sans, 12),
+            "bold": (sans, 12, "bold"),
+            "timer": (mono, 32, "bold"),
+            "badge": (mono, 10),
         }
     else:
         return {
@@ -112,6 +126,169 @@ def get_ui_fonts():
             "timer": ("Monospace", 30, "bold"),
             "badge": ("DejaVu Sans", 9, "bold")
         }
+
+
+# 跟官網同一套：黑底、青字、玫瑰錄影鈕。
+UI = {
+    "bg": "#060709",
+    "card": "#0F1218",
+    "line": "#1E2330",
+    "text": "#F8FAFC",
+    "muted": "#94A3B8",
+    "blue": "#00F0FF",
+    "blue_hover": "#66F6FF",
+    "red": "#FF2A6D",
+    "red_hover": "#FF5C8A",
+    "ok": "#00FF9D",
+    "warn": "#FFB800",
+    "field": "#0A0C10",
+    "hover": "#151922",
+    "preview": "#060709",
+    "mini": "#060709",
+    "mini_muted": "#64748B",
+    "on": "#FFFFFF",
+    "white": "#FFFFFF",
+    "ink": "#060709",
+    "edge": "#2A3244",
+    "meter_low": "#00FF9D",
+    "meter_mid": "#FFB800",
+    "meter_high": "#FF2A6D",
+    "meter_idle": "#1E2330",
+}
+
+
+def apply_widget_style(style, fonts=None):
+    """官網配色。macOS 原生按鈕不會吃背景色，所以控制項走 clam。"""
+    style.theme_use("clam")
+    button_font = fonts["subtitle"] if fonts else None
+    body_font = fonts["bold"] if fonts else None
+    small_font = fonts["body"] if fonts else None
+
+    style.configure(
+        ".",
+        background=UI["bg"],
+        foreground=UI["text"],
+        fieldbackground=UI["field"],
+        troughcolor=UI["line"],
+        bordercolor=UI["edge"],
+        arrowcolor=UI["muted"],
+    )
+
+    def paint(name, background, hover, font, foreground=None, padding=(14, 10), border=None, disabled_bg=None):
+        fg = foreground or UI["on"]
+        disabled_bg = disabled_bg or UI["line"]
+        opts = dict(
+            background=background,
+            foreground=fg,
+            borderwidth=1 if border else 0,
+            focusthickness=0,
+            focuscolor=background,
+            padding=padding,
+            relief="flat",
+            anchor="center",
+        )
+        if border:
+            opts["bordercolor"] = border
+            opts["lightcolor"] = border
+            opts["darkcolor"] = border
+        if font:
+            opts["font"] = font
+        style.configure(name, **opts)
+        mapped = dict(
+            background=[
+                ("pressed", hover),
+                ("active", hover),
+                ("disabled", disabled_bg),
+            ],
+            foreground=[("disabled", UI["muted"])],
+        )
+        if border:
+            mapped["bordercolor"] = [("active", UI["blue"]), ("pressed", UI["blue"])]
+        style.map(name, **mapped)
+
+    # 主按鈕跟官網下載鈕一樣：青底黑字。錄影中改玫瑰底白字。
+    paint("Primary.TButton", UI["blue"], UI["blue_hover"], button_font, UI["ink"], (16, 12))
+    paint("Play.TButton", UI["blue"], UI["blue_hover"], body_font, UI["ink"], (14, 6))
+    paint("Record.TButton", UI["red"], UI["red_hover"], button_font, UI["on"], (16, 12))
+    paint("Stop.TButton", UI["red"], UI["red_hover"], body_font, UI["on"], (12, 6))
+    paint(
+        "Ghost.TButton", UI["hover"], "#10262C", small_font, UI["text"],
+        (10, 5), UI["edge"], UI["hover"],
+    )
+    paint("Link.TButton", UI["card"], UI["hover"], small_font, UI["blue"], (8, 2), None, UI["card"])
+    paint("Danger.TButton", UI["card"], UI["hover"], small_font, UI["red"], (8, 2), None, UI["card"])
+
+    if small_font:
+        style.configure("App.TCheckbutton", font=small_font)
+        style.configure("App.TRadiobutton", font=small_font)
+        style.configure("App.TCombobox", font=small_font)
+    indicator = [
+        ("selected", UI["blue"]),
+        ("pressed", UI["blue_hover"]),
+        ("!selected", UI["line"]),
+    ]
+    for name in ("App.TCheckbutton", "App.TRadiobutton"):
+        style.configure(
+            name,
+            background=UI["card"],
+            foreground=UI["text"],
+            indicatorcolor=UI["line"],
+            indicatorrelief="flat",
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor=UI["card"],
+            padding=(2, 2),
+        )
+        style.map(
+            name,
+            background=[("active", UI["card"]), ("disabled", UI["card"])],
+            foreground=[("active", UI["text"]), ("disabled", UI["muted"])],
+            indicatorcolor=indicator,
+        )
+    style.configure(
+        "App.TCombobox",
+        fieldbackground=UI["field"],
+        background=UI["hover"],
+        foreground=UI["text"],
+        arrowcolor=UI["blue"],
+        bordercolor=UI["edge"],
+        lightcolor=UI["field"],
+        darkcolor=UI["edge"],
+        padding=6,
+        relief="flat",
+    )
+    style.map(
+        "App.TCombobox",
+        fieldbackground=[("readonly", UI["field"]), ("disabled", UI["hover"])],
+        foreground=[("readonly", UI["text"]), ("disabled", UI["muted"])],
+        background=[("readonly", UI["hover"]), ("active", UI["hover"]), ("disabled", UI["line"])],
+        bordercolor=[("focus", UI["blue"]), ("active", UI["blue"])],
+        arrowcolor=[("disabled", UI["muted"])],
+    )
+    style.configure(
+        "Horizontal.TScale",
+        background=UI["blue"],
+        troughcolor=UI["line"],
+        bordercolor=UI["bg"],
+        lightcolor=UI["blue"],
+        darkcolor=UI["blue"],
+        sliderlength=18,
+        sliderrelief="flat",
+    )
+    style.map(
+        "Horizontal.TScale",
+        background=[("active", UI["blue_hover"])],
+        troughcolor=[("active", UI["edge"])],
+    )
+    root = style.master
+    root.option_add("*TCombobox*Listbox.background", UI["field"])
+    root.option_add("*TCombobox*Listbox.foreground", UI["text"])
+    root.option_add("*TCombobox*Listbox.selectBackground", "#10262C")
+    root.option_add("*TCombobox*Listbox.selectForeground", UI["blue"])
+    root.option_add("*Menu.background", UI["card"])
+    root.option_add("*Menu.foreground", UI["text"])
+    root.option_add("*Menu.activeBackground", UI["hover"])
+    root.option_add("*Menu.activeForeground", UI["blue"])
 
 
 def play_system_alert(sound_type="ready"):

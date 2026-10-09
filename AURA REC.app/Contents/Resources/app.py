@@ -13,8 +13,6 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 
 import math
 import os
-import random
-import subprocess
 import threading
 import time
 from datetime import datetime
@@ -33,16 +31,20 @@ from platform_utils import (
     open_file_or_dir,
     save_settings,
     recommended_capture,
+    UI,
+    apply_widget_style,
+    use_dark_appearance,
 )
 
 
 class LiteRecorderApp:
     def __init__(self, root):
         self.root = root
+        use_dark_appearance()
         self.root.title("AURA REC")
-        self.root.geometry("520x760")
-        self.root.minsize(500, 700)
-        self.root.configure(bg="#0A0C10")
+        self.root.geometry("560x720")
+        self.root.minsize(520, 640)
+        self.root.configure(bg=UI["bg"])
 
         # 跨平台字型
         self.fonts = get_ui_fonts()
@@ -55,7 +57,7 @@ class LiteRecorderApp:
         self.countdown_active = False
         self._stopping = False
         self._pending_mini = False
-        self._normal_size = (520, 760)
+        self._normal_size = (560, 720)
         self.auto_mini_var = tk.BooleanVar(value=True)
         self.countdown_var = tk.BooleanVar(value=True)
         self.hardware_accel_var = tk.BooleanVar(value=True)
@@ -84,94 +86,115 @@ class LiteRecorderApp:
         self._timer_tick()
 
     def _init_styles(self):
-        style = ttk.Style()
-        style.theme_use("default")
+        apply_widget_style(ttk.Style(), self.fonts)
 
-        # 設定 ttk 下拉選單樣式
-        style.configure(
-            "Dark.TCombobox",
-            fieldbackground="#151922",
-            background="#1E2330",
-            foreground="#FFFFFF",
-            arrowcolor="#94A3B8",
-            darkcolor="#0A0C10",
-            lightcolor="#1E2330",
-            insertcolor="#FFFFFF",
+    def _card(self, parent):
+        return tk.Frame(
+            parent,
+            bg=UI["card"],
+            highlightbackground=UI["edge"],
+            highlightthickness=1,
         )
-        style.map("Dark.TCombobox", fieldbackground=[("readonly", "#151922")])
 
-    def _add_hover(self, widget, normal_bg, hover_bg, normal_fg=None, hover_fg=None):
-        """為按鈕加入 hover 微互動（進入變亮、離開還原）—— AURA 獲獎級質感。"""
-        def on_enter(_e):
-            widget.config(bg=hover_bg)
-            if hover_fg:
-                widget.config(fg=hover_fg)
-        def on_leave(_e):
-            widget.config(bg=normal_bg)
-            if normal_fg:
-                widget.config(fg=normal_fg)
-        widget.bind("<Enter>", on_enter)
-        widget.bind("<Leave>", on_leave)
+    def _accent_bar(self, parent):
+        """官網主色：青漸層到綠的一條細線。"""
+        canvas = tk.Canvas(parent, height=2, bg=UI["card"], highlightthickness=0, bd=0)
+        canvas.pack(fill=tk.X)
+
+        def paint(_event=None):
+            canvas.delete("all")
+            width = max(canvas.winfo_width(), 2)
+            start = (0, 240, 255)
+            end = (0, 255, 157)
+            for x in range(width):
+                t = x / (width - 1)
+                color = tuple(int(start[i] + (end[i] - start[i]) * t) for i in range(3))
+                canvas.create_line(x, 0, x, 2, fill="#{:02x}{:02x}{:02x}".format(*color))
+
+        canvas.bind("<Configure>", paint)
+        return canvas
+
+    def _quiet_button(self, parent, text, command, fg=None):
+        style = "Danger.TButton" if fg == UI["red"] else "Link.TButton"
+        return ttk.Button(parent, text=text, command=command, style=style, cursor="hand2")
+
+    def _show_shortcuts(self):
+        messagebox.showinfo(
+            "快捷鍵",
+            "開始或停止錄影：\n"
+            f"{self.shortcut_hint}\n\n"
+            "錄影開始後可以收成畫面上方的小條，拖曳就能挪開。",
+        )
+
+    def _build_menu(self):
+        menubar = tk.Menu(self.root)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="開啟儲存資料夾", command=self.open_output_folder)
+        file_menu.add_command(label="變更儲存位置…", command=self.change_output_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="剪輯影片…", command=self.open_editor)
+        file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
+        file_menu.add_separator()
+        file_menu.add_command(label="開啟瀏覽器工作站", command=self.open_web_studio)
+        file_menu.add_separator()
+        file_menu.add_command(label="結束", command=self._on_close)
+        menubar.add_cascade(label="檔案", menu=file_menu)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="快捷鍵", command=self._show_shortcuts)
+        menubar.add_cascade(label="說明", menu=help_menu)
+        self.menubar = menubar
+        self.root.config(menu=self.menubar)
 
     def _build_main_ui(self):
-        # 主容器
-        self.main_container = tk.Frame(self.root, bg="#0A0C10")
-        self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        self._build_menu()
+        self.main_container = tk.Frame(self.root, bg=UI["bg"])
+        self.main_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
 
-        # 標題欄
-        header_frame = tk.Frame(self.main_container, bg="#0A0C10")
-        header_frame.pack(fill=tk.X, pady=(0, 14))
+        header_frame = tk.Frame(self.main_container, bg=UI["bg"])
+        header_frame.pack(fill=tk.X, pady=(0, 10))
 
-        title_label = tk.Label(
-            header_frame,
-            text="AURA REC",
-            font=self.fonts["title"],
-            fg="#FFFFFF",
-            bg="#0A0C10"
-        )
-        title_label.pack(side=tk.LEFT)
+        brand = tk.Frame(header_frame, bg=UI["bg"])
+        brand.pack(side=tk.LEFT)
+        tk.Label(
+            brand, text="AURA", font=self.fonts["title"], fg=UI["white"], bg=UI["bg"]
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            brand, text="REC", font=self.fonts["title"], fg=UI["blue"], bg=UI["bg"]
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         self.status_badge = tk.Label(
             header_frame,
-            text="● 就緒",
-            font=self.fonts["badge"],
-            fg="#00FF9D",
-            bg="#151922",
-            padx=10,
-            pady=3
+            text="就緒",
+            font=self.fonts["bold"],
+            fg=UI["ok"],
+            bg=UI["bg"],
         )
         self.status_badge.pack(side=tk.RIGHT)
 
-        btn_web = tk.Button(
-            header_frame,
-            text="工作站",
-            font=self.fonts["badge"],
-            bg="#151922",
-            fg="#00F0FF",
-            relief=tk.FLAT,
-            command=self.open_web_studio,
-            padx=8,
-            pady=2
-        )
-        btn_web.pack(side=tk.RIGHT, padx=(0, 8))
-        self._add_hover(btn_web, "#151922", "#1E2330", normal_fg="#00F0FF", hover_fg="#5AF7FF")
+        self.timer_card = self._card(self.main_container)
+        self.timer_card.pack(fill=tk.X, pady=(0, 10))
+        self._accent_bar(self.timer_card)
 
-        # 計時器卡片
-        self.timer_card = tk.Frame(self.main_container, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
-        self.timer_card.pack(fill=tk.X, pady=(0, 16), ipady=12)
+        tk.Label(
+            self.timer_card,
+            text="R E C O R D",
+            font=self.fonts["badge"],
+            fg=UI["blue"],
+            bg=UI["card"],
+        ).pack(pady=(12, 0))
 
         self.timer_display = tk.Label(
             self.timer_card,
             text="00:00:00",
             font=self.fonts["timer"],
-            fg="#64748B",
-            bg="#0F1218"
+            fg=UI["white"],
+            bg=UI["card"],
         )
-        self.timer_display.pack()
+        self.timer_display.pack(pady=(4, 0))
 
-        # 動態音訊電平視覺儀表 (Live VU Meter)
-        self.vu_canvas = tk.Canvas(self.timer_card, width=280, height=14, bg="#0F1218", highlightthickness=0)
-        self.vu_canvas.pack(pady=(4, 2))
+        self.vu_canvas = tk.Canvas(self.timer_card, width=220, height=8, bg=UI["card"], highlightthickness=0)
+        self.vu_canvas.pack(pady=(8, 0))
         self._draw_vu_idle()
 
         shortcut_hint = "Space / F9 / Ctrl+R" if IS_WINDOWS else "Space / F9 / Cmd+R"
@@ -180,36 +203,44 @@ class LiteRecorderApp:
             self.timer_card,
             text=f"正在偵測螢幕與麥克風…  {shortcut_hint}",
             font=self.fonts["body"],
-            fg="#64748B",
-            bg="#0F1218",
-            wraplength=480,
+            fg=UI["muted"],
+            bg=UI["card"],
+            wraplength=500,
             justify="center",
         )
-        self.timer_hint.pack(pady=(2, 0))
+        self.timer_hint.pack(pady=(6, 0))
 
-        # 設定面板卡片
-        settings_card = tk.Frame(self.main_container, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
-        settings_card.pack(fill=tk.X, pady=(0, 16), padx=0)
+        self.record_btn = ttk.Button(
+            self.timer_card,
+            text="開始錄影",
+            style="Primary.TButton",
+            cursor="hand2",
+            command=self.toggle_recording,
+            state=tk.DISABLED,
+        )
+        self.record_btn.pack(fill=tk.X, padx=16, pady=(12, 14))
 
-        # 1. 螢幕來源
-        f1 = tk.Frame(settings_card, bg="#0F1218")
-        f1.pack(fill=tk.X, padx=14, pady=(12, 6))
-        tk.Label(f1, text="🖥 錄製螢幕", font=self.fonts["body"], fg="#E2E8F0", bg="#0F1218").pack(side=tk.LEFT)
-        self.video_combo = ttk.Combobox(f1, style="Dark.TCombobox", state="readonly", width=22)
-        self.video_combo.pack(side=tk.RIGHT)
+        settings_card = self._card(self.main_container)
+        settings_card.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(
+            settings_card, text="錄製", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(anchor="w", padx=14, pady=(10, 2))
 
-        # 2. 音訊來源
-        f2 = tk.Frame(settings_card, bg="#0F1218")
-        f2.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f2, text="🎙 音訊來源", font=self.fonts["body"], fg="#E2E8F0", bg="#0F1218").pack(side=tk.LEFT)
-        self.audio_combo = ttk.Combobox(f2, style="Dark.TCombobox", state="readonly", width=22)
-        self.audio_combo.pack(side=tk.RIGHT)
+        form = tk.Frame(settings_card, bg=UI["card"])
+        form.pack(fill=tk.X, padx=14, pady=(0, 4))
+        form.columnconfigure(1, weight=1)
 
-        # 3. 畫質與解析度
-        f3 = tk.Frame(settings_card, bg="#0F1218")
-        f3.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f3, text="📐 畫質解析度", font=self.fonts["body"], fg="#E2E8F0", bg="#0F1218").pack(side=tk.LEFT)
-        self.res_combo = ttk.Combobox(f3, style="Dark.TCombobox", state="readonly", width=22)
+        def setting_row(row, label):
+            tk.Label(
+                form, text=label, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"], width=8, anchor="w"
+            ).grid(row=row, column=0, sticky="w", pady=5)
+            combo = ttk.Combobox(form, style="App.TCombobox", state="readonly", width=28)
+            combo.grid(row=row, column=1, sticky="ew", pady=5)
+            return combo
+
+        self.video_combo = setting_row(0, "螢幕")
+        self.audio_combo = setting_row(1, "麥克風")
+        self.res_combo = setting_row(2, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
             "2K（較吃資源）",
@@ -217,195 +248,88 @@ class LiteRecorderApp:
             "720p（1280×720）",
         ]
         self.res_combo.current(self.capture_advice["res_index"])
-        self.res_combo.pack(side=tk.RIGHT)
-
-        # 4. 幀率 (FPS)
-        f4 = tk.Frame(settings_card, bg="#0F1218")
-        f4.pack(fill=tk.X, padx=14, pady=6)
-        tk.Label(f4, text="⚡ 錄製幀率 (FPS)", font=self.fonts["body"], fg="#E2E8F0", bg="#0F1218").pack(side=tk.LEFT)
-        self.fps_combo = ttk.Combobox(f4, style="Dark.TCombobox", state="readonly", width=22)
+        self.fps_combo = setting_row(3, "幀率")
         self.fps_combo["values"] = ["30 FPS", "60 FPS（較吃資源）", "15 FPS（較省）"]
         self.fps_combo.current(self.capture_advice["fps_index"])
-        self.fps_combo.pack(side=tk.RIGHT)
 
-        # 5. 核取選項。直向排，避免窄視窗把三個選項擠到外面。
-        f5 = tk.Frame(settings_card, bg="#0F1218")
-        f5.pack(fill=tk.X, padx=14, pady=(4, 12))
+        accel_text = "使用硬體加速" if IS_MAC else ("使用 GPU 硬體加速" if IS_WINDOWS else "使用硬體加速")
+        checks = tk.Frame(settings_card, bg=UI["card"])
+        checks.pack(fill=tk.X, padx=14, pady=(2, 10))
+        for text, variable in (
+            (accel_text, self.hardware_accel_var),
+            ("開始前倒數 3 秒", self.countdown_var),
+            ("錄影時縮成小視窗", self.auto_mini_var),
+        ):
+            ttk.Checkbutton(checks, text=text, variable=variable, style="App.TCheckbutton").pack(anchor="w")
 
-        accel_text = "Apple 晶片硬體加速" if IS_MAC else ("GPU 硬體加速 (NVENC/QSV/AMF)" if IS_WINDOWS else "硬體加速編碼")
-        check_opts = dict(
-            font=self.fonts["body"],
-            selectcolor="#151922",
-            bg="#0F1218",
-            activebackground="#0F1218",
-            anchor="w",
-        )
-        tk.Checkbutton(
-            f5, text=accel_text, variable=self.hardware_accel_var,
-            fg="#00FF9D", activeforeground="#00FF9D", **check_opts
-        ).pack(fill=tk.X)
-        tk.Checkbutton(
-            f5, text="開始前倒數 3 秒", variable=self.countdown_var,
-            fg="#94A3B8", activeforeground="#FFFFFF", **check_opts
-        ).pack(fill=tk.X)
-        tk.Checkbutton(
-            f5, text="錄影時收合成懸浮膠囊", variable=self.auto_mini_var,
-            fg="#94A3B8", activeforeground="#FFFFFF", **check_opts
-        ).pack(fill=tk.X)
+        self.recent_card = self._card(self.main_container)
+        self.recent_card.pack(fill=tk.BOTH, expand=True)
 
-        # 錄製主按鈕
-        self.record_btn = tk.Button(
-            self.main_container,
-            text="開始錄影",
-            font=self.fonts["title"],
-            bg="#FF2A6D",
-            fg="#FFFFFF",
-            activebackground="#E11D5B",
-            activeforeground="#FFFFFF",
-            relief=tk.FLAT,
-            cursor="hand2",
-            command=self.toggle_recording,
-            pady=10,
-            state=tk.DISABLED,
-        )
-        self.record_btn.pack(fill=tk.X, pady=(0, 10))
+        recent_header = tk.Frame(self.recent_card, bg=UI["card"])
+        recent_header.pack(fill=tk.X, padx=8, pady=(8, 0))
+        tk.Label(
+            recent_header, text="最近的錄影", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(side=tk.LEFT, padx=6)
+        self._quiet_button(recent_header, "重新整理", self.refresh_recent_list).pack(side=tk.RIGHT)
+        self.btn_play_last = self._quiet_button(recent_header, "播放最新", self.play_last_recording)
+        self.btn_play_last.config(state=tk.DISABLED)
+        self.btn_play_last.pack(side=tk.RIGHT)
+        self._quiet_button(recent_header, "剪輯", self.open_editor).pack(side=tk.RIGHT)
 
-        # 最近錄影列表卡片 (Recent Recordings Gallery)
-        self.recent_card = tk.Frame(self.main_container, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
-        self.recent_card.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-
-        recent_header = tk.Frame(self.recent_card, bg="#0F1218")
-        recent_header.pack(fill=tk.X, padx=12, pady=(6, 2))
-        tk.Label(recent_header, text="最近錄影", font=self.fonts["bold"], fg="#FFFFFF", bg="#0F1218").pack(side=tk.LEFT)
-        btn_refresh = tk.Button(recent_header, text="重新整理", font=self.fonts["body"], bg="#151922", fg="#94A3B8", relief=tk.FLAT, command=self.refresh_recent_list, padx=4)
-        btn_refresh.pack(side=tk.RIGHT)
-        self._add_hover(btn_refresh, "#151922", "#1E2330")
-
+        path_row = tk.Frame(self.recent_card, bg=UI["card"])
+        path_row.pack(fill=tk.X, padx=8, pady=(0, 4))
         self.save_path_label = tk.Label(
-            self.recent_card,
-            text="",
-            font=self.fonts["badge"],
-            fg="#64748B",
-            bg="#0F1218",
-            anchor="w",
+            path_row, text="", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], anchor="w"
         )
-        self.save_path_label.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self.save_path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self._quiet_button(path_row, "變更位置", self.change_output_folder).pack(side=tk.RIGHT)
+        self._quiet_button(path_row, "開啟資料夾", self.open_output_folder).pack(side=tk.RIGHT)
         self._show_save_path()
 
-        self.recent_list_frame = tk.Frame(self.recent_card, bg="#0F1218")
-        self.recent_list_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+        self.recent_list_frame = tk.Frame(self.recent_card, bg=UI["card"])
+        self.recent_list_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
-        # 底部快捷工具列 (開啟資料夾、剪輯影片、播放最新、變更目錄)
-        footer_frame = tk.Frame(self.main_container, bg="#0A0C10")
-        footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
-
-        btn_folder = tk.Button(
-            footer_frame,
-            text="📁 資料夾",
-            font=self.fonts["body"],
-            bg="#151922",
-            fg="#E2E8F0",
-            relief=tk.FLAT,
-            command=self.open_output_folder,
-            padx=6,
-            pady=5
-        )
-        btn_folder.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
-        self._add_hover(btn_folder, "#151922", "#1E2330")
-
-        self.btn_trim = tk.Button(
-            footer_frame,
-            text="✂️ 剪輯影片",
-            font=self.fonts["bold"],
-            bg="#00F0FF",
-            fg="#060709",
-            relief=tk.FLAT,
-            command=self.open_editor,
-            padx=6,
-            pady=5
-        )
-        self.btn_trim.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        self._add_hover(self.btn_trim, "#00F0FF", "#5AF7FF")
-
-        self.btn_play_last = tk.Button(
-            footer_frame,
-            text="▶️ 播放最新",
-            font=self.fonts["body"],
-            bg="#151922",
-            fg="#E2E8F0",
-            relief=tk.FLAT,
-            state=tk.DISABLED,
-            command=self.play_last_recording,
-            padx=6,
-            pady=5
-        )
-        self.btn_play_last.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        self._add_hover(self.btn_play_last, "#151922", "#1E2330")
-
-        btn_change = tk.Button(
-            footer_frame,
-            text="⚙️ 路徑",
-            font=self.fonts["body"],
-            bg="#151922",
-            fg="#E2E8F0",
-            relief=tk.FLAT,
-            command=self.change_output_folder,
-            padx=6,
-            pady=5
-        )
-        btn_change.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2, 0))
-        self._add_hover(btn_change, "#151922", "#1E2330")
-
-        # 建立懸浮迷你膠囊容器 (平常隱藏)
         self._build_mini_ui()
 
     def _build_mini_ui(self):
-        """建立極簡懸浮膠囊 UI"""
-        self.mini_container = tk.Frame(self.root, bg="#060709", highlightbackground="#FF2A6D", highlightthickness=1)
+        """錄影中的浮動小條。黑底、玫瑰字，浮在畫面上還看得清楚。"""
+        self.mini_container = tk.Frame(
+            self.root, bg=UI["mini"], highlightbackground=UI["red"], highlightthickness=1
+        )
 
-        # 拖曳手柄
         drag_handle = tk.Label(
             self.mini_container,
             text="⋮⋮",
             font=self.fonts["bold"],
-            fg="#64748B",
-            bg="#060709",
-            cursor="fleur"
+            fg=UI["mini_muted"],
+            bg=UI["mini"],
+            cursor="fleur",
         )
-        drag_handle.pack(side=tk.LEFT, padx=(6, 2))
+        drag_handle.pack(side=tk.LEFT, padx=(8, 2))
         drag_handle.bind("<ButtonPress-1>", self._start_drag)
         drag_handle.bind("<B1-Motion>", self._on_drag)
 
-        # 錄製紅點與時間
         self.mini_time_label = tk.Label(
             self.mini_container,
-            text="● REC 00:00",
+            text="REC 00:00",
             font=self.fonts["subtitle"],
-            fg="#FF2A6D",
-            bg="#060709"
+            fg=UI["red"],
+            bg=UI["mini"],
         )
-        self.mini_time_label.pack(side=tk.LEFT, padx=(6, 2))
+        self.mini_time_label.pack(side=tk.LEFT, padx=(4, 2))
         self.mini_time_label.bind("<ButtonPress-1>", self._start_drag)
         self.mini_time_label.bind("<B1-Motion>", self._on_drag)
 
-        # 迷你音訊電平視覺儀表 (Mini VU Meter)
-        self.mini_vu_canvas = tk.Canvas(self.mini_container, width=32, height=14, bg="#060709", highlightthickness=0)
+        self.mini_vu_canvas = tk.Canvas(self.mini_container, width=32, height=10, bg=UI["mini"], highlightthickness=0)
         self.mini_vu_canvas.pack(side=tk.LEFT, padx=4)
         self._draw_mini_vu_idle()
 
-        # 停止按鈕
-        mini_stop_btn = tk.Button(
+        ttk.Button(
             self.mini_container,
-            text="⏹ 停止",
-            font=self.fonts["bold"],
-            bg="#FF2A6D",
-            fg="#FFFFFF",
-            relief=tk.FLAT,
+            text="停止",
+            style="Stop.TButton",
             command=self.stop_recording,
-            padx=8,
-            pady=2
-        )
-        mini_stop_btn.pack(side=tk.RIGHT, padx=6, pady=4)
+        ).pack(side=tk.RIGHT, padx=8, pady=6)
 
     def _start_drag(self, event):
         self.drag_x = event.x
@@ -477,14 +401,15 @@ class LiteRecorderApp:
     def _switch_to_mini_mode(self):
         """收合為置頂懸浮膠囊"""
         self.is_mini_mode = True
-        self._normal_size = (max(self.root.winfo_width(), 500), max(self.root.winfo_height(), 700))
+        self._normal_size = (max(self.root.winfo_width(), 520), max(self.root.winfo_height(), 640))
         self.main_container.pack_forget()
 
         prev_x = self.root.winfo_x()
         prev_y = self.root.winfo_y()
 
-        self.root.geometry(f"300x48+{prev_x}+{prev_y}")
+        self.root.geometry(f"280x44+{prev_x}+{prev_y}")
         self.root.resizable(False, False)
+        self.root.config(menu="")
         self.root.attributes("-topmost", True)
         self.mini_container.pack(fill=tk.BOTH, expand=True)
 
@@ -500,7 +425,8 @@ class LiteRecorderApp:
         self.root.geometry(f"{width}x{height}+{prev_x}+{prev_y}")
         self.root.resizable(True, True)
         self.root.attributes("-topmost", False)
-        self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        self.root.config(menu=self.menubar)
+        self.main_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
 
     def toggle_recording(self):
         if self.countdown_active:
@@ -522,8 +448,8 @@ class LiteRecorderApp:
 
         def count_step(val):
             if val > 0:
-                self.timer_display.config(text=f"準備: {val}", fg="#FFB800")
-                self.status_badge.config(text=f"● 倒數 {val}", fg="#FFB800")
+                self.timer_display.config(text=str(val), fg=UI["warn"])
+                self.status_badge.config(text=f"倒數 {val}", fg=UI["warn"])
                 play_system_alert("ready")
                 self.root.after(1000, lambda: count_step(val - 1))
             else:
@@ -596,7 +522,7 @@ class LiteRecorderApp:
 
         self._stopping = True
         self._pending_mini = False
-        self.status_badge.config(text="● 正在儲存…", fg="#FFB800")
+        self.status_badge.config(text="正在儲存", fg=UI["warn"])
         self.record_btn.config(state=tk.DISABLED)
         self.root.update_idletasks()
 
@@ -632,26 +558,18 @@ class LiteRecorderApp:
 
     def _update_ui_state(self, recording=False):
         if recording:
-            self.status_badge.config(text="● 錄製中", fg="#FF2A6D")
-            self.record_btn.config(
-                text="停止錄影",
-                bg="#E11D5B",
-                activebackground="#C01450"
-            )
-            self.timer_display.config(fg="#FF2A6D")
-            self.timer_hint.config(text="正在錄製中... 隨時可按快捷鍵停止")
+            self.status_badge.config(text="錄製中", fg=UI["red"])
+            self.record_btn.config(text="停止錄影", style="Stop.TButton")
+            self.timer_display.config(fg=UI["red"])
+            self.timer_hint.config(text=f"錄製中。{self.shortcut_hint} 可以停止")
             self.video_combo.config(state=tk.DISABLED)
             self.audio_combo.config(state=tk.DISABLED)
             self.res_combo.config(state=tk.DISABLED)
             self.fps_combo.config(state=tk.DISABLED)
         else:
-            self.status_badge.config(text="● 就緒", fg="#00FF9D")
-            self.record_btn.config(
-                text="開始錄影",
-                bg="#FF2A6D",
-                activebackground="#E11D5B"
-            )
-            self.timer_display.config(text="00:00:00", fg="#64748B")
+            self.status_badge.config(text="就緒", fg=UI["ok"])
+            self.record_btn.config(text="開始錄影", style="Primary.TButton")
+            self.timer_display.config(text="00:00:00", fg=UI["white"])
             self.timer_hint.config(text=self._idle_hint())
             self._draw_vu_idle()
             self._draw_mini_vu_idle()
@@ -665,28 +583,25 @@ class LiteRecorderApp:
         if not hasattr(self, 'vu_canvas'):
             return
         self.vu_canvas.delete("all")
-        w, h = 280, 14
-        bar_count = 14
-        bar_w = 12
+        w, h = 220, 8
+        bar_count = 16
+        bar_w = 8
         gap = (w - (bar_count * bar_w)) / (bar_count + 1)
         for i in range(bar_count):
             x = gap + i * (bar_w + gap)
-            y = h - 3
-            self.vu_canvas.create_rectangle(x, y, x + bar_w, h, fill="#1E2330", outline="")
+            self.vu_canvas.create_rectangle(x, 2, x + bar_w, h, fill=UI["meter_idle"], outline="")
 
     def _draw_mini_vu_idle(self):
         """繪製迷你懸浮膠囊的靜態電平點"""
         if not hasattr(self, 'mini_vu_canvas'):
             return
         self.mini_vu_canvas.delete("all")
-        w, h = 32, 14
         bar_count = 4
         bar_w = 4
         gap = 3
         for i in range(bar_count):
             x = 2 + i * (bar_w + gap)
-            y = h - 3
-            self.mini_vu_canvas.create_rectangle(x, y, x + bar_w, h, fill="#1E2330", outline="")
+            self.mini_vu_canvas.create_rectangle(x, 4, x + bar_w, 10, fill=UI["meter_idle"], outline="")
 
     def _idle_hint(self):
         folder = self.recorder.output_dir.name
@@ -703,41 +618,36 @@ class LiteRecorderApp:
     def _draw_main_vu_active(self, tick_count):
         if hasattr(self, 'vu_canvas'):
             self.vu_canvas.delete("all")
-            w, h = 280, 14
-            bar_count = 14
-            bar_w = 12
+            w, h = 220, 8
+            bar_count = 16
+            bar_w = 8
             gap = (w - (bar_count * bar_w)) / (bar_count + 1)
-            colors = [
-                "#00FF9D", "#00FF9D", "#00FF9D", "#00FF9D",
-                "#00F0FF", "#00F0FF", "#00F0FF", "#00F0FF",
-                "#FFB800", "#FFB800", "#FFB800", "#FFB800",
-                "#FF2A6D", "#FF2A6D"
-            ]
             for i in range(bar_count):
+                if i < 8:
+                    color = UI["meter_low"]
+                elif i < 13:
+                    color = UI["meter_mid"]
+                else:
+                    color = UI["meter_high"]
                 wave = math.sin((tick_count * 0.35) + i * 0.55) * 0.5 + 0.5
-                noise = random.uniform(0.08, 0.35)
-                level = min(1.0, max(0.18, wave * 0.7 + noise))
-                bar_h = max(2, int(h * level))
+                level = min(1.0, max(0.25, wave))
+                if level < 0.45 and i > 6:
+                    color = UI["meter_idle"]
                 x = gap + i * (bar_w + gap)
-                y = h - bar_h
-                self.vu_canvas.create_rectangle(x, y, x + bar_w, h, fill=colors[i], outline="")
+                self.vu_canvas.create_rectangle(x, 1, x + bar_w, h, fill=color, outline="")
 
     def _draw_mini_vu_active(self, tick_count):
         if hasattr(self, 'mini_vu_canvas'):
             self.mini_vu_canvas.delete("all")
-            h = 14
             bar_count = 4
             bar_w = 4
             gap = 3
-            mini_colors = ["#00FF9D", "#00F0FF", "#FFB800", "#FF2A6D"]
+            colors = [UI["meter_low"], UI["meter_low"], UI["meter_mid"], UI["meter_high"]]
             for i in range(bar_count):
                 wave = math.sin((tick_count * 0.45) + i * 0.75) * 0.5 + 0.5
-                noise = random.uniform(0.08, 0.3)
-                level = min(1.0, max(0.2, wave * 0.65 + noise))
-                bar_h = max(2, int(h * level))
+                color = colors[i] if wave > 0.35 else UI["meter_idle"]
                 x = 2 + i * (bar_w + gap)
-                y = h - bar_h
-                self.mini_vu_canvas.create_rectangle(x, y, x + bar_w, h, fill=mini_colors[i], outline="")
+                self.mini_vu_canvas.create_rectangle(x, 2, x + bar_w, 10, fill=color, outline="")
 
     def _timer_tick(self):
         self.vu_tick_count = getattr(self, 'vu_tick_count', 0) + 1
@@ -753,7 +663,7 @@ class LiteRecorderApp:
             time_str = f"{hrs:02d}:{mins:02d}:{s:02d}"
             self.timer_display.config(text=time_str)
 
-            mini_str = f"● REC {mins:02d}:{s:02d}" if hrs == 0 else f"● REC {hrs:02d}:{mins:02d}:{s:02d}"
+            mini_str = f"REC {mins:02d}:{s:02d}" if hrs == 0 else f"REC {hrs:02d}:{mins:02d}:{s:02d}"
             self.mini_time_label.config(text=mini_str)
 
             self._draw_vu_active(self.vu_tick_count)
@@ -830,37 +740,41 @@ class LiteRecorderApp:
             files = []
 
         if not files:
-            lbl = tk.Label(
+            tk.Label(
                 self.recent_list_frame,
                 text="這個資料夾還沒有錄影",
                 font=self.fonts["body"],
-                fg="#64748B",
-                bg="#0F1218",
-            )
-            lbl.pack(pady=10)
+                fg=UI["muted"],
+                bg=UI["card"],
+            ).pack(pady=16)
             return
 
         for p in files:
-            row = tk.Frame(self.recent_list_frame, bg="#0F1218", highlightbackground="#1E2330", highlightthickness=1)
-            row.pack(fill=tk.X, pady=2, padx=2, ipady=2)
+            row = tk.Frame(self.recent_list_frame, bg=UI["card"])
+            row.pack(fill=tk.X, pady=1)
 
             sz = p.stat().st_size / (1024 * 1024)
             size_text = f"{sz:.1f} MB" if sz >= 0.1 else f"{max(1, int(p.stat().st_size / 1024))} KB"
             time_str = datetime.fromtimestamp(p.stat().st_mtime).strftime("%m/%d %H:%M")
-            display_name = p.name if len(p.name) <= 34 else ("…" + p.name[-33:])
+            display_name = p.name if len(p.name) <= 36 else ("…" + p.name[-35:])
 
-            tk.Label(row, text=time_str, font=self.fonts["badge"], fg="#00F0FF", bg="#0F1218").pack(side=tk.LEFT, padx=(6, 4))
-            tk.Label(row, text=display_name, font=self.fonts["body"], fg="#E2E8F0", bg="#0F1218").pack(side=tk.LEFT, padx=2)
-            tk.Label(row, text=size_text, font=self.fonts["badge"], fg="#64748B", bg="#0F1218").pack(side=tk.LEFT, padx=2)
+            top = tk.Frame(row, bg=UI["card"])
+            top.pack(fill=tk.X)
+            tk.Label(
+                top, text=display_name, font=self.fonts["body"], fg=UI["text"], bg=UI["card"], anchor="w"
+            ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 4))
+            self._quiet_button(top, "刪除", lambda f=p: self._delete_recording(f), fg=UI["red"]).pack(side=tk.RIGHT)
+            self._quiet_button(top, "剪輯", lambda f=p: self.open_editor(str(f))).pack(side=tk.RIGHT)
+            self._quiet_button(top, "播放", lambda f=p: open_file_or_dir(str(f))).pack(side=tk.RIGHT)
 
-            btn_del = tk.Button(row, text="🗑", font=self.fonts["bold"], bg="#151922", fg="#FF2A6D", relief=tk.FLAT, command=lambda f=p: self._delete_recording(f), padx=4)
-            btn_del.pack(side=tk.RIGHT, padx=2)
-
-            btn_trim = tk.Button(row, text="✂", font=self.fonts["bold"], bg="#151922", fg="#00F0FF", relief=tk.FLAT, command=lambda f=p: self.open_editor(str(f)), padx=4)
-            btn_trim.pack(side=tk.RIGHT, padx=2)
-
-            btn_play = tk.Button(row, text="▶", font=self.fonts["bold"], bg="#151922", fg="#00FF9D", relief=tk.FLAT, command=lambda f=p: open_file_or_dir(str(f)), padx=4)
-            btn_play.pack(side=tk.RIGHT, padx=2)
+            tk.Label(
+                row,
+                text=f"{time_str}   {size_text}",
+                font=self.fonts["badge"],
+                fg=UI["muted"],
+                bg=UI["card"],
+                anchor="w",
+            ).pack(fill=tk.X, padx=6)
 
     def _delete_recording(self, file_path):
         """刪除單一錄影檔"""
@@ -898,6 +812,7 @@ class LiteRecorderApp:
 def main():
     enable_dpi_awareness()
     root = tk.Tk()
+    use_dark_appearance()
     app = LiteRecorderApp(root)
     root.mainloop()
 
