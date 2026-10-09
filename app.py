@@ -308,9 +308,9 @@ class LiteRecorderApp:
         self.res_combo = labeled_combo(2, 0, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
-            "2K（較吃資源）",
-            "1080p（1920×1080）",
-            "720p（1280×720）",
+            "2K（長邊 2560）",
+            "1080p（長邊 1920）",
+            "720p（長邊 1280）",
         ]
         self.res_combo.current(self._saved_index("res_index", self.capture_advice["res_index"], 3))
         self.fps_combo = labeled_combo(2, 2, "幀率")
@@ -994,11 +994,22 @@ class LiteRecorderApp:
         per_min = (video_k + audio_k) * 60 / 8 / 1024
         return f"約 {max(1, round(per_min))} MB/分"
 
+    def _selection_label(self):
+        """準備錄影時顯示目前的解析度。和建議相同才保留順暢或平衡。"""
+        res = {0: "原生", 1: "2K", 2: "1080p", 3: "720p"}.get(self.res_combo.current(), "1080p")
+        fps = {0: "30 FPS", 1: "60 FPS", 2: "15 FPS"}.get(self.fps_combo.current(), "30 FPS")
+        advice = self.capture_advice
+        if (
+            self.res_combo.current() == advice["res_index"]
+            and self.fps_combo.current() == advice["fps_index"]
+        ):
+            return advice["label"]
+        return f"{res} / {fps}"
+
     def _idle_hint(self):
-        label = self.capture_advice["label"]
         remain = disk_time_text(free_disk_bytes(self.recorder.output_dir), sum(self._capture_kbps()) * 1000)
         tail = remain or self.recorder.output_dir.name
-        return f"{label}  ·  {self._size_estimate_text()}  ·  {tail}"
+        return f"{self._selection_label()}  ·  {self._size_estimate_text()}  ·  {tail}"
 
     def _draw_vu_active(self, tick_count):
         """只重畫看得到的那一條，錄影時少佔主執行緒。"""

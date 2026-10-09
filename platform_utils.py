@@ -562,11 +562,15 @@ def encode_threads(profile):
 
 
 def scale_filter(resolution):
-    sizes = {"720p": "1280:-2", "1080p": "1920:-2", "2K": "2560:-2"}
-    spec = sizes.get(resolution)
-    if not spec:
+    """長邊對齊，並保留比例。直向範圍不會被拉成超高的橫向畫面。"""
+    long_side = {"720p": 1280, "1080p": 1920, "2K": 2560}.get(resolution)
+    if not long_side:
         return None
-    return f"scale={spec}:flags=fast_bilinear"
+    wide = f"gte(iw\\,ih)"
+    return (
+        f"scale=w='if({wide}\\,{long_side}\\,-2)':"
+        f"h='if({wide}\\,-2\\,{long_side})':flags=fast_bilinear"
+    )
 
 
 def capture_bitrate_k(resolution, profile):
