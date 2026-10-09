@@ -305,7 +305,7 @@
       <!-- 3秒倒數計時遮罩 -->
       <div id="countdown-overlay" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-obsidian-950/80 backdrop-blur-xl hidden">
         <span id="countdown-number" class="font-display font-black text-9xl text-transparent bg-clip-text bg-gradient-to-r from-aura-cyan via-white to-aura-rose animate-bounce">3</span>
-        <span class="text-sm font-mono text-slate-400 tracking-widest uppercase mt-4">PREPARING CAPTURE...</span>
+        <span class="text-sm font-mono text-slate-400 tracking-wider mt-4">再按一次、按 Esc，或點這個畫面取消</span>
       </div>
 
       <!-- 懸浮浮動工具膠囊 -->
@@ -356,9 +356,9 @@
             <i data-lucide="flag-off" class="w-3.5 h-3.5 text-aura-rose"></i>
             設為終點 [O]
           </button>
-          <button onclick="splitClipAtCurrent()" class="px-2.5 py-1 rounded-lg bg-obsidian-800 border border-white/10 hover:border-aura-cyan/50 text-slate-300 hover:text-white flex items-center gap-1 text-[11px]" title="切割片段 (按鍵 S)">
+          <button id="btn-split" onclick="splitClipAtCurrent()" class="px-2.5 py-1 rounded-lg bg-obsidian-800 border border-white/10 hover:border-aura-cyan/50 text-slate-300 hover:text-white flex items-center gap-1 text-[11px]" title="在播放頭切成兩段，各自存檔 (按鍵 S)">
             <i data-lucide="scissors" class="w-3.5 h-3.5 text-aura-cyan"></i>
-            切割 [S]
+            <span id="split-btn-text">切割 [S]</span>
           </button>
           <button onclick="togglePlayPause()" class="px-3.5 py-1 rounded-lg bg-aura-cyan text-black font-bold flex items-center gap-1 text-[11px] hover:bg-cyan-300 transition-colors" title="播放 / 暫停 (空白鍵)">
             <i id="play-btn-icon" data-lucide="play" class="w-3.5 h-3.5 fill-black"></i>
@@ -392,6 +392,7 @@
 
         <!-- 選取裁切範圍高亮遮罩 -->
         <div id="selection-range-highlight" class="absolute top-4 bottom-0 bg-aura-cyan/15 border-t-2 border-b-2 border-aura-cyan/80 pointer-events-none transition-all duration-75" style="left: 0%; width: 100%;"></div>
+        <div id="split-marker" class="absolute top-4 bottom-0 w-0.5 bg-aura-violet z-20 hidden pointer-events-none" style="left: 50%;" title="切割點"></div>
 
         <!-- 起點拖曳柄 -->
         <div id="handle-in" class="timeline-handle absolute top-4 bottom-0 w-3 bg-aura-emerald rounded-l-sm cursor-ew-resize flex items-center justify-center shadow-lg shadow-aura-emerald/30 z-20" style="left: 0%;" title="起點 (In-Point)">
@@ -444,9 +445,9 @@
             導出精華截圖
           </button>
 
-          <button onclick="exportAudioOnly()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-violet/40 hover:text-white">
+          <button id="btn-export-audio" onclick="exportAudioOnly()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-violet/40 hover:text-white">
             <i data-lucide="music" class="w-3.5 h-3.5 text-aura-violet"></i>
-            提取音訊 (WebM)
+            提取音訊 (WAV)
           </button>
         </div>
       </div>
@@ -484,7 +485,7 @@
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-rose">O</kbd>
         </div>
         <div class="flex items-center justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-300">游標處切割 (Split Clip)</span>
+          <span class="text-slate-300">游標處切成兩段</span>
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-violet">S</kbd>
         </div>
         <div class="flex items-center justify-between py-1.5 border-b border-white/5">
@@ -498,9 +499,13 @@
           <span class="text-slate-300">靜音切換 (Mute)</span>
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-slate-200">M</kbd>
         </div>
-        <div class="flex items-center justify-between py-1.5">
+        <div class="flex items-center justify-between py-1.5 border-b border-white/5">
           <span class="text-slate-300">全螢幕模式切換</span>
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-slate-200">F</kbd>
+        </div>
+        <div class="flex items-center justify-between py-1.5">
+          <span class="text-slate-300">取消倒數</span>
+          <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-rose">Esc</kbd>
         </div>
       </div>
     </div>
@@ -597,6 +602,23 @@
     let videoDuration = 0;
     let inPoint = 0;
     let outPoint = 0;
+    let activeFilter = 'none';
+    let activeSpeed = 1;
+    let annotationDirty = false;
+    let countdownTimer = null;
+    let compositeRaf = 0;
+    let compositeCanvas = null;
+    let bakedLive = false;
+    let liveHudText = '';
+    let liveHudUntil = 0;
+    let splitMarker = null;
+    let pendingClipSaves = [];
+    const FILTER_CSS = {
+      none: 'none',
+      cyberpunk: 'saturate(1.6) contrast(1.15) hue-rotate(15deg)',
+      noir: 'grayscale(1) contrast(1.4) brightness(0.95)',
+      warm: 'sepia(0.35) saturate(1.2) contrast(1.05)'
+    };
 
     let audioContext = null;
     let audioAnalyser = null;
@@ -648,6 +670,7 @@
       const rect = stageVideo.getBoundingClientRect();
       annotationCanvas.width = stageVideo.clientWidth || 800;
       annotationCanvas.height = stageVideo.clientHeight || 450;
+      annotationDirty = false;
     }
     window.addEventListener('resize', resizeAnnotationCanvas);
 
@@ -683,9 +706,10 @@
       currentAnnotationColor = color;
     }
 
-    function clearAnnotationCanvas() {
-      audioSynth.playClick();
+    function clearAnnotationCanvas(silent) {
+      if (!silent) audioSynth.playClick();
       annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+      annotationDirty = false;
     }
 
     function drawSpotlight(x, y) {
@@ -703,6 +727,7 @@
       annotationCtx.arc(x, y, 110, 0, Math.PI * 2);
       annotationCtx.fill();
       annotationCtx.restore();
+      annotationDirty = true;
     }
 
     function cycleAspectGuide() {
@@ -796,6 +821,8 @@
       html += `</div>`;
 
       hud.innerHTML = html;
+      liveHudText = parts.map((p) => p.label).join(' + ');
+      liveHudUntil = Date.now() + 1200;
       hud.classList.remove('opacity-0', 'translate-y-3');
       hud.classList.add('opacity-100', 'translate-y-0');
 
@@ -836,6 +863,7 @@
       if (currentAnnotationTool === 'pen') {
         annotationCtx.lineTo(curX, curY);
         annotationCtx.stroke();
+        annotationDirty = true;
       }
     });
 
@@ -850,6 +878,7 @@
         annotationCtx.strokeStyle = currentAnnotationColor;
         annotationCtx.lineWidth = 3;
         annotationCtx.strokeRect(startX, startY, endX - startX, endY - startY);
+        annotationDirty = true;
       }
     });
 
@@ -858,28 +887,115 @@
     // ==========================================
     function setFilter(type) {
       audioSynth.playClick();
+      activeFilter = FILTER_CSS[type] ? type : 'none';
       stageVideo.classList.remove('filter-cyberpunk', 'filter-noir', 'filter-warm');
-      document.querySelectorAll('.filter-tag').forEach(b => {
-        b.classList.remove('bg-white/10', 'text-white', 'font-bold');
-        b.classList.add('text-slate-400');
+      if (activeFilter !== 'none') stageVideo.classList.add(`filter-${activeFilter}`);
+      const order = ['none', 'cyberpunk', 'noir', 'warm'];
+      document.querySelectorAll('.filter-tag').forEach((b, i) => {
+        const on = order[i] === activeFilter;
+        b.classList.toggle('bg-white/10', on);
+        b.classList.toggle('text-white', on);
+        b.classList.toggle('font-bold', on);
+        b.classList.toggle('text-slate-400', !on);
       });
-
-      if (type !== 'none') {
-        stageVideo.classList.add(`filter-${type}`);
-      }
-      event.target.classList.add('bg-white/10', 'text-white', 'font-bold');
-      event.target.classList.remove('text-slate-400');
     }
 
     function setPlaybackSpeed(speed) {
       audioSynth.playClick();
-      stageVideo.playbackRate = speed;
-      document.querySelectorAll('.speed-tag').forEach(b => {
-        b.classList.remove('bg-aura-cyan/20', 'text-aura-cyan', 'font-bold');
-        b.classList.add('text-slate-400');
+      activeSpeed = Number(speed) || 1;
+      stageVideo.playbackRate = activeSpeed;
+      const order = [0.5, 1, 1.5, 2];
+      document.querySelectorAll('.speed-tag').forEach((b, i) => {
+        const on = Math.abs(order[i] - activeSpeed) < 0.01;
+        b.classList.toggle('bg-aura-cyan/20', on);
+        b.classList.toggle('text-aura-cyan', on);
+        b.classList.toggle('font-bold', on);
+        b.classList.toggle('text-slate-400', !on);
       });
-      event.target.classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'font-bold');
-      event.target.classList.remove('text-slate-400');
+    }
+
+    function stageContentRect() {
+      const cw = stageVideo.clientWidth || annotationCanvas.width || 1;
+      const ch = stageVideo.clientHeight || annotationCanvas.height || 1;
+      const vw = stageVideo.videoWidth || cw;
+      const vh = stageVideo.videoHeight || ch;
+      const scale = Math.min(cw / vw, ch / vh) || 1;
+      const dw = Math.max(1, vw * scale);
+      const dh = Math.max(1, vh * scale);
+      return { x: (cw - dw) / 2, y: (ch - dh) / 2, w: dw, h: dh };
+    }
+
+    function pipIsOpen() {
+      return pipContainer && !pipContainer.classList.contains('hidden') && pipVideo.readyState >= 2;
+    }
+
+    function lookNeedsBake() {
+      return activeFilter !== 'none' || Math.abs(activeSpeed - 1) > 0.01 || annotationDirty || pipIsOpen();
+    }
+
+    function lookSignature() {
+      return [activeFilter, activeSpeed, annotationDirty ? 1 : 0, pipIsOpen() ? 1 : 0].join('|');
+    }
+
+    function paintFrame(ctx, video, destW, destH, opts) {
+      opts = opts || {};
+      ctx.clearRect(0, 0, destW, destH);
+      ctx.save();
+      ctx.filter = FILTER_CSS[opts.filter || activeFilter] || 'none';
+      if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, destW, destH);
+      ctx.restore();
+      if (annotationDirty && annotationCanvas.width > 0) {
+        const rect = stageContentRect();
+        ctx.drawImage(annotationCanvas, rect.x, rect.y, rect.w, rect.h, 0, 0, destW, destH);
+      }
+      if (opts.webcam !== false && pipIsOpen()) {
+        const videoBox = stageVideo.getBoundingClientRect();
+        const pipBox = pipContainer.getBoundingClientRect();
+        const content = stageContentRect();
+        const x = ((pipBox.left - videoBox.left - content.x) / content.w) * destW;
+        const y = ((pipBox.top - videoBox.top - content.y) / content.h) * destH;
+        const w = (pipBox.width / content.w) * destW;
+        const h = (pipBox.height / content.h) * destH;
+        const radius = Math.min(w, h) / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2, radius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.translate(x + w, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(pipVideo, 0, 0, w, h);
+        ctx.restore();
+      }
+      if (opts.hud && liveHudText && Date.now() < liveHudUntil) {
+        ctx.save();
+        const fontPx = Math.max(16, Math.round(destH / 28));
+        ctx.font = `bold ${fontPx}px monospace`;
+        const pad = 14;
+        const tw = ctx.measureText(liveHudText).width + pad * 2;
+        const th = Math.max(28, Math.round(destH / 18));
+        const hx = (destW - tw) / 2;
+        const hy = destH - th - Math.round(destH * 0.08);
+        ctx.fillStyle = 'rgba(6, 7, 9, 0.88)';
+        ctx.fillRect(hx, hy, tw, th);
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.75)';
+        ctx.strokeRect(hx, hy, tw, th);
+        ctx.fillStyle = '#00F0FF';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(liveHudText, hx + pad, hy + th / 2);
+        ctx.restore();
+      }
+    }
+
+    function stopComposite() {
+      if (compositeRaf) cancelAnimationFrame(compositeRaf);
+      compositeRaf = 0;
+    }
+
+    function finishLiveLook() {
+      if (!bakedLive) return;
+      bakedLive = false;
+      clearAnnotationCanvas(true);
+      setFilter('none');
     }
 
     // ==========================================

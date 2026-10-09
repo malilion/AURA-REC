@@ -393,6 +393,11 @@ class VideoEditorWindow:
             return
 
         self._playing_process = self.editor.play_segment(self.current_file, self.start_sec, dur)
+        if not self._playing_process:
+            # 若無 ffplay，改以系統預設播放器開啟
+            open_file_or_dir(self.current_file)
+            return
+
         self.btn_play_seg.config(text="停止", style="Stop.TButton")
 
         def monitor_process():

@@ -74,6 +74,10 @@ class ScreenRecorder:
         self._segment_paused_at = None
         self._pending_result = None
         self._capture_kwargs = None
+        self._follow = None
+        self._follow_stop = None
+        self._cmd_fd = None
+        self._cmd_lock = threading.Lock()
 
         # 跨平台尋找 FFmpeg
         self.ffmpeg_bin = find_executable("ffmpeg")
@@ -224,7 +228,8 @@ class ScreenRecorder:
             y -= y % 2
             w = max(2, w - w % 2)
             h = max(2, h - h % 2)
-            filters.append(f"crop={w}:{h}:{x}:{y}")
+            # 名稱固定，錄影中才能把這個 crop 的位置改掉。
+            filters.append(f"crop@aura={w}:{h}:{x}:{y}")
         scale = scale_filter(resolution)
         if scale:
             filters.append(scale)
@@ -257,6 +262,7 @@ class ScreenRecorder:
         container="mp4",
         segment_sec=None,
         label=None,
+        follow=None,
     ):
         """
         跨平台啟動錄影程序
@@ -281,6 +287,11 @@ class ScreenRecorder:
         if self._stop_rotate is not None:
             self._stop_rotate.set()
         self._stop_rotate = threading.Event() if self._segment_seconds else None
+        if self._follow_stop is not None:
+            self._follow_stop.set()
+        self._follow_stop = threading.Event()
+        # Windows 的 ffmpeg 不從 stdin 讀指令，位置跟不了。Mac 與 Linux 用終端機指令。
+        self._follow = follow if callable(follow) and not IS_WINDOWS else None
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
@@ -309,6 +320,12 @@ class ScreenRecorder:
         self.is_recording = True
         self.start_time = time.time()
         self._segment_started_at = self.start_time
+        if self._follow is not None and self._cmd_fd is not None:
+            threading.Thread(
+                target=self._follow_loop,
+                args=(self._follow_stop,),
+                daemon=True,
+            ).start()
         if self._stop_rotate is not None:
             threading.Thread(
                 target=self._watch_segments,
@@ -328,12 +345,19 @@ class ScreenRecorder:
             segment_sec=None,
             **(self._capture_kwargs or {}),
         )
+        use_pty = self._follow is not None and not IS_WINDOWS
+        slave = None
         popen_kwargs = dict(
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
         )
+        if use_pty:
+            import pty
+            master, slave = pty.openpty()
+            popen_kwargs["stdin"] = slave
+            popen_kwargs["close_fds"] = True
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = getattr(
                 subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000
@@ -341,8 +365,15 @@ class ScreenRecorder:
         try:
             proc = subprocess.Popen(cmd, **popen_kwargs)
         except Exception as exc:
+            if slave is not None:
+                os.close(slave)
+                os.close(master)
             self.process = None
+            self._follow = None
             return False, explain_ffmpeg_failure(str(exc), code="missing")
+        if slave is not None:
+            os.close(slave)
+            self._cmd_fd = master
         self.process = proc
         lower_process_priority(proc.pid)
         threading.Thread(target=self._drain_stderr, args=(proc,), daemon=True).start()
@@ -387,16 +418,78 @@ class ScreenRecorder:
         finally:
             self._rotating = False
 
+    def _send_crop(self, x, y):
+        """叫正在錄的 crop 換位置。寬高不動，編碼器才不會被打斷。"""
+        fd = self._cmd_fd
+        if fd is None:
+            return False
+        payload = f"ccrop@aura -1 x {int(x)}\nccrop@aura -1 y {int(y)}\n".encode()
+        with self._cmd_lock:
+            if self._cmd_fd != fd:
+                return False
+            try:
+                os.write(fd, payload)
+            except OSError:
+                return False
+        return True
+
+    def _close_cmd_fd(self):
+        with self._cmd_lock:
+            fd = self._cmd_fd
+            self._cmd_fd = None
+        if fd is None:
+            return
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _follow_loop(self, stop_event):
+        """視窗移動時，讓裁切框跟著走。"""
+        while not stop_event.wait(0.25):
+            if not self.is_recording or self.paused or self._rotating or self._follow is None:
+                continue
+            try:
+                box = self._follow()
+            except Exception:
+                continue
+            if not box or len(box) != 4:
+                continue
+            try:
+                x, y = int(box[0]), int(box[1])
+            except (TypeError, ValueError):
+                continue
+            x -= x % 2
+            y -= y % 2
+            current = (self._capture_kwargs or {}).get("region")
+            if not current or len(current) != 4:
+                continue
+            cx, cy, cw, ch = current
+            if abs(x - int(cx)) < 2 and abs(y - int(cy)) < 2:
+                continue
+            if self._send_crop(x, y):
+                self._capture_kwargs["region"] = (x, y, cw, ch)
+
     def _close_ffmpeg(self, proc):
         """送 q 讓這支 ffmpeg 把 mp4 封好。還沒結束才改送中斷。"""
         if proc is None:
             return
-        try:
-            if proc.stdin:
-                proc.stdin.write("q\n")
-                proc.stdin.flush()
-        except Exception:
-            pass
+        wrote = False
+        with self._cmd_lock:
+            fd = self._cmd_fd
+            if fd is not None:
+                try:
+                    os.write(fd, b"q")
+                    wrote = True
+                except OSError:
+                    wrote = False
+        if not wrote:
+            try:
+                if proc.stdin:
+                    proc.stdin.write("q\n")
+                    proc.stdin.flush()
+            except Exception:
+                pass
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -420,6 +513,7 @@ class ScreenRecorder:
                         proc.wait(timeout=2)
                     except Exception:
                         pass
+        self._close_cmd_fd()
         if self.process is proc:
             self.process = None
 
@@ -486,6 +580,8 @@ class ScreenRecorder:
         """
         if self._stop_rotate is not None:
             self._stop_rotate.set()
+        if self._follow_stop is not None:
+            self._follow_stop.set()
         deadline = time.time() + 12
         while self._rotating and time.time() < deadline:
             time.sleep(0.05)

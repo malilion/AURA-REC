@@ -19,19 +19,144 @@ from pathlib import Path
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
+APP_VERSION = "2.5.0"
 
 
 def enable_dpi_awareness():
-    """在 Windows 上啟用 High-DPI 支援，避免字體模糊"""
-    if IS_WINDOWS:
+    """Windows 的視窗座標要跟擷取像素同一套。必須在開視窗之前呼叫。"""
+    if not IS_WINDOWS:
+        return
+    try:
+        from ctypes import c_void_p, windll
+        # -4 是 PER_MONITOR_AWARE_V2。gdigrab 用的是實體像素。
+        if windll.user32.SetProcessDpiAwarenessContext(c_void_p(-4)):
+            return
+    except Exception:
+        pass
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
         try:
             from ctypes import windll
-            windll.shcore.SetProcessDpiAwareness(1)
+            windll.user32.SetProcessDPIAware()
         except Exception:
-            try:
-                windll.user32.SetProcessDPIAware()
-            except Exception:
-                pass
+            pass
+
+
+class HiddenRecordHotkeys:
+    """macOS：視窗收起來以後，F8 暫停、F9 或 Esc 停止。"""
+
+    def __init__(self):
+        self._on_key = None
+        self._proc = None
+        self._carbon = None
+        self._hot_refs = []
+        self._handler_ref = None
+
+    def arm(self, on_key):
+        self.disarm()
+        if not IS_MAC or on_key is None:
+            return False
+        try:
+            import ctypes
+            from ctypes import CFUNCTYPE, POINTER, byref, c_int32, c_uint32, c_void_p
+            carbon = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/Carbon.framework/Carbon")
+        except (OSError, ImportError):
+            return False
+
+        class EventTypeSpec(ctypes.Structure):
+            _fields_ = [("eventClass", c_uint32), ("eventKind", c_uint32)]
+
+        class EventHotKeyID(ctypes.Structure):
+            _fields_ = [("signature", c_uint32), ("id", c_uint32)]
+
+        names = {1: "f9", 2: "f8", 3: "esc"}
+        proc_type = CFUNCTYPE(c_int32, c_void_p, c_void_p, c_void_p)
+        carbon.GetApplicationEventTarget.restype = c_void_p
+        carbon.InstallEventHandler.restype = c_int32
+        carbon.InstallEventHandler.argtypes = [
+            c_void_p, proc_type, c_uint32, POINTER(EventTypeSpec), c_void_p, POINTER(c_void_p)
+        ]
+        carbon.RegisterEventHotKey.restype = c_int32
+        carbon.RegisterEventHotKey.argtypes = [
+            c_uint32, c_uint32, EventHotKeyID, c_void_p, c_uint32, POINTER(c_void_p)
+        ]
+        carbon.UnregisterEventHotKey.restype = c_int32
+        carbon.UnregisterEventHotKey.argtypes = [c_void_p]
+        carbon.RemoveEventHandler.restype = c_int32
+        carbon.RemoveEventHandler.argtypes = [c_void_p]
+        carbon.GetEventParameter.restype = c_int32
+        carbon.GetEventParameter.argtypes = [
+            c_void_p, c_uint32, c_uint32, c_void_p, c_uint32, c_void_p, c_void_p
+        ]
+
+        def handle(_next_handler, event, _user):
+            ident = EventHotKeyID()
+            carbon.GetEventParameter(
+                event, 0x2D2D2D2D, 0x686B6964, None,
+                ctypes.sizeof(ident), None, byref(ident),
+            )
+            name = names.get(int(ident.id))
+            if name and self._on_key is not None:
+                try:
+                    self._on_key(name)
+                except Exception:
+                    pass
+            return 0
+
+        proc = proc_type(handle)
+        spec = EventTypeSpec(0x6B657962, 5)
+        handler_ref = c_void_p()
+        if carbon.InstallEventHandler(
+            carbon.GetApplicationEventTarget(), proc, 1, byref(spec), None, byref(handler_ref)
+        ) != 0:
+            return False
+        refs = []
+        for key_code, ident in ((101, 1), (100, 2), (53, 3)):
+            hot = c_void_p()
+            status = carbon.RegisterEventHotKey(
+                key_code, 0, EventHotKeyID(0x41555241, ident),
+                carbon.GetApplicationEventTarget(), 0, byref(hot),
+            )
+            if status != 0 or not hot.value:
+                for ref in refs:
+                    carbon.UnregisterEventHotKey(ref)
+                if handler_ref.value:
+                    carbon.RemoveEventHandler(handler_ref)
+                return False
+            refs.append(hot)
+        self._proc = proc
+        self._carbon = carbon
+        self._hot_refs = refs
+        self._handler_ref = handler_ref
+        self._on_key = on_key
+        return True
+
+    def disarm(self):
+        carbon = self._carbon
+        if carbon is not None:
+            for ref in self._hot_refs:
+                try:
+                    carbon.UnregisterEventHotKey(ref)
+                except Exception:
+                    pass
+            if self._handler_ref is not None and self._handler_ref.value:
+                try:
+                    carbon.RemoveEventHandler(self._handler_ref)
+                except Exception:
+                    pass
+        self._hot_refs = []
+        self._handler_ref = None
+        self._carbon = None
+        self._proc = None
+        self._on_key = None
 
 
 def use_dark_appearance():
@@ -55,12 +180,30 @@ def find_executable(name, extra_mac_paths=None, extra_win_paths=None):
     if found:
         return found
 
-    # 2. 搜尋當前專案資料夾底下
-    local_dir = Path(__file__).resolve().parent
+    # 2. 搜尋當前專案與套件內嵌路徑
     ext = ".exe" if IS_WINDOWS else ""
-    local_bin = local_dir / f"{name}{ext}"
-    if local_bin.exists():
-        return str(local_bin)
+    local_dir = Path(__file__).resolve().parent
+    candidates = [
+        local_dir / f"{name}{ext}",
+        local_dir / "bin" / f"{name}{ext}",
+        Path(sys.executable).resolve().parent / f"{name}{ext}",
+        Path(sys.executable).resolve().parent / "bin" / f"{name}{ext}",
+    ]
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = Path(sys._MEIPASS)
+        candidates.extend([
+            meipass / f"{name}{ext}",
+            meipass / "bin" / f"{name}{ext}",
+        ])
+    if IS_MAC:
+        # 檢查 .app/Contents/MacOS/ 或 .app/Contents/Resources/bin/
+        candidates.extend([
+            local_dir.parent / "MacOS" / name,
+            local_dir.parent / "Resources" / "bin" / name,
+        ])
+    for candidate in candidates:
+        if candidate.is_file() and os.access(str(candidate), os.X_OK if not IS_WINDOWS else os.F_OK):
+            return str(candidate)
 
     # 3. macOS 常見路徑
     if IS_MAC:
@@ -441,6 +584,22 @@ def _copy_text(text):
         )
         return True
     return False
+
+
+def copy_text_to_clipboard(text):
+    """將文字複製到系統剪貼簿 (跨平台支援 macOS / Windows / Linux)"""
+    text = str(text or "")
+    try:
+        if IS_MAC:
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=5)
+            return True
+        elif IS_WINDOWS:
+            subprocess.run(["clip"], input=text.encode("utf-8"), check=True, timeout=5)
+            return True
+        else:
+            return _copy_text(text)
+    except Exception:
+        return False
 
 
 _ENCODER_CACHE = {}
@@ -836,3 +995,68 @@ def explain_ffmpeg_failure(tail, code=None):
             extra = "\n\n請先安裝 FFmpeg，並確認終端機打得出 ffmpeg。"
     body = text or (f"FFmpeg 已結束（代碼 {code}）。" if code is not None else "FFmpeg 已結束。")
     return body + extra
+
+
+def get_system_diagnostics(ffmpeg_bin=None):
+    """
+    彙整系統硬體環境、FFmpeg 版本、支援之硬體加速編碼器與診斷資料
+    """
+    ffmpeg_bin = ffmpeg_bin or find_executable("ffmpeg")
+    info = {
+        "app_version": APP_VERSION,
+        "os": f"{platform.system()} {platform.release()} ({platform.machine()})",
+        "python": platform.python_version(),
+        "cpu_count": os.cpu_count() or 0,
+        "ram_gb": round(system_memory_gb(), 1),
+        "machine_profile": machine_profile(),
+        "ffmpeg_path": str(ffmpeg_bin) if ffmpeg_bin else "未找到",
+        "ffmpeg_version": "未知",
+        "hardware_encoders": [],
+        "active_encoder": "未指定",
+    }
+    if ffmpeg_bin and os.path.exists(ffmpeg_bin):
+        try:
+            res = subprocess.run(
+                [ffmpeg_bin, "-version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                errors="ignore",
+                timeout=4,
+            )
+            first_line = (res.stdout or "").splitlines()
+            if first_line:
+                info["ffmpeg_version"] = first_line[0]
+        except Exception:
+            pass
+
+        try:
+            res = subprocess.run(
+                [ffmpeg_bin, "-encoders"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                errors="ignore",
+                timeout=4,
+            )
+            encoders_out = res.stdout or ""
+            supported = []
+            candidates = [
+                ("h264_videotoolbox", "Apple Silicon / Mac GPU VideoToolbox 硬體加速"),
+                ("hevc_videotoolbox", "Apple Silicon HEVC VideoToolbox 硬體加速"),
+                ("h264_nvenc", "NVIDIA NVENC 硬體加速"),
+                ("hevc_nvenc", "NVIDIA HEVC NVENC 硬體加速"),
+                ("h264_qsv", "Intel QuickSync (QSV) 硬體加速"),
+                ("h264_amf", "AMD AMF 硬體加速"),
+                ("libx264", "x264 (CPU 多核心軟體編碼)"),
+            ]
+            for code, desc in candidates:
+                if code in encoders_out:
+                    supported.append(f"{code} ({desc})")
+            info["hardware_encoders"] = supported
+        except Exception:
+            pass
+
+        info["active_encoder"] = detect_best_video_encoder(ffmpeg_bin)
+
+    return info

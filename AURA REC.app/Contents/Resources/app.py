@@ -34,18 +34,25 @@ from region_picker import (
     box_to_points,
     capture_screen_index,
     display_frame,
+    follow_crop,
+    other_display_origin,
     pick_capture_window,
     pick_screen_region,
     resolve_window_box,
+    window_capture_origin,
 )
 from platform_utils import (
+    APP_VERSION,
     IS_MAC,
     IS_WINDOWS,
+    HiddenRecordHotkeys,
     enable_dpi_awareness,
     find_executable,
     get_ui_fonts,
     play_system_alert,
     copy_file,
+    copy_text_to_clipboard,
+    get_system_diagnostics,
     open_file_or_dir,
     save_settings,
     load_settings,
@@ -131,6 +138,8 @@ class LiteRecorderApp:
         self._stopping = False
         self._shooting = False
         self._pending_mini = False
+        self._record_conceal = None
+        self._hidden_hotkeys = HiddenRecordHotkeys()
         self._normal_size = (560, 800)
         self._saved = load_settings()
         self.region = self._saved_region()
@@ -234,13 +243,17 @@ class LiteRecorderApp:
             accelerator="⇧⌘C" if IS_MAC else "Ctrl+Shift+C",
         )
         file_menu.add_separator()
-        file_menu.add_command(label="開啟瀏覽器工作站", command=self.open_web_studio)
+        file_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
         file_menu.add_separator()
         file_menu.add_command(label="結束", command=self._on_close)
         menubar.add_cascade(label="檔案", menu=file_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="快捷鍵", command=self._show_shortcuts)
+        help_menu.add_command(label="快捷鍵說明", command=self._show_shortcuts)
+        help_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
+        help_menu.add_command(label="FFmpeg 與硬體加速檢視…", command=self._show_diagnostics)
+        help_menu.add_separator()
+        help_menu.add_command(label="關於 AURA REC", command=self._show_about)
         menubar.add_cascade(label="說明", menu=help_menu)
         self.menubar = menubar
         self.root.config(menu=self.menubar)
@@ -345,7 +358,9 @@ class LiteRecorderApp:
             return combo
 
         self.video_combo = labeled_combo(0, 0, "螢幕", span=3)
-        self.audio_combo = labeled_combo(1, 0, "麥克風", span=3)
+        self.audio_combo = labeled_combo(1, 0, "音效", span=2)
+        self.audio_guide_btn = self._quiet_button(form, "系統音指南", self._show_system_audio_guide)
+        self.audio_guide_btn.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=3)
         self.res_combo = labeled_combo(2, 0, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
@@ -575,12 +590,25 @@ class LiteRecorderApp:
         busy = self.recorder.is_recording or self.countdown_active or self._stopping
         self.video_combo.config(state=tk.DISABLED if busy else "readonly")
 
-        a_names = ["無音訊 (靜音)"] + [f"[{d['index']}] {d['name']}" for d in a_devs]
+        a_names = ["無音訊 (靜音)"]
+        for d in a_devs:
+            name = d["name"]
+            low = name.lower()
+            tag = ""
+            if any(k in low for k in ("blackhole", "stereo mix", "立體聲混音", "teams audio", "loopback", "cable", "soundflower", "virtual")):
+                tag = " (系統音效)"
+            elif any(k in low for k in ("麥克風", "microphone", "mic", "built-in", "內建")):
+                tag = " (麥克風)"
+            a_names.append(f"[{d['index']}] {name}{tag}")
+
         self.audio_combo["values"] = a_names
         audio_at = 1 if len(a_names) > 1 else 0
         saved_audio = self._saved.get("audio_device")
-        if isinstance(saved_audio, str) and saved_audio in a_names:
-            audio_at = a_names.index(saved_audio)
+        if isinstance(saved_audio, str):
+            for idx, item in enumerate(a_names):
+                if item == saved_audio or (saved_audio.startswith("[") and item.split("]")[0] == saved_audio.split("]")[0]):
+                    audio_at = idx
+                    break
         self.audio_combo.current(audio_at)
         self.audio_combo.config(state=tk.DISABLED if busy else "readonly")
 
@@ -741,7 +769,7 @@ class LiteRecorderApp:
         name = owner if not title else f"{owner} — {title}"
         if len(name) > 28:
             name = name[:27] + "…"
-        self.area_label.config(text=f"{name}　{w}×{h}，開始時的位置")
+        self.area_label.config(text=f"{name}　{w}×{h}，會跟著移動")
 
     def _on_area_choice(self):
         choice = self.area_combo.current()
@@ -799,6 +827,71 @@ class LiteRecorderApp:
         self.capture_window = None
         self._update_area_label()
         self._save_capture_settings()
+
+    def _window_follow_box(self):
+        """錄影執行緒來問現在該裁哪裡。不碰畫面元件。"""
+        window = self.capture_window
+        frame = display_frame(self._capture_screen_index())
+        if not window or frame is None or not self.region:
+            return None
+        origin = window_capture_origin(window["id"], self._capture_screen_index())
+        if origin is None:
+            return None
+        return follow_crop(
+            origin[0], origin[1], self.region[2], self.region[3],
+            int(frame["w"] * frame["scale"]), int(frame["h"] * frame["scale"]),
+        )
+
+    def _conceal_recorder(self):
+        """全螢幕錄影時，讓這個程式不出現在正在錄的那塊螢幕上。"""
+        saved = (self.root.winfo_x(), self.root.winfo_y(), self.is_mini_mode)
+        origin = other_display_origin(self._capture_screen_index(), 430, 80)
+        if origin is not None:
+            self.root.withdraw()
+            self.root.update_idletasks()
+            return {"mode": "other", "origin": origin, "saved": saved}
+        if self._arm_hidden_hotkeys():
+            self.root.withdraw()
+            self.root.update_idletasks()
+            return {"mode": "withdraw", "saved": saved}
+        self.root.geometry("+8000+8000")
+        self.root.update_idletasks()
+        return {"mode": "far", "saved": saved}
+
+    def _arm_hidden_hotkeys(self):
+        def on_key(name):
+            if name == "f8":
+                self.toggle_pause()
+                return
+            if name in {"f9", "esc"}:
+                if self.countdown_active:
+                    self._cancel_countdown()
+                    return
+                if self.recorder.is_recording and not self._stopping:
+                    self.stop_recording()
+
+        return self._hidden_hotkeys.arm(on_key)
+
+    def _restore_conceal(self):
+        self._hidden_hotkeys.disarm()
+        conceal = self._record_conceal
+        self._record_conceal = None
+        if not conceal:
+            return
+        if conceal["mode"] in {"withdraw", "far"}:
+            try:
+                self.root.deiconify()
+            except tk.TclError:
+                pass
+        if self.is_mini_mode:
+            self._switch_to_normal_mode()
+        saved = conceal.get("saved")
+        if saved:
+            x, y, _was_mini = saved
+            try:
+                self.root.geometry(f"+{int(x)}+{int(y)}")
+            except tk.TclError:
+                pass
 
     def _prepare_region(self):
         """開始錄或截圖前決定範圍。視窗會先重量位置。回傳 (可以繼續, 範圍或 None)。"""
@@ -981,11 +1074,17 @@ class LiteRecorderApp:
             return
 
         label = None
+        follow = None
         if self.area_combo.current() == 2 and self.capture_window:
             label = self.capture_window.get("owner") or ""
+            if not IS_WINDOWS:
+                follow = self._window_follow_box
         hidden_for_record = False
         parked_at = None
-        if self.auto_mini_var.get() and not self.is_mini_mode:
+        conceal = None
+        if region is None:
+            conceal = self._conceal_recorder()
+        elif self.auto_mini_var.get() and not self.is_mini_mode:
             parked_at = (self.root.winfo_x(), self.root.winfo_y())
             outside = self._mini_origin_outside(region)
             if outside:
@@ -1022,9 +1121,11 @@ class LiteRecorderApp:
             container=container,
             segment_sec=self._segment_sec,
             label=label,
+            follow=follow,
         )
 
         if not ok:
+            self._restore_conceal()
             if hidden_for_record:
                 self.root.deiconify()
             self._segment_sec = None
@@ -1035,7 +1136,13 @@ class LiteRecorderApp:
 
         if self.recorder.process is not None:
             hold_awake(self.recorder.process.pid)
-        if hidden_for_record:
+        if conceal is not None:
+            self._record_conceal = conceal
+            self._pending_mini = False
+            if conceal["mode"] == "other":
+                self._switch_to_mini_mode(conceal["origin"])
+                self.root.deiconify()
+        elif hidden_for_record:
             self._switch_to_mini_mode(parked_at)
             self.root.deiconify()
             self._pending_mini = False
@@ -1086,6 +1193,7 @@ class LiteRecorderApp:
         self._stopping = False
         release_awake()
         play_system_alert("stop")
+        self._restore_conceal()
 
         if self.is_mini_mode:
             self._switch_to_normal_mode()
@@ -1101,12 +1209,10 @@ class LiteRecorderApp:
             parts = self.recorder.recorded_parts()
             if len(parts) > 1:
                 self.timer_hint.config(text=f"已存成 {len(parts)} 個檔")
-                question = f"這次分成 {len(parts)} 個檔。\n要剪輯最新的嗎？\n{name}"
             else:
                 self.timer_hint.config(text=f"已儲存 {name}")
-                question = f"影片已存好。\n{name}\n\n要現在剪輯嗎？"
-            if offer_editor and messagebox.askyesno("錄影完成", question):
-                self.open_editor(msg)
+            if offer_editor:
+                self._show_record_completed(msg)
         else:
             messagebox.showwarning("錄影沒有完成", msg)
 
@@ -1125,7 +1231,14 @@ class LiteRecorderApp:
             parts.append(f"每 {self._segment_sec // 60} 分鐘一個檔。")
         if self._auto_stop_sec:
             parts.append(f"{self._auto_stop_sec // 60} 分鐘後自動停止。")
-        parts.append(f"F8 暫停，{self.shortcut_hint} 停止")
+        conceal = self._record_conceal or {}
+        if conceal.get("mode") == "withdraw":
+            parts.append("視窗已收起。F9 或 Esc 停止")
+        elif conceal.get("mode") == "other":
+            parts.append("程式在另一個螢幕。")
+            parts.append(f"F8 暫停，{self.shortcut_hint} 停止")
+        else:
+            parts.append(f"F8 暫停，{self.shortcut_hint} 停止")
         return "".join(parts)
 
     def _set_capture_locked(self, locked):
@@ -1163,8 +1276,8 @@ class LiteRecorderApp:
             if not self._shooting:
                 self.shot_btn.config(state=tk.NORMAL)
 
-    def _draw_vu_idle(self):
-        """繪製待機狀態的靜態 VU 電平點"""
+    def _draw_vu_idle(self, muted=False):
+        """繪製待機或靜音狀態的 VU 電平點"""
         if not hasattr(self, 'vu_canvas'):
             return
         self.vu_canvas.delete("all")
@@ -1172,11 +1285,12 @@ class LiteRecorderApp:
         bar_count = 16
         bar_w = 8
         gap = (w - (bar_count * bar_w)) / (bar_count + 1)
+        fill_color = "#1f2335" if muted else UI["meter_idle"]
         for i in range(bar_count):
             x = gap + i * (bar_w + gap)
-            self.vu_canvas.create_rectangle(x, 2, x + bar_w, h, fill=UI["meter_idle"], outline="")
+            self.vu_canvas.create_rectangle(x, 2, x + bar_w, h, fill=fill_color, outline="")
 
-    def _draw_mini_vu_idle(self):
+    def _draw_mini_vu_idle(self, muted=False):
         """繪製迷你懸浮膠囊的靜態電平點"""
         if not hasattr(self, 'mini_vu_canvas'):
             return
@@ -1184,9 +1298,10 @@ class LiteRecorderApp:
         bar_count = 4
         bar_w = 4
         gap = 3
+        fill_color = "#1f2335" if muted else UI["meter_idle"]
         for i in range(bar_count):
             x = 2 + i * (bar_w + gap)
-            self.mini_vu_canvas.create_rectangle(x, 4, x + bar_w, 10, fill=UI["meter_idle"], outline="")
+            self.mini_vu_canvas.create_rectangle(x, 4, x + bar_w, 10, fill=fill_color, outline="")
 
     def _capture_kbps(self):
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
@@ -1291,7 +1406,12 @@ class LiteRecorderApp:
                 self._draw_vu_idle()
                 self._draw_mini_vu_idle()
             else:
-                self._draw_vu_active(self.vu_tick_count)
+                has_audio = (self.audio_combo.current() > 0)
+                if has_audio:
+                    self._draw_vu_active(self.vu_tick_count)
+                else:
+                    self._draw_vu_idle(muted=True)
+                    self._draw_mini_vu_idle(muted=True)
             interval = 280
         else:
             if getattr(self, '_was_recording', False):
@@ -1385,6 +1505,324 @@ class LiteRecorderApp:
             "找不到工作站",
             "找不到 AURA-REC.html。\n請從官網下載那一個檔案，或確認 web_studio/download/AURA-REC.html 還在。",
         )
+
+    def _show_record_completed(self, file_path):
+        """錄影完成後的即時操作視窗"""
+        p = Path(file_path)
+        win = tk.Toplevel(self.root)
+        win.title("錄影已完成 — AURA REC")
+        win.geometry("500x320")
+        win.resizable(False, False)
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+        self._accent_bar(card)
+
+        inner = tk.Frame(card, bg=UI["card"])
+        inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=14)
+
+        header = tk.Frame(inner, bg=UI["card"])
+        header.pack(fill=tk.X, pady=(0, 6))
+        tk.Label(header, text="●", font=self.fonts["bold"], fg=UI["ok"], bg=UI["card"]).pack(side=tk.LEFT)
+        tk.Label(header, text=" 錄影已儲存完成", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(side=tk.LEFT)
+
+        try:
+            sz_mb = p.stat().st_size / (1024 * 1024)
+            size_str = f"{sz_mb:.1f} MB" if sz_mb >= 0.1 else f"{p.stat().st_size // 1024} KB"
+        except Exception:
+            size_str = ""
+
+        name_lbl = tk.Label(
+            inner, text=p.name, font=self.fonts["subtitle"], fg=UI["blue"], bg=UI["card"],
+            anchor="w", wraplength=440, justify="left"
+        )
+        name_lbl.pack(fill=tk.X, pady=(2, 2))
+
+        meta_str = f"檔案大小：{size_str}  ·  儲存於：{p.parent.name}/"
+        tk.Label(
+            inner, text=meta_str, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"], anchor="w"
+        ).pack(fill=tk.X, pady=(0, 14))
+
+        actions = tk.Frame(inner, bg=UI["card"])
+        actions.pack(fill=tk.X, pady=(0, 6))
+
+        def do_edit():
+            win.destroy()
+            self.open_editor(str(p))
+
+        def do_play():
+            open_file_or_dir(str(p))
+
+        def do_reveal():
+            open_file_or_dir(str(p), reveal=True)
+
+        def do_copy():
+            if copy_file(p):
+                self.timer_hint.config(text=f"已複製 {p.name}")
+
+        AuraButton(actions, text="剪輯影片", style="Primary.TButton", command=do_edit).pack(fill=tk.X, pady=(0, 8))
+
+        sub_btns = tk.Frame(actions, bg=UI["card"])
+        sub_btns.pack(fill=tk.X)
+        self._quiet_button(sub_btns, "播放", do_play).pack(side=tk.LEFT, padx=(0, 4))
+        self._quiet_button(sub_btns, "在資料夾中顯示", do_reveal).pack(side=tk.LEFT, padx=4)
+        self._quiet_button(sub_btns, "複製檔案", do_copy).pack(side=tk.LEFT, padx=4)
+        self._quiet_button(sub_btns, "完成", win.destroy).pack(side=tk.RIGHT)
+
+    def _show_system_audio_guide(self):
+        """開啟系統內部聲音錄製指南對話框"""
+        win = tk.Toplevel(self.root)
+        win.title("系統聲音錄製指南 — AURA REC")
+        win.geometry("580x620")
+        win.minsize(540, 560)
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+        self._accent_bar(card)
+
+        header = tk.Frame(card, bg=UI["card"])
+        header.pack(fill=tk.X, padx=16, pady=(12, 8))
+        tk.Label(
+            header, text="GUIDE", font=self.fonts["badge"], fg=UI["blue"], bg=UI["card"]
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            header, text="系統內部聲音錄製教學", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        content_box = tk.Frame(card, bg=UI["card"])
+        content_box.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 10))
+
+        if IS_MAC:
+            intro_text = (
+                "為什麼 Mac 錄不到電腦內部聲音？\n"
+                "macOS 基於隱私與安全機制，不允許任何應用程式直接側錄揚聲器音效。\n"
+                "解決方案：安裝開源免費的虛擬音效裝置 BlackHole 2ch，建立雙向迴圈。"
+            )
+            tk.Label(
+                content_box, text=intro_text, font=self.fonts["body"], fg=UI["text"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(0, 10))
+
+            steps_frame = tk.Frame(content_box, bg=UI["card"])
+            steps_frame.pack(fill=tk.X, pady=(0, 6))
+
+            tk.Label(
+                steps_frame, text="步驟 1：安裝 BlackHole 2ch",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X)
+
+            cmd_row = tk.Frame(steps_frame, bg=UI["bg"], highlightbackground=UI["edge"], highlightthickness=1)
+            cmd_row.pack(fill=tk.X, pady=(4, 8), ipady=3)
+            tk.Label(
+                cmd_row, text="brew install blackhole-2ch", font=self.fonts["mono"],
+                fg=UI["white"], bg=UI["bg"]
+            ).pack(side=tk.LEFT, padx=10)
+            self._quiet_button(
+                cmd_row, "複製指令", lambda: copy_text_to_clipboard("brew install blackhole-2ch")
+            ).pack(side=tk.RIGHT, padx=6)
+
+            tk.Label(
+                steps_frame, text="步驟 2：建立「多重輸出裝置」（讓您能聽見，錄影也能錄）",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X, pady=(4, 0))
+            step2_desc = (
+                "1. 按 Cmd + 空白鍵搜尋「音訊 MIDI 設定」app 並開啟。\n"
+                "2. 點擊左下角「+」，選擇「建立多重輸出裝置」。\n"
+                "3. 右側勾選您的「揚聲器 / 耳機」以及「BlackHole 2ch」（主裝置選揚聲器/耳機）。\n"
+                "4. 在 Mac 頂端狀態列的聲音選單中，將輸出設備改為「多重輸出裝置」。"
+            )
+            tk.Label(
+                steps_frame, text=step2_desc, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(2, 8))
+
+            tk.Label(
+                steps_frame, text="步驟 3：在 AURA REC 選擇音訊",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X)
+            step3_desc = (
+                "回到 AURA REC 主畫面，在「音效」選單選擇：\n"
+                "「[x] BlackHole 2ch (系統音效)」即可開始錄影！"
+            )
+            tk.Label(
+                steps_frame, text=step3_desc, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(2, 4))
+        else:
+            intro_text = (
+                "Windows 系統內部音效錄製說明：\n"
+                "Windows 通常內建「立體聲混音 (Stereo Mix)」，只要啟用即可錄製電腦內部播放聲音。"
+            )
+            tk.Label(
+                content_box, text=intro_text, font=self.fonts["body"], fg=UI["text"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(0, 10))
+
+            steps_frame = tk.Frame(content_box, bg=UI["card"])
+            steps_frame.pack(fill=tk.X, pady=(0, 6))
+
+            tk.Label(
+                steps_frame, text="步驟 1：開啟 Windows 音效設定",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X)
+
+            cmd_row = tk.Frame(steps_frame, bg=UI["bg"], highlightbackground=UI["edge"], highlightthickness=1)
+            cmd_row.pack(fill=tk.X, pady=(4, 8), ipady=3)
+            tk.Label(
+                cmd_row, text="mmsys.cpl (Win + R 執行)", font=self.fonts["mono"],
+                fg=UI["white"], bg=UI["bg"]
+            ).pack(side=tk.LEFT, padx=10)
+            if IS_WINDOWS:
+                self._quiet_button(
+                    cmd_row, "開啟控制台", lambda: subprocess.Popen(["control", "mmsys.cpl"])
+                ).pack(side=tk.RIGHT, padx=6)
+            else:
+                self._quiet_button(
+                    cmd_row, "複製指令", lambda: copy_text_to_clipboard("mmsys.cpl")
+                ).pack(side=tk.RIGHT, padx=6)
+
+            tk.Label(
+                steps_frame, text="步驟 2：啟用「立體聲混音」",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X, pady=(4, 0))
+            step2_desc = (
+                "1. 在音效視窗中切換至「錄製 (Recording)」分頁。\n"
+                "2. 在裝置列表空白處按滑鼠右鍵，勾選「顯示已停用的裝置」。\n"
+                "3. 在「立體聲混音 (Stereo Mix)」上按滑鼠右鍵，選擇「啟用」。"
+            )
+            tk.Label(
+                steps_frame, text=step2_desc, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(2, 8))
+
+            tk.Label(
+                steps_frame, text="步驟 3：在 AURA REC 選擇音訊",
+                font=self.fonts["bold"], fg=UI["blue"], bg=UI["card"], anchor="w"
+            ).pack(fill=tk.X)
+            step3_desc = (
+                "回到 AURA REC 點擊「重新整理」，在音訊選單選擇：\n"
+                "「立體聲混音 (系統音效)」即可開始錄影！\n"
+                "(若音效卡無此功能，亦可安裝 VB-Audio Virtual Cable)"
+            )
+            tk.Label(
+                steps_frame, text=step3_desc, font=self.fonts["body"], fg=UI["muted"], bg=UI["card"],
+                justify="left", wraplength=500
+            ).pack(anchor="w", pady=(2, 4))
+
+        btn_row = tk.Frame(card, bg=UI["card"])
+        btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
+        AuraButton(btn_row, text="完成", style="Primary.TButton", command=win.destroy).pack(fill=tk.X)
+
+    def _show_diagnostics(self):
+        """開啟系統環境與 FFmpeg 硬體加速診斷對話框"""
+        win = tk.Toplevel(self.root)
+        win.title("FFmpeg 與硬體加速檢視 — AURA REC")
+        win.geometry("600x640")
+        win.minsize(560, 560)
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+        self._accent_bar(card)
+
+        header = tk.Frame(card, bg=UI["card"])
+        header.pack(fill=tk.X, padx=16, pady=(12, 6))
+        tk.Label(
+            header, text="DIAGNOSTICS", font=self.fonts["badge"], fg=UI["blue"], bg=UI["card"]
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            header, text="硬體加速與環境檢測", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        content_box = tk.Frame(card, bg=UI["card"])
+        content_box.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
+
+        diag = get_system_diagnostics(self.recorder.ffmpeg_bin)
+        free_bytes = free_disk_bytes(self.recorder.output_dir)
+        free_gb = f"{free_bytes / (1024**3):.1f} GB" if free_bytes is not None else "未知"
+
+        lines = [
+            ("應用程式版本", f"AURA REC v{diag['app_version']}"),
+            ("作業系統環境", diag["os"]),
+            ("Python 版本", diag["python"]),
+            ("處理器與核心", f"{diag['cpu_count']} 核心 / {diag['ram_gb']} GB 記憶體 ({diag['machine_profile']})"),
+            ("FFmpeg 執行檔", diag["ffmpeg_path"]),
+            ("FFmpeg 版本", diag["ffmpeg_version"]),
+            ("使用中影像編碼器", f"{diag['active_encoder']} (硬體加速: {'是' if 'x264' not in diag['active_encoder'] else 'CPU 軟體'})"),
+            ("支援之編碼器", ", ".join(diag["hardware_encoders"]) or "無"),
+            ("錄影儲存目錄", str(self.recorder.output_dir)),
+            ("剩餘磁碟空間", free_gb),
+        ]
+
+        report_text = "\n".join(f"[{k}] {v}" for k, v in lines)
+
+        for label, val in lines:
+            row = tk.Frame(content_box, bg=UI["card"])
+            row.pack(fill=tk.X, pady=3)
+            tk.Label(
+                row, text=label, font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], width=16, anchor="w"
+            ).pack(side=tk.LEFT)
+            val_lbl = tk.Label(
+                row, text=val, font=self.fonts["body"], fg=UI["white"], bg=UI["card"],
+                anchor="w", wraplength=400, justify="left"
+            )
+            val_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btn_row = tk.Frame(card, bg=UI["card"])
+        btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
+        self._quiet_button(
+            btn_row, "複製診斷報告", lambda: copy_text_to_clipboard(report_text)
+        ).pack(side=tk.LEFT)
+        AuraButton(btn_row, text="關閉", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+
+    def _show_about(self):
+        """開啟關於 AURA REC 對話框"""
+        win = tk.Toplevel(self.root)
+        win.title("關於 — AURA REC")
+        win.geometry("500x480")
+        win.resizable(False, False)
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+        self._accent_bar(card)
+
+        center = tk.Frame(card, bg=UI["card"])
+        center.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+
+        title_frame = tk.Frame(center, bg=UI["card"])
+        title_frame.pack(pady=(8, 4))
+        tk.Label(title_frame, text="AURA", font=self.fonts["title"], fg=UI["white"], bg=UI["card"]).pack(side=tk.LEFT)
+        tk.Label(title_frame, text="REC", font=self.fonts["title"], fg=UI["blue"], bg=UI["card"]).pack(side=tk.LEFT, padx=(6, 0))
+
+        tk.Label(
+            center, text=f"版本 {APP_VERSION} (原生跨平台桌面版)", font=self.fonts["badge"],
+            fg=UI["muted"], bg=UI["card"]
+        ).pack(pady=(0, 14))
+
+        desc = (
+            "極速低耗能的原生螢幕錄影工作站。\n\n"
+            "• Apple Silicon VideoToolbox / Windows GPU 原生硬體加速\n"
+            "• 智慧視窗動態追蹤、游標開關與置頂迷你膠囊懸浮模式\n"
+            "• 零依賴綠色單檔架構（純 Python 標準庫 + FFmpeg 引擎）\n"
+            "• 內建影格即時預覽、精準裁切、雙遍高品質 GIF 導出\n"
+            "• 系統快捷鍵：F9 錄製/停止、F8 暫停/繼續、F7 截圖、Esc 展開"
+        )
+        tk.Label(
+            center, text=desc, font=self.fonts["body"], fg=UI["text"], bg=UI["card"],
+            justify="left", wraplength=420
+        ).pack(fill=tk.X, pady=(0, 16))
+
+        btn_row = tk.Frame(center, bg=UI["card"])
+        btn_row.pack(fill=tk.X, pady=(4, 0))
+        self._quiet_button(btn_row, "快捷鍵說明", self._show_shortcuts).pack(side=tk.LEFT)
+        AuraButton(btn_row, text="確定", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT)
 
     def refresh_recent_list(self):
         """重新整理最近錄影檔案列表"""

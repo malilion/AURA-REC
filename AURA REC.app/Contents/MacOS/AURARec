@@ -1,12 +1,56 @@
 #!/bin/bash
-# AURA REC 啟動器 —— 雙擊 .app 即執行
+# ==============================================================================
+#   AURA REC - macOS 原生啟動器 (App Launcher)
+# ==============================================================================
+set -e
+
 DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
-# 找 python3（優先 Homebrew，再 PATH）
-PY="$(command -v python3 || true)"
-[ -z "$PY" ] && [ -x "/opt/homebrew/bin/python3" ] && PY="/opt/homebrew/bin/python3"
-[ -z "$PY" ] && [ -x "/usr/local/bin/python3" ] && PY="/usr/local/bin/python3"
-[ -z "$PY" ] && PY="python3"
+# 設定完整 PATH，確保能存取 Homebrew、內嵌二進位檔與系統工具
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$DIR/bin:$MACOS_DIR:$PATH"
 
-exec "$PY" app.py
+# 搜尋可用的 Python 3（優先尋找帶有 Tkinter 的 Python 環境）
+CANDIDATE_PYS=(
+    "/opt/homebrew/bin/python3"
+    "/usr/local/bin/python3"
+    "$HOME/.pyenv/shims/python3"
+    "$HOME/miniforge3/bin/python3"
+    "$HOME/miniconda3/bin/python3"
+    "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
+    "$(command -v python3 2>/dev/null || true)"
+    "/usr/bin/python3"
+)
+
+CHOSEN_PY=""
+for candidate in "${CANDIDATE_PYS[@]}"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        if "$candidate" -c "import tkinter, subprocess, threading" 2>/dev/null; then
+            CHOSEN_PY="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$CHOSEN_PY" ]; then
+    # 彈出友善的 macOS 原生對話框
+    RESPONSE=$(osascript -e '
+        tell application "System Events"
+            activate
+            set dialogResult to display alert "需要 Python 3 與 Tkinter" ¬
+                message "AURA REC 桌面版需要 Python 3 運行環境。\n\n建議從 Python 官方網站下載安裝（已內建完整圖形介面支援），安裝完成後即可直接開啟 AURA REC。" ¬
+                as critical ¬
+                buttons {"前往下載 Python", "關閉"} ¬
+                default button "前往下載 Python"
+            return button returned of dialogResult
+        end tell
+    ' 2>/dev/null || echo "關閉")
+
+    if [ "$RESPONSE" = "前往下載 Python" ]; then
+        open "https://www.python.org/downloads/macos/"
+    fi
+    exit 1
+fi
+
+exec "$CHOSEN_PY" app.py "$@"

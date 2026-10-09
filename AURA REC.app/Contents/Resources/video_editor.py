@@ -432,6 +432,8 @@ class VideoEditor:
         使用 ffplay 預覽播放指定區段
         """
         file_path = str(file_path)
+        if not self.ffplay_bin:
+            return None
         cmd = [
             self.ffplay_bin,
             "-ss", f"{start_sec:.3f}",
@@ -440,4 +442,7 @@ class VideoEditor:
             "-window_title", "影片區段預覽 (按 Q 或 Esc 關閉)",
             file_path
         ]
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None

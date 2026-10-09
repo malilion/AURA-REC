@@ -25,3 +25,9 @@ test_*.mp4
 *.backup
 .versions/
 *.versions/
+
+# Build artifacts
+dist/
+build/
+*.spec
+AURA REC.app/Contents/Resources/bin/
