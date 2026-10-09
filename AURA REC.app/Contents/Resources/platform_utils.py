@@ -550,15 +550,31 @@ def copy_file(path):
 
 
 def _mac_copy_file(path):
-    from AppKit import NSPasteboard, NSPasteboardTypeString, NSURL
+    p_str = str(path)
+    try:
+        from AppKit import NSPasteboard, NSPasteboardTypeString, NSURL
 
-    board = NSPasteboard.generalPasteboard()
-    board.clearContents()
-    if not board.writeObjects_([NSURL.fileURLWithPath_(str(path))]):
-        return False
-    # 文字欄位貼上時還是看得到路徑。檔案本身仍留在剪貼簿。
-    board.setString_forType_(str(path), NSPasteboardTypeString)
-    return True
+        board = NSPasteboard.generalPasteboard()
+        board.clearContents()
+        if board.writeObjects_([NSURL.fileURLWithPath_(p_str)]):
+            board.setString_forType_(p_str, NSPasteboardTypeString)
+            return True
+    except Exception:
+        pass
+
+    # AppleScript 原生內建備用方案（零依賴，適用所有 macOS）
+    try:
+        if p_str.lower().endswith(".png"):
+            # 優先複製圖片資料至剪貼簿，可直接在通訊軟體/文件貼上影像
+            cmd = ["osascript", "-e", f'set the clipboard to (read (POSIX file "{p_str}") as «class PNGf»)']
+            if subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4).returncode == 0:
+                return True
+        cmd = ["osascript", "-e", f'set the clipboard to (POSIX file "{p_str}")']
+        if subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4).returncode == 0:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _windows_copy_file(path):

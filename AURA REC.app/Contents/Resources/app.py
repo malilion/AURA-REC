@@ -152,6 +152,7 @@ class LiteRecorderApp:
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
+        self.auto_copy_screenshot_var = tk.BooleanVar(value=self._flag("auto_copy_screenshot", True))
 
         self.video_devices = []
         self.audio_devices = []
@@ -244,6 +245,11 @@ class LiteRecorderApp:
         )
         file_menu.add_separator()
         file_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
+        file_menu.add_command(
+            label="偏好設定…",
+            command=self._show_preferences,
+            accelerator="⌘," if IS_MAC else "Ctrl+,",
+        )
         file_menu.add_separator()
         file_menu.add_command(label="結束", command=self._on_close)
         menubar.add_cascade(label="檔案", menu=file_menu)
@@ -416,6 +422,7 @@ class LiteRecorderApp:
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
             ("錄下游標", self.capture_cursor_var),
+            ("截圖自動複製", self.auto_copy_screenshot_var),
         )):
             AuraCheck(
                 checks, text=text, variable=variable, command=self._save_capture_settings
@@ -518,6 +525,10 @@ class LiteRecorderApp:
             self.mini_container, text="暫停", style="Ghost.TButton", command=self.toggle_pause
         )
         self.mini_pause_btn.pack(side=tk.RIGHT, padx=4, pady=5)
+        self.mini_shot_btn = AuraButton(
+            self.mini_container, text="截圖", style="Ghost.TButton", command=self.take_screenshot
+        )
+        self.mini_shot_btn.pack(side=tk.RIGHT, padx=3, pady=5)
         self.mini_expand_btn = AuraButton(
             self.mini_container, text="展開", style="Ghost.TButton", command=self._expand_from_mini
         )
@@ -539,6 +550,8 @@ class LiteRecorderApp:
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
         self.root.bind_all("<Control-r>", lambda e: self.toggle_recording())
         self.root.bind_all("<Command-r>", lambda e: self.toggle_recording())
+        self.root.bind_all("<Command-comma>", lambda e: self._show_preferences())
+        self.root.bind_all("<Control-comma>", lambda e: self._show_preferences())
         self.root.bind_all("<Shift-Command-c>", lambda e: self.copy_latest_file())
         self.root.bind_all("<Shift-Control-c>", lambda e: self.copy_latest_file())
         self.root.bind("<space>", lambda e: self.toggle_recording())
@@ -635,8 +648,8 @@ class LiteRecorderApp:
         else:
             prev_x, prev_y = origin
 
-        self.root.minsize(430, 48)
-        self.root.geometry(f"430x48+{int(prev_x)}+{int(prev_y)}")
+        self.root.minsize(470, 48)
+        self.root.geometry(f"470x48+{int(prev_x)}+{int(prev_y)}")
         self.root.resizable(False, False)
         self.root.config(menu="")
         self.root.attributes("-topmost", True)
@@ -742,7 +755,7 @@ class LiteRecorderApp:
             return None
         screen = (frame["x"], frame["y"], frame["w"], frame["h"])
         # 48 是小條高度，多留一點給標題列，避免還是壓到目標。
-        return bar_origin(screen, target, 430, 80)
+        return bar_origin(screen, target, 470, 80)
 
     def _update_area_label(self):
         mode = self._area_mode()
@@ -845,7 +858,7 @@ class LiteRecorderApp:
     def _conceal_recorder(self):
         """全螢幕錄影時，讓這個程式不出現在正在錄的那塊螢幕上。"""
         saved = (self.root.winfo_x(), self.root.winfo_y(), self.is_mini_mode)
-        origin = other_display_origin(self._capture_screen_index(), 430, 80)
+        origin = other_display_origin(self._capture_screen_index(), 470, 80)
         if origin is not None:
             self.root.withdraw()
             self.root.update_idletasks()
@@ -918,6 +931,7 @@ class LiteRecorderApp:
             "countdown": bool(self.countdown_var.get()),
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
+            "auto_copy_screenshot": bool(self.auto_copy_screenshot_var.get()),
             "quality_index": self.quality_combo.current(),
             "format_index": self.format_combo.current(),
             "limit_index": self.limit_combo.current(),
@@ -1122,6 +1136,7 @@ class LiteRecorderApp:
             segment_sec=self._segment_sec,
             label=label,
             follow=follow,
+            prefix=self._saved.get("filename_prefix"),
         )
 
         if not ok:
@@ -1824,6 +1839,90 @@ class LiteRecorderApp:
         self._quiet_button(btn_row, "快捷鍵說明", self._show_shortcuts).pack(side=tk.LEFT)
         AuraButton(btn_row, text="確定", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT)
 
+    def _show_preferences(self):
+        """開啟偏好設定視窗"""
+        win = tk.Toplevel(self.root)
+        win.title("偏好設定 — AURA REC")
+        win.geometry("560x540")
+        win.minsize(520, 500)
+        win.configure(bg=UI["bg"])
+        win.transient(self.root)
+
+        card = tk.Frame(win, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        card.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+        self._accent_bar(card)
+
+        header = tk.Frame(card, bg=UI["card"])
+        header.pack(fill=tk.X, padx=16, pady=(12, 6))
+        tk.Label(
+            header, text="PREFERENCES", font=self.fonts["badge"], fg=UI["blue"], bg=UI["card"]
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            header, text="偏好與進階設定", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        form = tk.Frame(card, bg=UI["card"])
+        form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
+
+        # 儲存目錄
+        tk.Label(form, text="儲存目錄", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", pady=(4, 2))
+        dir_row = tk.Frame(form, bg=UI["card"])
+        dir_row.pack(fill=tk.X, pady=(0, 10))
+        lbl_dir = tk.Label(
+            dir_row, text=str(self.recorder.output_dir), font=self.fonts["badge"],
+            fg=UI["muted"], bg=UI["field"], anchor="w", padx=8, pady=4,
+            highlightbackground=UI["edge"], highlightthickness=1
+        )
+        lbl_dir.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        def pick_dir():
+            chosen = filedialog.askdirectory(initialdir=str(self.recorder.output_dir), title="選擇儲存目錄")
+            if chosen:
+                self.recorder.output_dir = Path(chosen)
+                save_settings({"output_dir": str(self.recorder.output_dir)})
+                lbl_dir.config(text=str(self.recorder.output_dir))
+                self._show_save_path()
+                self.refresh_recent_list()
+
+        self._quiet_button(dir_row, "變更…", pick_dir).pack(side=tk.RIGHT, padx=(6, 0))
+
+        # 檔名自訂前綴
+        tk.Label(form, text="自訂檔名前綴", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", pady=(2, 2))
+        pref_prefix = self._saved.get("filename_prefix", "螢幕錄影")
+        ent_prefix = tk.Entry(
+            form, font=self.fonts["body"], bg=UI["field"], fg=UI["text"],
+            insertbackground=UI["blue"], relief=tk.FLAT, bd=0,
+            highlightthickness=1, highlightbackground=UI["edge"], highlightcolor=UI["blue"]
+        )
+        ent_prefix.insert(0, pref_prefix)
+        ent_prefix.pack(fill=tk.X, pady=(0, 4), ipady=3)
+        tk.Label(
+            form, text="範例：輸入「AURA」則檔名為 AURA_2026-10-09_18-30.mp4",
+            font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]
+        ).pack(anchor="w", pady=(0, 10))
+
+        # 行為選項
+        tk.Label(form, text="功能開關", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", pady=(2, 4))
+        opt_box = tk.Frame(form, bg=UI["card"])
+        opt_box.pack(fill=tk.X, pady=(0, 10))
+        AuraCheck(opt_box, text="開始前倒數 3 秒", variable=self.countdown_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="錄影時縮成小視窗", variable=self.auto_mini_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="截圖後自動複製至剪貼簿", variable=self.auto_copy_screenshot_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="錄製滑鼠游標", variable=self.capture_cursor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="啟用晶片 GPU 硬體加速", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+
+        def save_and_close():
+            val = ent_prefix.get().strip() or "螢幕錄影"
+            self._saved["filename_prefix"] = val
+            save_settings({"filename_prefix": val})
+            self._save_capture_settings()
+            win.destroy()
+
+        btn_row = tk.Frame(card, bg=UI["card"])
+        btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
+        AuraButton(btn_row, text="儲存設定", style="Primary.TButton", command=save_and_close).pack(side=tk.RIGHT)
+        self._quiet_button(btn_row, "關閉", win.destroy).pack(side=tk.LEFT)
+
     def refresh_recent_list(self):
         """重新整理最近錄影檔案列表"""
         for widget in self.recent_list_frame.winfo_children():
@@ -2010,6 +2109,7 @@ class LiteRecorderApp:
         output_dir = self.recorder.output_dir
         ffmpeg_bin = self.recorder.ffmpeg_bin
         geometry = self.root.geometry()
+        prefix = self._saved.get("filename_prefix")
         self.root.withdraw()
         self.root.update_idletasks()
 
@@ -2017,7 +2117,7 @@ class LiteRecorderApp:
             path = None
             try:
                 time.sleep(0.25)
-                path = save_still(ffmpeg_bin, output_dir, region)
+                path = save_still(ffmpeg_bin, output_dir, region, prefix=prefix)
             finally:
                 self.root.after(0, lambda: self._screenshot_done(path, geometry))
 
@@ -2033,8 +2133,12 @@ class LiteRecorderApp:
         self.shot_btn.config(state=tk.NORMAL)
         if path:
             self.refresh_recent_list()
+            copied = False
+            if self.auto_copy_screenshot_var.get():
+                copied = copy_file(path)
             if not self.recorder.is_recording:
-                self.timer_hint.config(text=f"已存截圖 {Path(path).name}")
+                hint = f"已存截圖並複製到剪貼簿 {Path(path).name}" if copied else f"已存截圖 {Path(path).name}"
+                self.timer_hint.config(text=hint)
             return
         messagebox.showwarning(
             "截圖沒有成功",
