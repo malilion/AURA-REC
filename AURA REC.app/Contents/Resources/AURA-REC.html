@@ -436,7 +436,7 @@
         <div class="flex items-center gap-2.5">
           <button id="btn-export-video" onclick="exportSelectedClip()" class="magnetic-btn flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-aura-emerald to-teal-500 text-black font-display font-bold text-xs tracking-wider shadow-lg shadow-aura-emerald/20 hover:scale-[1.02]">
             <i data-lucide="download" class="w-3.5 h-3.5 text-black"></i>
-            無損匯出片段 (WebM)
+            匯出選取片段 (WebM)
           </button>
 
           <button id="btn-export-gif" onclick="exportAsGif()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-cyan/40 hover:text-white">
@@ -1353,18 +1353,232 @@
     // ==========================================
     // 13. 匯出導出系統 (Export Options)
     // ==========================================
+    let clipExporting = false;
+    let exportAudioCtx = null;
+    let readyClip = null;
+
+    function readEbmlSize(bytes, offset) {
+      const first = bytes[offset];
+      let width = 1;
+      let mask = 0x80;
+      while (width <= 8 && (first & mask) === 0) {
+        width += 1;
+        mask >>= 1;
+      }
+      let value = first & (0xff >> width);
+      for (let i = 1; i < width; i++) value = value * 256 + bytes[offset + i];
+      return { width, value };
+    }
+
+    async function stampWebmDuration(blob, seconds) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const limit = Math.min(bytes.length, 8192);
+      let at = -1;
+      for (let i = 0; i < limit - 4; i++) {
+        if (bytes[i] === 0x15 && bytes[i + 1] === 0x49 && bytes[i + 2] === 0xa9 && bytes[i + 3] === 0x66) {
+          at = i;
+          break;
+        }
+      }
+      if (at < 0) return blob;
+      const size = readEbmlSize(bytes, at + 4);
+      if (size.width !== 1 || size.value + 11 > 126) return blob;
+      const payload = at + 4 + size.width;
+      for (let i = payload; i < payload + size.value - 1; i++) {
+        if (bytes[i] === 0x44 && bytes[i + 1] === 0x89) return blob;
+      }
+      const duration = new Uint8Array(11);
+      duration[0] = 0x44;
+      duration[1] = 0x89;
+      duration[2] = 0x88;
+      new DataView(duration.buffer).setFloat64(3, Math.max(1, seconds * 1000));
+      const out = new Uint8Array(bytes.length + 11);
+      out.set(bytes.subarray(0, payload), 0);
+      out.set(duration, payload);
+      out.set(bytes.subarray(payload), payload + 11);
+      out[at + 4] = 0x80 | (size.value + 11);
+      return new Blob([out], { type: 'video/webm' });
+    }
+
+    function saveBlobFile(source, filename) {
+      const owned = source instanceof Blob;
+      const href = owned ? URL.createObjectURL(source) : source;
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (owned) setTimeout(() => URL.revokeObjectURL(href), 2500);
+    }
+
+    function exportStamp() {
+      return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    }
+
     function exportSelectedClip() {
-      if (!activeVideoBlob) {
+      if (!activeVideoBlob || !activeVideoUrl) {
         alert('請先錄製或匯入影片！');
         return;
       }
-      audioSynth.playChime();
+      if (clipExporting) return;
+      const start = Math.max(0, Number(inPoint) || 0);
+      const end = Math.min(Number(videoDuration) || 0, Number(outPoint) || 0);
+      if (!(end > start + 0.15)) {
+        alert('請先在時間軸上標出想留下的一段。');
+        return;
+      }
+      const coversAll = start <= 0.2 && (videoDuration - end) <= 0.2;
+      if (readyClip && Math.abs(readyClip.start - start) < 0.05 && Math.abs(readyClip.end - end) < 0.05) {
+        saveBlobFile(readyClip.blob, readyClip.name);
+        audioSynth.playChime();
+        return;
+      }
+      readyClip = null;
+      if (coversAll) {
+        audioSynth.playChime();
+        saveBlobFile(activeVideoUrl, `AURA_REC_${exportStamp()}_clip.webm`);
+        return;
+      }
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx && !exportAudioCtx) exportAudioCtx = new AudioCtx();
+      if (exportAudioCtx && exportAudioCtx.state === 'suspended') exportAudioCtx.resume();
+      audioSynth.playClick();
+      clipExporting = true;
+      const btn = document.getElementById('btn-export-video');
+      const prevHtml = btn.innerHTML;
+      let keepLabel = false;
+      btn.disabled = true;
+      btn.textContent = '裁切中...';
+      const name = `AURA_REC_${exportStamp()}_clip.webm`;
+      exportRange(start, end).then(async (blob) => {
+        const stamped = await stampWebmDuration(blob, end - start);
+        readyClip = { start, end, blob: stamped, name };
+        keepLabel = true;
+        btn.textContent = '再次儲存這一段';
+        saveBlobFile(stamped, name);
+        audioSynth.playChime();
+      }).catch((err) => {
+        console.error(err);
+        alert('這一段沒有裁出來：' + (err && err.message ? err.message : err));
+      }).finally(() => {
+        clipExporting = false;
+        btn.disabled = false;
+        if (!keepLabel) {
+          btn.innerHTML = prevHtml;
+          safeLucide();
+        }
+      });
+    }
 
-      const a = document.createElement('a');
-      a.href = activeVideoUrl;
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      a.download = `AURA_REC_${stamp}_clip.webm`;
-      a.click();
+    function exportRange(start, end) {
+      return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.muted = false;
+        video.volume = 1;
+        video.style.cssText = 'position:fixed;left:-4000px;top:0;width:320px;height:180px;pointer-events:none';
+        document.body.appendChild(video);
+
+        let recorder = null;
+        let sourceNode = null;
+        let settled = false;
+        const cleanup = () => {
+          try { video.pause(); } catch (e) {}
+          try { if (sourceNode) sourceNode.disconnect(); } catch (e) {}
+          try { video.onerror = null; video.removeAttribute('src'); video.load(); } catch (e) {}
+          video.remove();
+        };
+        const fail = (err) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          if (recorder && recorder.state === 'recording') {
+            try { recorder.stop(); } catch (e) {}
+          }
+          cleanup();
+          reject(err instanceof Error ? err : new Error(String(err)));
+        };
+
+        const timeout = setTimeout(() => fail(new Error('裁切逾時')), 15000 + (end - start) * 2000);
+        video.onerror = () => fail(new Error('影片讀不到'));
+        video.onloadedmetadata = async () => {
+          try {
+            const captureFn = video.captureStream || video.mozCaptureStream;
+            if (!captureFn) throw new Error('請用 Chrome 或 Edge');
+            await new Promise((res, rej) => {
+              const timer = setTimeout(() => rej(new Error('找不到這一段')), 8000);
+              const onSeek = () => {
+                clearTimeout(timer);
+                video.removeEventListener('seeked', onSeek);
+                res();
+              };
+              video.addEventListener('seeked', onSeek);
+              video.currentTime = Math.min(start, Math.max(0, (video.duration || end) - 0.05));
+            });
+
+            const captured = captureFn.call(video);
+            let tracks = captured.getVideoTracks();
+            if (exportAudioCtx) {
+              sourceNode = exportAudioCtx.createMediaElementSource(video);
+              const dest = exportAudioCtx.createMediaStreamDestination();
+              const gain = exportAudioCtx.createGain();
+              gain.gain.value = 0;
+              sourceNode.connect(dest);
+              sourceNode.connect(gain);
+              gain.connect(exportAudioCtx.destination);
+              tracks = tracks.concat(dest.stream.getAudioTracks());
+            } else {
+              tracks = tracks.concat(captured.getAudioTracks());
+            }
+
+            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+              ? 'video/webm;codecs=vp9,opus'
+              : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                ? 'video/webm;codecs=vp8,opus'
+                : 'video/webm');
+            const chunks = [];
+            try {
+              recorder = new MediaRecorder(new MediaStream(tracks), {
+                mimeType: mime,
+                videoBitsPerSecond: 8000000
+              });
+            } catch (e) {
+              recorder = new MediaRecorder(new MediaStream(captured.getVideoTracks()), { mimeType: 'video/webm' });
+            }
+            recorder.ondataavailable = (e) => {
+              if (e.data && e.data.size > 0) chunks.push(e.data);
+            };
+            const stopped = new Promise((res) => { recorder.onstop = () => res(); });
+            recorder.start(100);
+            await video.play();
+            await new Promise((res) => {
+              const tick = () => {
+                if (video.ended || video.currentTime >= end - 0.03) {
+                  res();
+                  return;
+                }
+                requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            });
+            video.pause();
+            if (recorder.state !== 'inactive') recorder.stop();
+            await stopped;
+            clearTimeout(timeout);
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            if (!blob.size) throw new Error('沒有畫面');
+            settled = true;
+            cleanup();
+            resolve(await stampWebmDuration(blob, end - start));
+          } catch (err) {
+            clearTimeout(timeout);
+            fail(err);
+          }
+        };
+        video.src = activeVideoUrl;
+      });
     }
 
     function exportAsGif() {
