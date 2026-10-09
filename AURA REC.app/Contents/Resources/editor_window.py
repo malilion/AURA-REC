@@ -15,6 +15,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 
 from video_editor import VideoEditor
+from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from platform_utils import (
     get_ui_fonts,
     open_file_or_dir,
@@ -92,7 +93,7 @@ class VideoEditorWindow:
         self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _tool_button(self, parent, text, command):
-        return ttk.Button(parent, text=text, command=command, style="Ghost.TButton", cursor="hand2")
+        return AuraButton(parent, text=text, command=command, style="Ghost.TButton")
 
     def _build_ui(self):
         self.main_frame = tk.Frame(self.window, bg=UI["bg"])
@@ -109,7 +110,7 @@ class VideoEditorWindow:
             title_row, text="EDIT", font=self.fonts["badge"], fg=UI["blue"], bg=UI["bg"]
         ).pack(side=tk.LEFT, padx=(0, 8))
         self.lbl_filename = tk.Label(
-            title_row, text="未載入影片", font=self.fonts["subtitle"], fg=UI["white"], bg=UI["bg"], anchor="w"
+            title_row, text="未載入影片", font=self.fonts["bold"], fg=UI["white"], bg=UI["bg"], anchor="w"
         )
         self.lbl_filename.pack(side=tk.LEFT)
         self.lbl_meta = tk.Label(
@@ -144,8 +145,8 @@ class VideoEditorWindow:
 
         slider_frame = tk.Frame(self.main_frame, bg=UI["bg"])
         slider_frame.pack(fill=tk.X, pady=(0, 4))
-        self.time_slider = ttk.Scale(
-            slider_frame, from_=0.0, to=100.0, orient=tk.HORIZONTAL, command=self._on_slider_move
+        self.time_slider = AuraScale(
+            slider_frame, from_=0.0, to=100.0, command=self._on_slider_move
         )
         self.time_slider.pack(fill=tk.X)
 
@@ -153,7 +154,7 @@ class VideoEditorWindow:
         nudge_frame.pack(fill=tk.X, pady=(0, 6))
         self._tool_button(nudge_frame, "−1 秒", lambda: self._nudge_time(-1.0)).pack(side=tk.LEFT, padx=(0, 4))
         self._tool_button(nudge_frame, "−0.1 秒", lambda: self._nudge_time(-0.1)).pack(side=tk.LEFT, padx=4)
-        self.btn_play_seg = ttk.Button(
+        self.btn_play_seg = AuraButton(
             nudge_frame,
             text="播放",
             style="Play.TButton",
@@ -203,12 +204,8 @@ class VideoEditorWindow:
             ("只輸出音訊", "audio"),
         ]
         for text, value in modes:
-            ttk.Radiobutton(
-                export_card,
-                text=text,
-                variable=self.export_mode_var,
-                value=value,
-                style="App.TRadiobutton",
+            AuraRadio(
+                export_card, text=text, variable=self.export_mode_var, value=value
             ).pack(anchor="w", padx=12)
 
         adv_frame = tk.Frame(export_card, bg=UI["card"])
@@ -227,15 +224,12 @@ class VideoEditorWindow:
         self.speed_combo = labeled_combo(0, 0, "速度", ["1.0x", "0.5x", "1.5x", "2.0x"], 6)
         self.ratio_combo = labeled_combo(0, 1, "比例", ["原始比例", "9:16 直式", "16:9 橫式", "1:1 方形"], 10)
         self.color_combo = labeled_combo(1, 0, "色彩", ["原色", "鮮豔", "高對比"], 8)
-        ttk.Checkbutton(
-            adv_frame, text="靜音", variable=self.mute_var, style="App.TCheckbutton",
-        ).grid(row=1, column=2, sticky="w", pady=4)
+        AuraCheck(adv_frame, text="靜音", variable=self.mute_var).grid(row=1, column=2, sticky="w", pady=4)
 
-        self.btn_export = ttk.Button(
+        self.btn_export = AuraButton(
             self.main_frame,
             text="匯出",
             style="Primary.TButton",
-            cursor="hand2",
             command=self.perform_export,
         )
         self.btn_export.pack(fill=tk.X, pady=(0, 4))

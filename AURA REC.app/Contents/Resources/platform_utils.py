@@ -93,39 +93,71 @@ def find_executable(name, extra_mac_paths=None, extra_win_paths=None):
     return f"{name}{ext}"
 
 
+_ui_font_cache = None
+
+
+def ensure_brand_fonts():
+    """只在這個程式裡註冊官網用的字，不寫進系統字型資料夾。"""
+    if not IS_MAC or getattr(ensure_brand_fonts, "_done", False):
+        return
+    ensure_brand_fonts._done = True
+    folder = Path(__file__).resolve().parent / "fonts"
+    if not folder.is_dir():
+        return
+    try:
+        import ctypes
+        cf = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        ct = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreText.framework/CoreText")
+        cf.CFURLCreateFromFileSystemRepresentation.restype = ctypes.c_void_p
+        cf.CFURLCreateFromFileSystemRepresentation.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_bool,
+        ]
+        ct.CTFontManagerRegisterFontsForURL.restype = ctypes.c_bool
+        ct.CTFontManagerRegisterFontsForURL.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+        for path in sorted(folder.glob("*.ttf")):
+            raw = str(path).encode()
+            url = cf.CFURLCreateFromFileSystemRepresentation(None, raw, len(raw), False)
+            if url:
+                ct.CTFontManagerRegisterFontsForURL(url, 1, None)
+    except Exception:
+        pass
+
+
 def get_ui_fonts():
-    """獲取跨平台最適字體設定"""
+    """獲取跨平台最適字體設定。Mac 會用官網的 Syne 與 JetBrains Mono。"""
+    global _ui_font_cache
+    if _ui_font_cache is not None:
+        return _ui_font_cache
+    ensure_brand_fonts()
+    families = set()
+    try:
+        import tkinter.font as tkfont
+        families = set(tkfont.families())
+    except Exception:
+        pass
     if IS_WINDOWS:
-        # Windows 優選微軟正黑體或 Segoe UI
         family = "Microsoft JhengHei"
-        return {
-            "title": (family, 16, "bold"),
-            "subtitle": (family, 12, "bold"),
-            "body": (family, 10),
-            "bold": (family, 10, "bold"),
-            "timer": ("Consolas", 32, "bold"),
-            "badge": (family, 9, "bold")
-        }
+        mono = "Consolas"
+        display = family
+        sans = family
     elif IS_MAC:
         sans = "PingFang TC"
-        mono = "Menlo"
-        return {
-            "title": (sans, 20, "bold"),
-            "subtitle": (sans, 13, "bold"),
-            "body": (sans, 12),
-            "bold": (sans, 12, "bold"),
-            "timer": (mono, 32, "bold"),
-            "badge": (mono, 10),
-        }
+        display = "Syne" if "Syne" in families else sans
+        mono = "JetBrains Mono" if "JetBrains Mono" in families else "Menlo"
     else:
-        return {
-            "title": ("DejaVu Sans", 16, "bold"),
-            "subtitle": ("DejaVu Sans", 12, "bold"),
-            "body": ("DejaVu Sans", 10),
-            "bold": ("DejaVu Sans", 10, "bold"),
-            "timer": ("Monospace", 30, "bold"),
-            "badge": ("DejaVu Sans", 9, "bold")
-        }
+        sans = "DejaVu Sans"
+        display = sans
+        mono = "DejaVu Sans Mono" if "DejaVu Sans Mono" in families else "Monospace"
+    _ui_font_cache = {
+        "title": (display, 22, "bold"),
+        "subtitle": (display, 14, "bold"),
+        "body": (sans, 12),
+        "bold": (sans, 12, "bold"),
+        "mono": (mono, 13, "bold"),
+        "timer": (mono, 32, "bold"),
+        "badge": (mono, 11),
+    }
+    return _ui_font_cache
 
 
 # 跟官網同一套：黑底、青字、玫瑰錄影鈕。
