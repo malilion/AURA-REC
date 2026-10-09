@@ -387,6 +387,62 @@ def open_file_or_dir(path, reveal=False):
         print(f"[open_file_or_dir] Error: {e}")
 
 
+def copy_file(path):
+    """把檔案放到剪貼簿，可以貼到 Finder 或其他資料夾。"""
+    target = Path(path)
+    try:
+        if not target.is_file():
+            return False
+        target = target.resolve()
+    except OSError:
+        return False
+    try:
+        if IS_MAC:
+            return _mac_copy_file(target)
+        if IS_WINDOWS:
+            return _windows_copy_file(target)
+        return _copy_text(str(target))
+    except Exception:
+        return False
+
+
+def _mac_copy_file(path):
+    from AppKit import NSPasteboard, NSPasteboardTypeString, NSURL
+
+    board = NSPasteboard.generalPasteboard()
+    board.clearContents()
+    if not board.writeObjects_([NSURL.fileURLWithPath_(str(path))]):
+        return False
+    # 文字欄位貼上時還是看得到路徑。檔案本身仍留在剪貼簿。
+    board.setString_forType_(str(path), NSPasteboardTypeString)
+    return True
+
+
+def _windows_copy_file(path):
+    escaped = str(path).replace("'", "''")
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command", f"Set-Clipboard -LiteralPath '{escaped}'"],
+        check=True,
+        timeout=8,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return True
+
+
+def _copy_text(text):
+    if shutil.which("wl-copy"):
+        subprocess.run(["wl-copy"], input=text, text=True, check=True, timeout=5)
+        return True
+    if shutil.which("xclip"):
+        subprocess.run(
+            ["xclip", "-selection", "clipboard"],
+            input=text, text=True, check=True, timeout=5,
+        )
+        return True
+    return False
+
+
 _ENCODER_CACHE = {}
 
 

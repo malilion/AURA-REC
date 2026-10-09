@@ -358,6 +358,56 @@ def _display_for(screen_index):
     return None
 
 
+def display_frame(screen_index=0):
+    """這個螢幕的點座標與像素倍率。沒有就回 None。"""
+    return _display_for(screen_index)
+
+
+def box_to_points(box, screen_index=0):
+    """擷取像素 (x, y, w, h) 換成這個螢幕上的點。"""
+    frame = _display_for(screen_index)
+    if frame is None or not box or len(box) != 4:
+        return None
+    try:
+        x, y, w, h = (float(v) for v in box)
+    except (TypeError, ValueError):
+        return None
+    scale = frame["scale"] or 1
+    return (frame["x"] + x / scale, frame["y"] + y / scale, w / scale, h / scale)
+
+
+def _rects_overlap(one, other):
+    ax, ay, aw, ah = one
+    bx, by, bw, bh = other
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+
+def bar_origin(screen, target, bar_w, bar_h, margin=40):
+    """小條放在這個螢幕上，盡量不要壓到目標。座標都是點，回傳 (x, y)。"""
+    sx, sy, sw, sh = (float(v) for v in screen)
+    bw = min(max(float(bar_w), 2), sw)
+    bh = min(max(float(bar_h), 2), sh)
+    margin = max(0.0, float(margin))
+
+    def clamp(x, y):
+        return (
+            min(max(x, sx), sx + max(0.0, sw - bw)),
+            min(max(y, sy), sy + max(0.0, sh - bh)),
+        )
+
+    right = sx + sw - bw - margin
+    bottom = sy + sh - bh - margin
+    candidates = []
+    for point in ((right, sy + margin), (sx + margin, sy + margin), (right, bottom), (sx + margin, bottom)):
+        clamped = clamp(*point)
+        if clamped not in candidates:
+            candidates.append(clamped)
+    for x, y in candidates:
+        if target is None or not _rects_overlap((x, y, bw, bh), target):
+            return (int(round(x)), int(round(y)))
+    return (int(round(candidates[0][0])), int(round(candidates[0][1])))
+
+
 def list_capture_windows(screen_index=0):
     """這個螢幕上可以錄的視窗。box 是擷取像素 (x, y, w, h)。"""
     display = _display_for(screen_index)

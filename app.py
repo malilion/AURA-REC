@@ -18,6 +18,7 @@ LiteScreenRecorder - 輕量桌面錄影工具 (macOS & Windows 跨平台支援)
 
 import math
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
@@ -28,13 +29,23 @@ from pathlib import Path
 from recorder import LOW_DISK_BYTES, ScreenRecorder, format_bytes, free_disk_bytes, save_still
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
-from region_picker import capture_screen_index, pick_capture_window, pick_screen_region, resolve_window_box
+from region_picker import (
+    bar_origin,
+    box_to_points,
+    capture_screen_index,
+    display_frame,
+    pick_capture_window,
+    pick_screen_region,
+    resolve_window_box,
+)
 from platform_utils import (
     IS_MAC,
     IS_WINDOWS,
     enable_dpi_awareness,
+    find_executable,
     get_ui_fonts,
     play_system_alert,
+    copy_file,
     open_file_or_dir,
     save_settings,
     load_settings,
@@ -81,6 +92,24 @@ def disk_time_text(free_bytes, bits_per_second):
     return f"還可錄約 {max(1, round(seconds / 60))} 分鐘"
 
 
+_TIMED_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".gif", ".m4a", ".mp3", ".wav"}
+
+
+def format_media_duration(seconds):
+    """清單用的長度。不滿一小時不補小時。"""
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return ""
+    if total < 0:
+        return ""
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
 class LiteRecorderApp:
     def __init__(self, root):
         self.root = root
@@ -108,6 +137,8 @@ class LiteRecorderApp:
         self.capture_window = self._saved_window()
         self._auto_stop_sec = None
         self._segment_sec = None
+        self._duration_cache = {}
+        self._recent_generation = 0
         self.auto_mini_var = tk.BooleanVar(value=self._flag("auto_mini", True))
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
@@ -177,9 +208,11 @@ class LiteRecorderApp:
             f"{self.shortcut_hint}\n\n"
             "暫停或繼續：F8\n\n"
             "截圖：F7。有自訂範圍或視窗時只截那一塊。\n\n"
-            "選單裡的「選擇視窗」會錄下那個視窗開始時的位置，檔名也會帶上程式名稱。\n\n"
+            "選單裡的「選擇視窗」會錄下那個視窗開始時的位置，檔名也會帶上程式名稱。\n"
+            "若會縮成小條，小條會先讓到不擋住那個視窗的角落。\n\n"
             "倒數時再按一次，或按 Esc，就會取消。\n\n"
-            "錄影中的小條可以拖曳挪開。按「展開」或 Esc 回到完整視窗，選單裡的「收成小條」可以再縮回去。",
+            "錄影中的小條可以拖曳挪開。按「展開」或 Esc 回到完整視窗，選單裡的「收成小條」可以再縮回去。\n\n"
+            "複製最新檔案：Shift + Command + C（Windows 為 Shift + Ctrl + C）。",
         )
 
     def _build_menu(self):
@@ -195,6 +228,11 @@ class LiteRecorderApp:
         file_menu.add_command(label="選擇視窗…", command=self._pick_window)
         file_menu.add_command(label="剪輯影片…", command=self.open_editor)
         file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
+        file_menu.add_command(
+            label="複製最新檔案",
+            command=self.copy_latest_file,
+            accelerator="⇧⌘C" if IS_MAC else "Ctrl+Shift+C",
+        )
         file_menu.add_separator()
         file_menu.add_command(label="開啟瀏覽器工作站", command=self.open_web_studio)
         file_menu.add_separator()
@@ -486,6 +524,8 @@ class LiteRecorderApp:
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
         self.root.bind_all("<Control-r>", lambda e: self.toggle_recording())
         self.root.bind_all("<Command-r>", lambda e: self.toggle_recording())
+        self.root.bind_all("<Shift-Command-c>", lambda e: self.copy_latest_file())
+        self.root.bind_all("<Shift-Control-c>", lambda e: self.copy_latest_file())
         self.root.bind("<space>", lambda e: self.toggle_recording())
         self.root.bind("<Escape>", self._on_escape)
 
@@ -551,17 +591,24 @@ class LiteRecorderApp:
         if not busy:
             self._refresh_window_target()
 
-    def _switch_to_mini_mode(self):
-        """收合為置頂懸浮膠囊"""
+    def _switch_to_mini_mode(self, origin=None):
+        """收合為置頂懸浮膠囊。origin 是小條要出現的點座標。"""
+        if not self.is_mini_mode:
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
+            if width >= 520 and height >= 640:
+                self._normal_size = (width, height)
         self.is_mini_mode = True
-        self._normal_size = (max(self.root.winfo_width(), 520), max(self.root.winfo_height(), 640))
         self.main_container.pack_forget()
 
-        prev_x = self.root.winfo_x()
-        prev_y = self.root.winfo_y()
+        if origin is None:
+            prev_x = self.root.winfo_x()
+            prev_y = self.root.winfo_y()
+        else:
+            prev_x, prev_y = origin
 
         self.root.minsize(430, 48)
-        self.root.geometry(f"430x48+{prev_x}+{prev_y}")
+        self.root.geometry(f"430x48+{int(prev_x)}+{int(prev_y)}")
         self.root.resizable(False, False)
         self.root.config(menu="")
         self.root.attributes("-topmost", True)
@@ -656,6 +703,18 @@ class LiteRecorderApp:
         if not hasattr(self, "video_combo"):
             return 0
         return capture_screen_index(self.video_combo.get())
+
+    def _mini_origin_outside(self, region):
+        """小條放到這個範圍外面。放不下就回 None，沿用現在的位置。"""
+        if not region:
+            return None
+        frame = display_frame(self._capture_screen_index())
+        target = box_to_points(region, self._capture_screen_index())
+        if frame is None or target is None:
+            return None
+        screen = (frame["x"], frame["y"], frame["w"], frame["h"])
+        # 48 是小條高度，多留一點給標題列，避免還是壓到目標。
+        return bar_origin(screen, target, 430, 80)
 
     def _update_area_label(self):
         mode = self._area_mode()
@@ -924,6 +983,32 @@ class LiteRecorderApp:
         label = None
         if self.area_combo.current() == 2 and self.capture_window:
             label = self.capture_window.get("owner") or ""
+        hidden_for_record = False
+        parked_at = None
+        if self.auto_mini_var.get() and not self.is_mini_mode:
+            parked_at = (self.root.winfo_x(), self.root.winfo_y())
+            outside = self._mini_origin_outside(region)
+            if outside:
+                parked_at = outside
+            self.root.withdraw()
+            hidden_for_record = True
+            self.root.update_idletasks()
+            if self.area_combo.current() == 2 and self.capture_window:
+                box, error = resolve_window_box(
+                    self.capture_window["id"], self._capture_screen_index()
+                )
+                if error:
+                    self.root.deiconify()
+                    messagebox.showwarning("選視窗", error)
+                    self._set_capture_locked(False)
+                    self.record_btn.config(text="開始錄影", style="Primary.TButton", state=tk.NORMAL)
+                    return
+                self.region = box
+                region = box
+                self._update_area_label()
+                outside = self._mini_origin_outside(region)
+                if outside:
+                    parked_at = outside
         play_system_alert("start")
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
@@ -940,6 +1025,8 @@ class LiteRecorderApp:
         )
 
         if not ok:
+            if hidden_for_record:
+                self.root.deiconify()
             self._segment_sec = None
             release_awake()
             messagebox.showerror("錄影啟動失敗", msg)
@@ -948,7 +1035,12 @@ class LiteRecorderApp:
 
         if self.recorder.process is not None:
             hold_awake(self.recorder.process.pid)
-        self._pending_mini = self.auto_mini_var.get()
+        if hidden_for_record:
+            self._switch_to_mini_mode(parked_at)
+            self.root.deiconify()
+            self._pending_mini = False
+        else:
+            self._pending_mini = self.auto_mini_var.get()
         self._update_ui_state(recording=True)
         self.timer_hint.config(text="正在確認錄影有順利開始…")
         self.root.after(800, self._confirm_recording_started)
@@ -1238,6 +1330,35 @@ class LiteRecorderApp:
         else:
             messagebox.showinfo("提示", "尚未有可播放的錄影檔")
 
+    def _newest_saved_file(self):
+        newest = None
+        newest_mtime = -1
+        try:
+            patterns = ("*.mp4", "*.mov", "*.mkv", "*.webm", "*.gif", "*.png", "*.m4a", "*.mp3", "*.wav")
+            for pattern in patterns:
+                for path in self.recorder.output_dir.glob(pattern):
+                    if self._file_is_open_recording(path):
+                        continue
+                    mtime = path.stat().st_mtime
+                    if mtime > newest_mtime:
+                        newest = path
+                        newest_mtime = mtime
+        except OSError:
+            return None
+        return newest
+
+    def copy_latest_file(self):
+        path = self._newest_saved_file()
+        if path is None:
+            messagebox.showinfo("複製檔案", "還沒有可複製的檔案。")
+            return "break"
+        if copy_file(path):
+            if not self.recorder.is_recording and not self.countdown_active:
+                self.timer_hint.config(text=f"已複製 {path.name}")
+            return "break"
+        messagebox.showwarning("複製檔案", "沒有放到剪貼簿。")
+        return "break"
+
     def open_editor(self, video_path=None):
         """開啟影片剪輯編輯視窗"""
         target = video_path or self.recorder.last_recorded_file
@@ -1279,6 +1400,8 @@ class LiteRecorderApp:
         except Exception:
             files = []
 
+        self._recent_generation += 1
+        pending = []
         if not files:
             tk.Label(
                 self.recent_list_frame,
@@ -1315,15 +1438,78 @@ class LiteRecorderApp:
             self._quiet_button(top, "顯示", lambda f=p: open_file_or_dir(str(f), reveal=True)).pack(side=tk.RIGHT)
             self._quiet_button(top, "改名", lambda f=p: self._rename_recording(f)).pack(side=tk.RIGHT)
 
-            tk.Label(
+            duration = ""
+            cache_key = None
+            if p.suffix.lower() in _TIMED_SUFFIXES and not self._file_is_open_recording(p):
+                cache_key = (str(p), p.stat().st_mtime_ns)
+                duration = self._duration_cache.get(cache_key, "")
+            detail = f"{time_str}   {size_text}"
+            if duration:
+                detail = f"{detail}   {duration}"
+            meta = tk.Label(
                 row,
-                text=f"{time_str}   {size_text}",
+                text=detail,
                 font=self.fonts["badge"],
                 fg=UI["muted"],
                 bg=UI["card"],
                 anchor="w",
-            ).pack(fill=tk.X, padx=6)
+            )
+            meta.pack(fill=tk.X, padx=6)
+            if cache_key and not duration:
+                pending.append((p, cache_key, meta))
         self.root.after_idle(self._sync_recent_scroll)
+        if pending:
+            self._queue_durations(pending, self._recent_generation)
+
+    def _queue_durations(self, pending, generation):
+        def work():
+            found = []
+            for path, key, label in pending:
+                text = self._duration_cache.get(key)
+                if not text:
+                    text = self._read_duration(path)
+                    if text:
+                        self._duration_cache[key] = text
+                if text:
+                    found.append((label, text))
+
+            def apply():
+                if generation != self._recent_generation:
+                    return
+                for label, text in found:
+                    try:
+                        if not label.winfo_exists():
+                            continue
+                        current = label.cget("text")
+                        if not current.endswith(text):
+                            label.config(text=f"{current}   {text}")
+                    except tk.TclError:
+                        continue
+
+            try:
+                self.root.after(0, apply)
+            except (RuntimeError, tk.TclError):
+                return
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _read_duration(self, path):
+        ffprobe = find_executable("ffprobe")
+        if not ffprobe:
+            return ""
+        try:
+            done = subprocess.run(
+                [
+                    ffprobe, "-v", "error", "-show_entries", "format=duration",
+                    "-of", "csv=p=0", str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return format_media_duration((done.stdout or "").strip())
 
     def _fit_recent_width(self, event):
         self.recent_canvas.itemconfigure(self.recent_window, width=event.width)
