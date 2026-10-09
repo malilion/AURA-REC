@@ -142,6 +142,8 @@ class ScreenRecorder:
         resolution="native",
         use_hardware_accel=True,
         capture_cursor=True,
+        region=None,
+        quality="standard",
         output_file=None,
         profile=None,
     ):
@@ -193,12 +195,25 @@ class ScreenRecorder:
             if has_audio:
                 cmd.extend(["-f", "pulse", "-i", "default"])
 
-        vf = scale_filter(resolution)
-        if vf:
-            cmd.extend(["-vf", vf])
+        filters = []
+        if region:
+            x, y, w, h = [int(v) for v in region]
+            x -= x % 2
+            y -= y % 2
+            w = max(2, w - w % 2)
+            h = max(2, h - h % 2)
+            filters.append(f"crop={w}:{h}:{x}:{y}")
+        scale = scale_filter(resolution)
+        if scale:
+            filters.append(scale)
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
 
-        bitrate = capture_bitrate_k(resolution, profile)
-        cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, bitrate, profile))
+        quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
+        bitrate = max(600, int(capture_bitrate_k(resolution, profile) * quality_scale))
+        cmd.extend(video_encode_args(
+            self.ffmpeg_bin, use_hardware_accel, bitrate, profile, quality=quality
+        ))
         if has_audio:
             cmd.extend(["-c:a", "aac", "-b:a", audio_bitrate(profile)])
         cmd.append(str(output_file))
@@ -212,6 +227,9 @@ class ScreenRecorder:
         resolution="native",
         use_hardware_accel=True,
         capture_cursor=True,
+        region=None,
+        quality="standard",
+        container="mp4",
     ):
         """
         跨平台啟動錄影程序
@@ -225,7 +243,8 @@ class ScreenRecorder:
         self.paused_total = 0.0
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}.mp4"
+        suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
+        self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}{suffix}"
         cmd = self.build_capture_command(
             video_idx=video_idx,
             audio_idx=audio_idx,
@@ -233,6 +252,8 @@ class ScreenRecorder:
             resolution=resolution,
             use_hardware_accel=use_hardware_accel,
             capture_cursor=capture_cursor,
+            region=region,
+            quality=quality,
             output_file=self.current_output_file,
         )
 
