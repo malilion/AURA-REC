@@ -577,7 +577,10 @@ class LiteRecorderApp:
         def work():
             missing = not self.recorder.ffmpeg_ok()
             v_devs, a_devs = ([], []) if missing else self.recorder.get_devices()
-            self.root.after(0, lambda: self._apply_devices(v_devs, a_devs, missing))
+            try:
+                self.root.after(0, lambda: self._apply_devices(v_devs, a_devs, missing))
+            except Exception:
+                pass
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1856,6 +1859,9 @@ class LiteRecorderApp:
                 anchor="w", wraplength=400, justify="left"
             )
             val_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btn_row = tk.Frame(card, bg=UI["card"])
+        btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
 
         def do_copy():
             copy_text_to_clipboard(report_text)

@@ -31,3 +31,4 @@ dist/
 build/
 *.spec
 AURA REC.app/Contents/Resources/bin/
+settings.json

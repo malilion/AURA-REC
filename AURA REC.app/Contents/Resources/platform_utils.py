@@ -677,30 +677,51 @@ def running_inside_bundle(script_file=None):
 
 def app_support_dir():
     """使用者設定放在家目錄，不放進專案或 .app。"""
-    if IS_MAC:
-        base = Path.home() / "Library" / "Application Support" / "AURA REC"
-    elif IS_WINDOWS:
-        base = Path(os.environ.get("APPDATA", str(Path.home()))) / "AURA REC"
-    else:
-        base = Path.home() / ".config" / "aura-rec"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    try:
+        if IS_MAC:
+            base = Path.home() / "Library" / "Application Support" / "AURA REC"
+        elif IS_WINDOWS:
+            base = Path(os.environ.get("APPDATA", str(Path.home()))) / "AURA REC"
+        else:
+            base = Path.home() / ".config" / "aura-rec"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    except Exception:
+        return Path(__file__).resolve().parent
 
 
 def load_settings():
-    path = app_support_dir() / "settings.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
+        path = app_support_dir() / "settings.json"
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
     except Exception:
-        return {}
+        pass
+    try:
+        local_path = Path(__file__).resolve().parent / "settings.json"
+        if local_path.is_file():
+            data = json.loads(local_path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    return {}
 
 
 def save_settings(updates):
-    path = app_support_dir() / "settings.json"
     data = load_settings()
     data.update(updates)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        path = app_support_dir() / "settings.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception:
+        try:
+            local_path = Path(__file__).resolve().parent / "settings.json"
+            local_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            return True
+        except Exception:
+            return False
 
 
 def default_recordings_dir():
