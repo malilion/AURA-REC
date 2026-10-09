@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AURA REC // 官網</title>
+  <meta name="description" content="AURA REC 是一個 HTML 檔。雙擊就能用 Chrome 或 Edge 錄螢幕、在畫面上標重點、預覽後把影片存成 WebM。不用安裝。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,800;1,400&family=Syne:wght@500;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -375,6 +376,37 @@
       font-family: 'Inter', sans-serif; font-weight: 300; font-size: 0.95rem;
       line-height: 1.7; color: #8794A8; position: relative; z-index: 1;
     }
+    .pain-list { list-style: none; padding: 0; margin: 2.2rem 0 0; max-width: 52ch; }
+    .pain-list li {
+      font-family: 'Inter', sans-serif; font-weight: 300;
+      font-size: clamp(1rem, 1.45vw, 1.12rem);
+      line-height: 1.7; color: #94A3B8;
+      padding: 0.9rem 0 0.9rem 0;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .pain-list b { color: #F8FAFC; font-weight: 600; }
+    .keep { white-space: nowrap; }
+    .step-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 1.2rem; width: 100%; max-width: 1180px; margin-top: 2.2rem;
+    }
+    .step-card {
+      padding: 1.6rem 1.5rem; border-radius: 18px;
+      background: rgba(15,18,24,0.6);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+    .step-card .k {
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      letter-spacing: 0.22em; color: #00F0FF;
+    }
+    .step-card h3 {
+      font-family: 'Syne', sans-serif; font-weight: 700;
+      font-size: 1.35rem; color: #fff; margin: 0.55rem 0 0.45rem;
+    }
+    .step-card p {
+      font-family: 'Inter', sans-serif; font-weight: 300; font-size: 0.95rem;
+      line-height: 1.7; color: #8794A8; margin: 0;
+    }
     .cap-card .ic {
       width: 48px; height: 48px; border-radius: 13px;
       display: flex; align-items: center; justify-content: center;
@@ -518,6 +550,7 @@
     /* 響應式 */
     @media (max-width: 860px) {
       .cap-grid { grid-template-columns: 1fr; }
+      .step-grid { grid-template-columns: 1fr; }
       .spec-grid { grid-template-columns: repeat(2, 1fr); gap: 2.4rem 1rem; }
       .scene { padding: 9vh 7vw; }
       .dl-grid { grid-template-columns: 1fr; }
@@ -548,14 +581,15 @@
       <div class="hero-vignette"></div>
       <div id="hero-cursor-glow"></div>
       <div style="position:relative; z-index:2;">
-        <div class="hero-kicker" id="hero-kicker">One File · Double-Click · 4K / 60FPS</div>
+        <div class="hero-kicker" id="hero-kicker">One File · Double-Click · No Install</div>
         <h1 class="hero-title" id="hero-title" aria-label="AURA REC">
           <span class="word">AURA</span><br>
           <span class="word glow">REC</span>
         </h1>
         <p class="hero-sub" id="hero-sub">
-          不需要 500MB 的肥大安裝檔。<br>
-          下載一個檔案，雙擊，就是劇院級的螢幕錄製、即時標註與無損剪輯工作站。
+          想留下畫面、圈出重點、再把檔案傳出去。<br>
+          雙擊一個 HTML，用 Chrome 或 Edge，<br>
+          就能錄、能看、能存。
         </p>
       </div>
       <div class="scroll-cue" id="scroll-cue">
@@ -567,67 +601,103 @@
     <!-- 01 · 痛點宣言 --------------------------------------------------- -->
     <section class="scene" id="scene-manifesto" style="justify-content:flex-start;">
       <div style="max-width:1180px; width:100%;">
-        <div class="scene-index">01 — The Manifesto</div>
+        <div class="scene-index">01 — The Problem</div>
         <h2 class="scene-headline manifesto-text" style="max-width:24ch;">
-          <span class="reveal-line"><span>錄影軟體，</span></span>
-          <span class="reveal-line"><span>不該有 <em>500MB</em> 的肥肉。</span></span>
+          <span class="reveal-line"><span>錄一段畫面，</span></span>
+          <span class="reveal-line"><span>不必先裝 <em>一整套</em> 軟體。</span></span>
         </h2>
         <p class="scene-body">
-          傳統工具把 Electron、冗餘框架、無盡的背景服務塞進你的機器。
-          AURA REC 反其道而行——純瀏覽器硬體加速運算，秒速啟動，資源極低，
-          把每一分效能都留給你真正在乎的畫面。
+          你要的通常只是：把操作留下來、在畫面上指出重點、把檔案交給別人。
+          這個官網給的就是一個檔案，<b style="color:#F8FAFC;font-weight:600;">AURA-REC.html</b>。
+          Mac 與 Windows 用同一個。雙擊後由 Chrome 或 Edge 打開，不用解壓縮。
         </p>
+        <ul class="pain-list">
+          <li><b>臨時要錄。</b>教學、操作過程、回報一個問題。為了這一支影片去下載安裝、登入帳號，太重了。</li>
+          <li><b>畫面上要有記號。</b>圈出按鈕、打一盞聚光燈、讓人看到剛剛按了什麼鍵。這些放在同一個畫面裡。</li>
+          <li><b>錄完要馬上看。</b>慢一點看、換個顏色、標一段循環播放、把這一格存成圖。不用再開另一個剪輯器。</li>
+        </ul>
       </div>
     </section>
 
     <!-- 02 · 三大能力 --------------------------------------------------- -->
     <section class="scene" id="scene-capabilities" style="flex-direction:column; align-items:flex-start;">
-      <div class="scene-index">02 — Core Capabilities</div>
+      <div class="scene-index">02 — What You Can Do</div>
+      <h2 class="scene-headline" style="max-width:16ch; margin-bottom:2rem;">這個檔，<em>做得到這些</em>。</h2>
       <div class="cap-grid">
         <div class="cap-card" data-cap>
           <div class="halo" style="background:#00F0FF;"></div>
           <div class="ic" style="background:rgba(0,240,255,0.1); color:#00F0FF;"><i data-lucide="monitor-dot" class="w-6 h-6"></i></div>
           <div class="num">／ 01 RECORD</div>
-          <h3>劇院級錄製</h3>
-          <p>4K / 60FPS 螢幕擷取，系統音訊與麥克風混音、可拖曳鏡頭畫中畫、動態環境光自適應背光。</p>
+          <h3>錄下你選的畫面</h3>
+          <p>整個螢幕、一個視窗，或一個分頁，由瀏覽器的分享視窗決定。要系統聲音，在那個視窗勾選分享音訊。麥克風是工作站裡另外一個開關，可以和畫面聲音混在一起。按下後先倒數 3 秒。瀏覽器會盡量要到較高的解析度與 60 FPS，實際大小跟著你選的那塊畫面。</p>
         </div>
         <div class="cap-card" data-cap>
           <div class="halo" style="background:#8A2BE2;"></div>
           <div class="ic" style="background:rgba(138,43,226,0.12); color:#B57BFF;"><i data-lucide="pencil-ruler" class="w-6 h-6"></i></div>
-          <div class="num">／ 02 ANNOTATE</div>
-          <h3>即時標註</h3>
-          <p>自由畫筆、矩形、聚光燈聚焦、按鍵投影 HUD、畫幅導引，教學與演示一氣呵成。</p>
+          <div class="num">／ 02 MARK</div>
+          <h3>在畫面上指出重點</h3>
+          <p>畫筆、矩形、聚光燈，顏色可以換。畫幅導引有 16:9、9:16、1:1。按鍵會浮在預覽上。圓形鏡頭可以拖位置。畫面周圍的光會跟著影片的顏色走。濾鏡有原色、賽博、黑白、暖調。播放可以 0.5x 到 2x。畫筆會進「導出精華截圖」的 PNG。</p>
         </div>
         <div class="cap-card" data-cap>
           <div class="halo" style="background:#00FF9D;"></div>
-          <div class="ic" style="background:rgba(0,255,157,0.1); color:#00FF9D;"><i data-lucide="scissors" class="w-6 h-6"></i></div>
-          <div class="num">／ 03 EDIT</div>
-          <h3>無損剪輯</h3>
-          <p>雙軌非線性時間軸、Stream Copy 極速裁切、GIF 匯出與純音訊提取，零畫質損失。</p>
+          <div class="ic" style="background:rgba(0,255,157,0.1); color:#00FF9D;"><i data-lucide="clapperboard" class="w-6 h-6"></i></div>
+          <div class="num">／ 03 KEEP</div>
+          <h3>看完，把檔案留下</h3>
+          <p>底下有影像條和聲音條。拖綠色起點、紅色終點，播放會在這一段裡循環。空白鍵播放或暫停，J / L 前後一秒。存檔時按「無損匯出片段」，下載的是這次錄到的整段 WebM。也可以匯入一支既有影片來預覽。</p>
         </div>
       </div>
     </section>
 
-    <!-- 03 · 規格計數 --------------------------------------------------- -->
+    <!-- 03 · 用法 ------------------------------------------------------- -->
+    <section class="scene" id="scene-use" style="flex-direction:column; align-items:flex-start;">
+      <div class="scene-index">03 — How To Use</div>
+      <h2 class="scene-headline" style="max-width:14ch;">四步，<em>錄完就存</em>。</h2>
+      <p class="scene-body" style="margin-top:1rem;">
+        請用 Chrome 或 Edge。第一次開啟需要網路，用來載入字型與介面。
+      </p>
+      <div class="step-grid">
+        <article class="step-card" data-step>
+          <div class="k">01 打開</div>
+          <h3>雙擊 AURA-REC.html</h3>
+          <p>到下載資料夾雙擊。瀏覽器打開後，中間是舞台，底下是時間軸。還沒有畫面時，按「開始選取並錄製」，或按「匯入既有影片剪輯」。</p>
+        </article>
+        <article class="step-card" data-step>
+          <div class="k">02 錄</div>
+          <h3>選畫面，倒數，開始</h3>
+          <p>瀏覽器會問你要分享哪一塊。要電腦裡的聲音，在那個視窗勾選。工作站底部的「麥克風收音」是你自己的聲音。倒數 3 秒後才寫進檔案。空白鍵再按一次就停止。</p>
+        </article>
+        <article class="step-card" data-step>
+          <div class="k">03 看</div>
+          <h3>標一段，換個看法</h3>
+          <p>停下來之後，拖時間軸。I 是起點，O 是終點，播放會在這一段循環。右上角換濾鏡和倍速。左上角的畫筆、矩形、聚光燈用來指出這一格在看什麼。</p>
+        </article>
+        <article class="step-card" data-step>
+          <div class="k">04 存</div>
+          <h3>WebM，或一張 PNG</h3>
+          <p>「無損匯出片段」把這次錄到的整段存成 WebM。「導出精華截圖」把目前這一格，連同畫筆，存成 PNG。檔案會進瀏覽器的下載資料夾。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- 04 · 規格計數 --------------------------------------------------- -->
     <section class="scene" id="scene-specs" style="flex-direction:column;">
-      <div class="scene-index" style="margin-bottom:3rem;">03 — By The Numbers</div>
+      <div class="scene-index" style="margin-bottom:3rem;">04 — In Short</div>
       <div class="spec-grid">
-        <div><div class="spec-num" data-count="4"><span>0</span><span class="spec-unit">K</span></div><div class="spec-label">Max Resolution</div></div>
-        <div><div class="spec-num" data-count="60"><span>0</span><span class="spec-unit">FPS</span></div><div class="spec-label">Frame Rate</div></div>
-        <div><div class="spec-num" data-count="0"><span>0</span><span class="spec-unit">MB</span></div><div class="spec-label">Install Size</div></div>
-        <div><div class="spec-num" data-count="100"><span>0</span><span class="spec-unit">%</span></div><div class="spec-label">Lossless Cut</div></div>
+        <div><div class="spec-num" data-count="1"><span>0</span><span class="spec-unit">檔</span></div><div class="spec-label">下載就這一個</div></div>
+        <div><div class="spec-num" data-count="0"><span>0</span><span class="spec-unit">MB</span></div><div class="spec-label">不用安裝</div></div>
+        <div><div class="spec-num" data-count="3"><span>0</span><span class="spec-unit">秒</span></div><div class="spec-label">開始前倒數</div></div>
+        <div><div class="spec-num" data-count="4"><span>0</span><span class="spec-unit">種</span></div><div class="spec-label">預覽濾鏡</div></div>
       </div>
     </section>
 
     <!-- 04 · 下載那一個檔案 ------------------------------------------- -->
     <section class="scene" id="scene-download" style="flex-direction:column;">
-      <div class="scene-index" style="margin-bottom:2.4rem;">04 — One File</div>
+      <div class="scene-index" style="margin-bottom:2.4rem;">05 — One File</div>
       <h2 class="scene-headline" style="text-align:center; max-width:16ch; margin:0 auto 0.6rem;">
         一個檔案，<em>點開就能用</em>。
       </h2>
       <p class="scene-body" style="text-align:center; max-width:46ch; margin:0 auto 3rem;">
-        官網只負責介紹。能錄、能剪的工作站是另一個獨立檔案。
-        下載後雙擊，瀏覽器就會打開。Mac 與 Windows 都是這同一個檔。
+        按下載只會得到 AURA-REC.html。雙擊後瀏覽器打開工作站。Mac 與 Windows 都是這同一個檔。桌面那套要自己準備 Python 與 FFmpeg，這個按鈕不提供它。
       </p>
 
       <div class="dl-grid" style="grid-template-columns:minmax(0,560px);justify-content:center;">
@@ -644,7 +714,7 @@
           <ul class="dl-steps">
             <li>點下載，只會拿到這 <b style="color:#00F0FF">一個檔案</b></li>
             <li>到下載資料夾，雙擊 <b style="color:#00F0FF">AURA-REC.html</b></li>
-            <li>用 Chrome 或 Edge 允許螢幕分享，就能錄、能剪</li>
+            <li>用 Chrome 或 Edge 允許螢幕分享，就能錄、能看、能存</li>
           </ul>
           <a class="dl-btn magnetic-btn" href="download/AURA-REC.html" download="AURA-REC.html">
             <i data-lucide="download" class="w-4 h-4"></i>
@@ -663,12 +733,12 @@
 
     <!-- 05 · 進入工具過渡 ----------------------------------------------- -->
     <section class="scene" id="scene-enter">
-      <div class="scene-index" style="justify-content:center;">05 — Enter The Studio</div>
+      <div class="scene-index" style="justify-content:center;">06 — Enter The Studio</div>
       <h2 class="scene-headline" style="max-width:18ch; text-align:center; margin:0 auto;">
         或先<em>打開看看</em>。
       </h2>
       <p class="scene-body" style="text-align:center; max-width:46ch; margin:1.4rem auto 0;">
-        還不想存檔的話，直接開啟同一個工作站。存下來的那一個檔，離線雙擊也是它。
+        這個分頁可以直接打開同一個工作站。要留給之後用，把 <span class="keep">AURA-REC.html</span> 存下來，雙擊還是它。
       </p>
       <div class="enter-actions">
         <a class="enter-btn magnetic-btn" id="enter-studio-btn" href="download/AURA-REC.html">
@@ -933,7 +1003,17 @@
         scrollTrigger: { trigger: '.cap-grid', start: 'top 78%' },
       });
 
-      // 03 規格：數字跑動計數
+      // 03 用法
+      gsap.from('#scene-use .scene-index, #scene-use .scene-headline, #scene-use .scene-body', {
+        opacity: 0, y: 36, duration: 0.9, stagger: 0.12, ease: 'power3.out',
+        scrollTrigger: { trigger: '#scene-use', start: 'top 68%' },
+      });
+      gsap.from('[data-step]', {
+        opacity: 0, y: 48, duration: 0.9, stagger: 0.12, ease: 'power3.out',
+        scrollTrigger: { trigger: '.step-grid', start: 'top 80%' },
+      });
+
+      // 04 規格：數字跑動計數
       gsap.from('#scene-specs .scene-index', {
         opacity: 0, y: 20, duration: 0.8,
         scrollTrigger: { trigger: '#scene-specs', start: 'top 65%' },
