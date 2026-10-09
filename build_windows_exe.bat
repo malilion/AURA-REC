@@ -35,13 +35,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM --- 3. 編譯單一 exe（視窗模式、內嵌圖示、附帶 web_studio 資源） ---
+REM --- 3. 編譯單一 exe（視窗模式、內嵌圖示、只附帶工作站那一個檔） ---
 echo.
 echo [3/4] 正在編譯 AURA-REC.exe（約需 1-2 分鐘）...
 pyinstaller --noconfirm --onefile --windowed ^
     --name "AURA-REC" ^
     --icon "AURA-REC.ico" ^
-    --add-data "web_studio;web_studio" ^
+    --add-data "web_studio\download\AURA-REC.html;." ^
     app.py
 if errorlevel 1 (
     echo [X] 編譯失敗。請把上方錯誤訊息截圖回報。

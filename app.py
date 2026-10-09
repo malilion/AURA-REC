@@ -683,7 +683,7 @@ class LiteRecorderApp:
         VideoEditorWindow(self.root, video_path=target)
 
     def open_web_studio(self):
-        """開啟獲獎級 Web 錄製與剪輯工作站"""
+        """開啟獨立的 AURA REC 工作站檔。官網不在這個檔案裡。"""
         # 相容三種執行情境：純腳本 / macOS .app / Windows PyInstaller exe
         import sys
         if getattr(sys, "frozen", False):
@@ -691,8 +691,18 @@ class LiteRecorderApp:
             base_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
         else:
             base_dir = Path(__file__).resolve().parent
-        studio_path = base_dir / "web_studio" / "index.html"
-        open_file_or_dir(str(studio_path))
+        candidates = [
+            base_dir / "AURA-REC.html",
+            base_dir / "web_studio" / "download" / "AURA-REC.html",
+        ]
+        for studio_path in candidates:
+            if studio_path.is_file():
+                open_file_or_dir(str(studio_path))
+                return
+        messagebox.showinfo(
+            "找不到工作站",
+            "找不到 AURA-REC.html。\n請從官網下載那一個檔案，或確認 web_studio/download/AURA-REC.html 還在。",
+        )
 
     def refresh_recent_list(self):
         """重新整理最近錄影檔案列表"""
