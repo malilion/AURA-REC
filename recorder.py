@@ -32,6 +32,7 @@ from platform_utils import (
     capture_bitrate_k,
     video_encode_args,
     lower_process_priority,
+    hold_awake,
 )
 
 
@@ -53,6 +54,15 @@ class ScreenRecorder:
         self.last_recorded_file = None
         self._stderr_lines = []
         self._stderr_lock = threading.Lock()
+        self._rotate_lock = threading.Lock()
+        self._rotating = False
+        self._stop_rotate = None
+        self._segment_seconds = None
+        self._segment_index = 0
+        self._segment_started_at = None
+        self._segment_paused_at = None
+        self._pending_result = None
+        self._capture_kwargs = None
 
         # 跨平台尋找 FFmpeg
         self.ffmpeg_bin = find_executable("ffmpeg")
@@ -217,18 +227,9 @@ class ScreenRecorder:
         ))
         if has_audio:
             cmd.extend(["-c:a", "aac", "-b:a", "96k"])
-        if segment_sec:
-            suffix = Path(str(output_file)).suffix.lower().lstrip(".") or "mp4"
-            if suffix not in {"mp4", "mov"}:
-                suffix = "mp4"
-            # 分段只在關鍵畫格切開。約每兩秒一個，才切得準。
-            cmd.extend(["-g", str(max(1, int(fps)) * 2)])
-            cmd.extend([
-                "-f", "segment",
-                "-segment_time", str(int(segment_sec)),
-                "-segment_format", suffix,
-                "-reset_timestamps", "1",
-            ])
+        # 不用 segment muxer。avfoundation 配這個 muxer 時，q 停不下來，
+        # mp4 也不會寫入 moov。分段改由 _watch_segments 關掉再重開。
+        del segment_sec
         cmd.append(str(output_file))
         return cmd
 
@@ -255,50 +256,161 @@ class ScreenRecorder:
         self.paused = False
         self.pause_started = None
         self.paused_total = 0.0
+        self._rotating = False
+        self._pending_result = None
+        self._segment_index = 0
+        self._segment_paused_at = None
+        try:
+            self._segment_seconds = int(segment_sec) if segment_sec else None
+        except (TypeError, ValueError):
+            self._segment_seconds = None
+        if self._segment_seconds is not None and self._segment_seconds < 1:
+            self._segment_seconds = None
+        if self._stop_rotate is not None:
+            self._stop_rotate.set()
+        self._stop_rotate = threading.Event() if self._segment_seconds else None
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         suffix = ".mov" if str(container).lower() == "mov" else ".mp4"
-        piece = "_%03d" if segment_sec else ""
+        piece = "_%03d" if self._segment_seconds else ""
         self.current_output_file = self.output_dir / f"螢幕錄影_{timestamp}{piece}{suffix}"
-        cmd = self.build_capture_command(
-            video_idx=video_idx,
-            audio_idx=audio_idx,
-            fps=fps,
-            resolution=resolution,
-            use_hardware_accel=use_hardware_accel,
-            capture_cursor=capture_cursor,
-            region=region,
-            quality=quality,
-            output_file=self.current_output_file,
-            segment_sec=segment_sec,
-        )
-
-        try:
-            self._stderr_lines = []
-            popen_kwargs = dict(
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            if IS_WINDOWS:
-                popen_kwargs["creationflags"] = getattr(
-                    subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000
-                )
-            self.process = subprocess.Popen(cmd, **popen_kwargs)
-            lower_process_priority(self.process.pid)
-            self.is_recording = True
-            self.start_time = time.time()
-            threading.Thread(target=self._drain_stderr, daemon=True).start()
-            return True, str(self.current_output_file)
-        except Exception as e:
+        self._capture_kwargs = {
+            "video_idx": video_idx,
+            "audio_idx": audio_idx,
+            "fps": fps,
+            "resolution": resolution,
+            "use_hardware_accel": use_hardware_accel,
+            "capture_cursor": capture_cursor,
+            "region": region,
+            "quality": quality,
+        }
+        actual = self._segment_file(0) if self._segment_seconds else self.current_output_file
+        self._stderr_lines = []
+        ok, msg = self._spawn(actual)
+        if not ok:
             self.is_recording = False
             self.process = None
-            return False, explain_ffmpeg_failure(str(e), code="missing")
+            self._segment_seconds = None
+            return False, msg
+        self.is_recording = True
+        self.start_time = time.time()
+        self._segment_started_at = self.start_time
+        if self._stop_rotate is not None:
+            threading.Thread(
+                target=self._watch_segments,
+                args=(self._stop_rotate,),
+                daemon=True,
+            ).start()
+        return True, str(self.current_output_file)
 
-    def _drain_stderr(self):
+    def _segment_file(self, index):
+        path = self.current_output_file
+        return path.with_name(path.name.replace("%03d", f"{int(index):03d}"))
+
+    def _spawn(self, output_file):
+        """開一支新的 ffmpeg，寫進這一個檔。"""
+        cmd = self.build_capture_command(
+            output_file=output_file,
+            segment_sec=None,
+            **(self._capture_kwargs or {}),
+        )
+        popen_kwargs = dict(
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if IS_WINDOWS:
+            popen_kwargs["creationflags"] = getattr(
+                subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000
+            )
+        try:
+            proc = subprocess.Popen(cmd, **popen_kwargs)
+        except Exception as exc:
+            self.process = None
+            return False, explain_ffmpeg_failure(str(exc), code="missing")
+        self.process = proc
+        lower_process_priority(proc.pid)
+        threading.Thread(target=self._drain_stderr, args=(proc,), daemon=True).start()
+        if self._segment_seconds:
+            hold_awake(proc.pid)
+        return True, str(output_file)
+
+    def _watch_segments(self, stop_event):
+        """每段時間到了就封存這個檔，再接著錄下一個。"""
+        while not stop_event.wait(0.4):
+            try:
+                self._rotate_if_due(stop_event)
+            except Exception:
+                continue
+
+    def _rotate_if_due(self, stop_event):
+        if stop_event.is_set() or self._rotating or self.paused or not self.is_recording:
+            return
+        limit = self._segment_seconds
+        started = self._segment_started_at
+        if not limit or started is None or time.time() - started < limit:
+            return
+        with self._rotate_lock:
+            if stop_event.is_set() or self._rotating or self.paused or not self.is_recording:
+                return
+            proc = self.process
+            if proc is None or proc.poll() is not None:
+                return
+            self._rotating = True
+        try:
+            self._close_ffmpeg(proc)
+            with self._rotate_lock:
+                if stop_event.is_set() or not self.is_recording:
+                    self.process = None
+                    return
+                self._segment_index += 1
+                self._segment_started_at = time.time()
+                ok, err = self._spawn(self._segment_file(self._segment_index))
+                if not ok:
+                    self._pending_result = (False, err or "下一段錄影沒有開始")
+                    self.process = None
+        finally:
+            self._rotating = False
+
+    def _close_ffmpeg(self, proc):
+        """送 q 讓這支 ffmpeg 把 mp4 封好。還沒結束才改送中斷。"""
+        if proc is None:
+            return
+        try:
+            if proc.stdin:
+                proc.stdin.write("q\n")
+                proc.stdin.flush()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            if IS_WINDOWS:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except Exception:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+            else:
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=2)
+                    except Exception:
+                        pass
+        if self.process is proc:
+            self.process = None
+
+    def _drain_stderr(self, proc):
         """把 FFmpeg 的紀錄讀走。不讀的話管線塞滿，長時間錄影會停住。"""
-        proc = self.process
         if proc is None or proc.stderr is None:
             return
         try:
@@ -317,18 +429,30 @@ class ScreenRecorder:
 
     def consume_exit(self):
         """FFmpeg 已經自己結束時，收回狀態。還在錄就回傳 None。"""
-        proc = self.process
-        if proc is None or not self.is_recording:
-            return None
-        code = proc.poll()
-        if code is None:
-            return None
-        tail = self.stderr_tail()
-        self.is_recording = False
-        self.paused = False
-        self.pause_started = None
-        self.last_recorded_file = self.resolved_output()
-        self.process = None
+        with self._rotate_lock:
+            if self._rotating:
+                return None
+            if self._pending_result is not None:
+                result = self._pending_result
+                self._pending_result = None
+                self.is_recording = False
+                self.paused = False
+                self.pause_started = None
+                self.last_recorded_file = self.resolved_output()
+                self.process = None
+                return result
+            proc = self.process
+            if proc is None or not self.is_recording:
+                return None
+            code = proc.poll()
+            if code is None or self._rotating or proc is not self.process:
+                return None
+            tail = self.stderr_tail()
+            self.is_recording = False
+            self.paused = False
+            self.pause_started = None
+            self.last_recorded_file = self.resolved_output()
+            self.process = None
         usable = False
         try:
             usable = (
@@ -346,75 +470,75 @@ class ScreenRecorder:
         """
         停止錄影並正確封裝 MP4 (跨平台安全終止)
         """
-        if not self.is_recording or self.process is None:
-            return False, "目前未在錄影"
-
-        self._resume_process_if_paused()
-
+        if self._stop_rotate is not None:
+            self._stop_rotate.set()
+        deadline = time.time() + 12
+        while self._rotating and time.time() < deadline:
+            time.sleep(0.05)
+        with self._rotate_lock:
+            pending = self._pending_result
+            self._pending_result = None
+            proc = self.process
+            if not self.is_recording and proc is None and pending is None:
+                return False, "目前未在錄影"
+            self._rotating = True
+            if proc is not None and self.paused:
+                self._resume_process_if_paused()
         try:
-            # 發送 'q' 進行優雅關閉
-            try:
-                self.process.stdin.write("q\n")
-                self.process.stdin.flush()
-            except Exception:
-                pass
-
-            # 等待完成
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                if IS_WINDOWS:
-                    try:
-                        self.process.terminate()
-                        self.process.wait(timeout=2)
-                    except Exception:
-                        subprocess.run(
-                            ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL
-                        )
-                else:
-                    self.process.send_signal(signal.SIGINT)
-                    try:
-                        self.process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        self.process.kill()
-
-            self.is_recording = False
-            self.paused = False
-            self.pause_started = None
+            if proc is not None:
+                self._close_ffmpeg(proc)
             self.last_recorded_file = self.resolved_output()
-            self.process = None
+            if pending is not None and self.last_recorded_file is None:
+                return pending
             target = self.last_recorded_file or self.current_output_file
-            return True, str(target)
-        except Exception as e:
-            self.is_recording = False
-            self.paused = False
-            self.process = None
-            return False, f"停止錄影時出錯: {str(e)}"
+            if target is not None:
+                return True, str(target)
+            if pending is not None:
+                return pending
+            return False, "目前未在錄影"
+        except Exception as exc:
+            return False, f"停止錄影時出錯: {exc}"
+        finally:
+            with self._rotate_lock:
+                self.is_recording = False
+                self.paused = False
+                self.pause_started = None
+                self._rotating = False
+                if self.process is proc:
+                    self.process = None
 
     def pause_recording(self):
         """暫停擷取。同一支檔案之後可以繼續，暫停的時間不計入長度。"""
-        if not self.is_recording or self.process is None:
-            return False, "目前未在錄影"
-        if self.paused:
+        if self._rotating or (self._stop_rotate is not None and self._stop_rotate.is_set()):
+            return False, "正在儲存這一段，請再按一次"
+        with self._rotate_lock:
+            if self._rotating or not self.is_recording or self.process is None:
+                return False, "目前未在錄影"
+            if self.paused:
+                return True, ""
+            if not self._set_process_suspended(True):
+                return False, "這個系統沒辦法暫停錄影"
+            now = time.time()
+            self.paused = True
+            self.pause_started = now
+            self._segment_paused_at = now
             return True, ""
-        if not self._set_process_suspended(True):
-            return False, "這個系統沒辦法暫停錄影"
-        self.paused = True
-        self.pause_started = time.time()
-        return True, ""
 
     def resume_recording(self):
-        if not self.is_recording or not self.paused:
-            return False, "目前沒有暫停"
-        if not self._set_process_suspended(False):
-            return False, "沒辦法繼續錄影"
-        if self.pause_started is not None:
-            self.paused_total += time.time() - self.pause_started
-        self.pause_started = None
-        self.paused = False
-        return True, ""
+        with self._rotate_lock:
+            if not self.is_recording or not self.paused:
+                return False, "目前沒有暫停"
+            if not self._set_process_suspended(False):
+                return False, "沒辦法繼續錄影"
+            now = time.time()
+            if self.pause_started is not None:
+                self.paused_total += now - self.pause_started
+            if self._segment_paused_at is not None and self._segment_started_at is not None:
+                self._segment_started_at += now - self._segment_paused_at
+            self._segment_paused_at = None
+            self.pause_started = None
+            self.paused = False
+            return True, ""
 
     def _resume_process_if_paused(self):
         if not self.paused:
