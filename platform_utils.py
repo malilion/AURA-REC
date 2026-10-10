@@ -1415,6 +1415,30 @@ def explain_ffmpeg_failure(tail, code=None):
     return body + extra
 
 
+def check_windows_modern_capture_support(ffmpeg_bin=None):
+    """
+    檢測 Windows 系統與 FFmpeg 是否支援現代 Direct3D 11 / WGC (ddagrab) 高速低負載桌面擷取。
+    相容 Windows 10/11，支援 60/120 FPS 錄製，大幅降低 CPU 負載。
+    """
+    if not IS_WINDOWS:
+        return False
+    ffmpeg_bin = ffmpeg_bin or find_executable("ffmpeg")
+    if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+        return False
+    try:
+        res = subprocess.run(
+            [ffmpeg_bin, "-hide_banner", "-filters"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            errors="ignore",
+            timeout=4,
+        )
+        return "ddagrab" in (res.stdout or "")
+    except Exception:
+        return False
+
+
 def get_system_diagnostics(ffmpeg_bin=None):
     """
     彙整系統硬體環境、FFmpeg 版本、支援之硬體加速編碼器與診斷資料
@@ -1477,4 +1501,9 @@ def get_system_diagnostics(ffmpeg_bin=None):
 
         info["active_encoder"] = detect_best_video_encoder(ffmpeg_bin)
 
+        if IS_WINDOWS:
+            wgc_ok = check_windows_modern_capture_support(ffmpeg_bin)
+            info["win_capture_engine"] = "Direct3D 11 / WGC (ddagrab 支援 60/120 FPS 高幀率)" if wgc_ok else "傳統 GDI Grab (相容模式)"
+
     return info
+

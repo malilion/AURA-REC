@@ -192,10 +192,8 @@
     }
 
     .window-mockup {
-      box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 0.9),
-                  0 0 0 1px rgba(255, 255, 255, 0.12),
-                  0 0 50px -10px var(--glow-color, rgba(0, 240, 255, 0.2));
-      transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.4s ease;
+      box-shadow: var(--shadow-style, 0 30px 70px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 50px -10px var(--glow-color, rgba(0, 240, 255, 0.2)));
+      transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.4s ease, border-radius 0.3s ease;
     }
 
     /* Recordly 點擊物理波紋動畫 */
@@ -239,11 +237,17 @@
       <i data-lucide="upload-cloud" class="w-12 h-12 text-aura-cyan"></i>
     </div>
     <h2 class="font-display font-extrabold text-3xl sm:text-4xl text-white tracking-wider mb-3">
-      釋放滑鼠立即載入影片
+      釋放滑鼠載入影片或專案範本
     </h2>
-    <p class="text-sm font-mono text-slate-300 max-w-md text-center leading-relaxed">
-      支援 MP4、WebM、MOV 等各類螢幕錄影檔案 · 零上傳純本機高速運算
+    <p class="text-sm font-mono text-slate-300 max-w-lg text-center leading-relaxed">
+      支援 MP4、WebM、MOV 影片檔案，或直接拖入 <span class="text-aura-cyan font-bold">.auraproj</span> 專案風格範本檔立即套用
     </p>
+  </div>
+
+  <!-- 全域浮動提示通知 (AURA Toast) -->
+  <div id="aura-toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-obsidian-900/95 border border-aura-cyan/40 backdrop-blur-xl text-white font-mono text-xs shadow-2xl flex items-center gap-2.5 transition-all duration-300 opacity-0 pointer-events-none translate-y-4">
+    <span id="aura-toast-icon" class="text-base">✨</span>
+    <span id="aura-toast-message" class="text-slate-100 font-sans">專案範本已載入</span>
   </div>
 
   <!-- ╔══════════════════════════════════════════════════════════════════╗
@@ -281,6 +285,12 @@
         <span id="status-text" class="text-xs font-mono font-medium text-slate-200 uppercase tracking-wider">STANDBY</span>
         <span id="status-timer" class="text-xs font-mono font-bold text-aura-cyan pl-1 border-l border-white/10 hidden">00:00:00</span>
       </div>
+
+      <button onclick="openProjectPresetsModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-obsidian-850 border border-white/10 hover:border-aura-cyan/40 text-xs font-mono text-slate-300 hover:text-white transition-colors" title="專案存檔與風格預設集 (.auraproj)">
+        <i data-lucide="folder-cog" class="w-4 h-4 text-aura-cyan"></i>
+        <span class="hidden sm:inline">專案預設集</span>
+        <span class="text-[9px] px-1.5 py-0.5 rounded bg-aura-cyan/15 text-aura-cyan border border-aura-cyan/30">.auraproj</span>
+      </button>
 
       <button onclick="toggleModal('modal-hotkeys')" class="w-8 h-8 rounded-lg bg-obsidian-850 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-aura-cyan/40 transition-colors" title="鍵盤快捷鍵 (Hotkeys)">
         <i data-lucide="keyboard" class="w-4 h-4"></i>
@@ -343,6 +353,11 @@
           <i data-lucide="sparkles" class="w-3.5 h-3.5 text-aura-cyan"></i>
           <span>波紋潤飾</span>
         </button>
+
+        <button onclick="openProjectPresetsModal()" id="btn-open-presets" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-obsidian-900/90 border border-white/10 hover:border-aura-violet/50 text-xs font-mono text-slate-300 hover:text-white transition-all shadow-lg" title="專案存檔與風格預設集 (.auraproj)">
+          <i data-lucide="palette" class="w-3.5 h-3.5 text-aura-violet"></i>
+          <span>風格模板</span>
+        </button>
       </div>
     </div>
 
@@ -364,9 +379,10 @@
               <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]/50 shadow-sm inline-block cursor-pointer" onclick="audioSynth.playClick()" title="最小化"></span>
               <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]/50 shadow-sm inline-block cursor-pointer" onclick="audioSynth.playClick()" title="全螢幕"></span>
             </div>
-            <div id="window-title-bar" class="text-[11px] font-mono text-slate-300 flex items-center gap-2">
+            <div id="window-title-bar" class="text-[11px] font-mono text-slate-300 flex items-center gap-2 cursor-pointer group/title" onclick="promptEditWindowTitle()" title="點擊自訂視窗標題列文字">
               <span class="w-1.5 h-1.5 rounded-full bg-aura-cyan animate-pulse"></span>
-              <span id="window-title-text">AURA REC — 4K 60FPS</span>
+              <span id="window-title-text" class="group-hover/title:text-aura-cyan transition-colors">AURA REC — 4K 60FPS</span>
+              <i data-lucide="pencil" class="w-2.5 h-2.5 text-slate-500 opacity-0 group-hover/title:opacity-100 transition-opacity"></i>
             </div>
             <div class="flex items-center gap-1.5">
               <span id="window-ratio-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10">16:9</span>
@@ -681,6 +697,167 @@
         <div class="flex items-center justify-between py-1.5">
           <span class="text-slate-300">取消倒數</span>
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-rose">Esc</kbd>
+        </div>
+      </div>
+  <!-- ======================== 專案存檔與風格預設集模態視窗 (.auraproj) ======================== -->
+  <div id="modal-project-presets" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 hidden" onclick="closeProjectPresetsModal()">
+    <div class="cyber-card rounded-2xl max-w-4xl w-full p-5 sm:p-6 border border-white/15 max-h-[92vh] flex flex-col overflow-hidden shadow-2xl" onclick="event.stopPropagation()">
+      <!-- 頂部標題列 -->
+      <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-3.5 shrink-0">
+        <div>
+          <h3 class="font-display font-bold text-lg sm:text-xl text-white flex items-center gap-2">
+            <i data-lucide="folder-cog" class="w-5 h-5 text-aura-cyan"></i>
+            專案存檔與預設集管理 (.auraproj)
+          </h3>
+          <p class="text-xs text-slate-400 font-sans mt-0.5">
+            儲存並分享品牌視覺規範 · 漸層背景、視窗陰影、圓角比例與標題一鍵套用
+          </p>
+        </div>
+        <button onclick="closeProjectPresetsModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 快捷操作列 (匯出、載入、另存、還原) -->
+      <div class="flex items-center justify-between flex-wrap gap-2.5 pb-3.5 border-b border-white/10 shrink-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button type="button" onclick="exportCurrentProjectFile()" class="magnetic-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-aura-cyan to-aura-emerald text-black font-mono font-bold text-xs shadow-md shadow-aura-cyan/20 hover:scale-[1.02]">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-black"></i>
+            匯出 .auraproj 檔案
+          </button>
+          <button type="button" onclick="document.getElementById('import-auraproj-input').click()" class="magnetic-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-obsidian-850 border border-white/10 text-slate-200 font-mono text-xs hover:border-aura-cyan/40 hover:text-white">
+            <i data-lucide="upload" class="w-3.5 h-3.5 text-aura-cyan"></i>
+            載入 .auraproj 檔案
+          </button>
+          <input type="file" id="import-auraproj-input" accept=".auraproj,.json" class="hidden" onchange="importProjectFromFile(event)">
+          <button type="button" onclick="saveCurrentAsPreset()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-obsidian-850 border border-white/10 text-slate-200 font-mono text-xs hover:border-aura-violet/40 hover:text-white">
+            <i data-lucide="bookmark-plus" class="w-3.5 h-3.5 text-aura-violet"></i>
+            另存為新預設集
+          </button>
+        </div>
+        <button type="button" onclick="resetToFactoryDefaults()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-aura-rose border border-transparent hover:border-aura-rose/30 font-mono text-xs transition-colors" title="重設為原廠預設狀態">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          還原原廠預設
+        </button>
+      </div>
+
+      <!-- 標籤頁導航 (Tabs) -->
+      <div class="flex items-center gap-2 pt-3 pb-2 shrink-0">
+        <button type="button" onclick="switchPresetTab('library')" id="tab-btn-library" class="px-4 py-1.5 rounded-xl text-xs font-mono font-bold bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 transition-all">
+          風格預設集庫 (Templates)
+        </button>
+        <button type="button" onclick="switchPresetTab('tuning')" id="tab-btn-tuning" class="px-4 py-1.5 rounded-xl text-xs font-mono text-slate-400 hover:text-white border border-transparent hover:border-white/10 transition-all">
+          視窗與樣式微調 (Custom Look)
+        </button>
+      </div>
+
+      <!-- 內容區：可滾動主容器 -->
+      <div class="flex-1 overflow-y-auto pr-1 space-y-4">
+        <!-- 標籤頁 1: 預設集庫 -->
+        <div id="tab-content-library" class="space-y-4">
+          <!-- 官方精選團隊風格範本 -->
+          <div class="space-y-2">
+            <span class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-aura-emerald"></i> 官方團隊經典範本 (Built-in Presets)
+            </span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="builtin-presets-grid">
+              <!-- Builtin cards loaded dynamically -->
+            </div>
+          </div>
+
+          <!-- 使用者自訂預設集庫 -->
+          <div class="space-y-2 pt-2 border-t border-white/5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                <i data-lucide="folder-heart" class="w-3.5 h-3.5 text-aura-rose"></i> 本機自訂預設集庫 (Custom Presets)
+              </span>
+              <span id="custom-presets-count" class="text-[11px] font-mono text-slate-500">0 組預設</span>
+            </div>
+            <div id="custom-presets-container" class="space-y-2">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 標籤頁 2: 樣式微調 -->
+        <div id="tab-content-tuning" class="space-y-4 hidden text-xs font-sans">
+          <!-- 視窗標題 -->
+          <div class="space-y-1.5">
+            <label class="font-mono text-slate-300 font-semibold flex items-center justify-between">
+              <span class="flex items-center gap-1.5"><i data-lucide="type" class="w-3.5 h-3.5 text-aura-cyan"></i> macOS 視窗標題文字 (Title Bar Text)</span>
+              <span class="text-[10px] text-slate-500 font-sans">反映於工作台與 MP4 匯出</span>
+            </label>
+            <input type="text" id="preset-input-window-title" oninput="onWindowTitleInput(event)" placeholder="例如：AURA REC — 4K 60FPS" class="w-full bg-obsidian-850 border border-white/10 rounded-xl px-3 py-2 text-slate-200 font-mono text-xs focus:border-aura-cyan/50 focus:outline-none">
+          </div>
+
+          <!-- 圓角半徑與陰影深度 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- 圓角半徑 -->
+            <div class="space-y-1.5">
+              <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                <i data-lucide="square" class="w-3.5 h-3.5 text-aura-emerald"></i> 視窗圓角比例 (Border Radius)
+              </label>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" onclick="setWindowBorderRadius('sm')" id="radius-btn-sm" class="radius-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono">緊緻 (8px)</button>
+                <button type="button" onclick="setWindowBorderRadius('md')" id="radius-btn-md" class="radius-pill px-2.5 py-1.5 rounded-lg border border-aura-cyan/40 bg-aura-cyan/20 text-aura-cyan font-bold text-center font-mono">標準 (16px)</button>
+                <button type="button" onclick="setWindowBorderRadius('lg')" id="radius-btn-lg" class="radius-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono">圓潤 (24px)</button>
+              </div>
+            </div>
+
+            <!-- 陰影光暈深度 -->
+            <div class="space-y-1.5">
+              <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                <i data-lucide="sun" class="w-3.5 h-3.5 text-aura-violet"></i> 視窗陰影與環境光深度 (Shadow & Glow)
+              </label>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" onclick="setWindowShadowLevel('subtle')" id="shadow-btn-subtle" class="shadow-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono">微光 (Subtle)</button>
+                <button type="button" onclick="setWindowShadowLevel('studio')" id="shadow-btn-studio" class="shadow-pill px-2.5 py-1.5 rounded-lg border border-aura-cyan/40 bg-aura-cyan/20 text-aura-cyan font-bold text-center font-mono">劇院 (Studio)</button>
+                <button type="button" onclick="setWindowShadowLevel('neon')" id="shadow-btn-neon" class="shadow-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono">強烈 (Neon)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 壁紙漸層快速設定 -->
+          <div class="space-y-1.5 pt-1 border-t border-white/5">
+            <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+              <i data-lucide="palette" class="w-3.5 h-3.5 text-aura-rose"></i> 漸層背景桌布
+            </label>
+            <div class="grid grid-cols-5 gap-2">
+              <button type="button" onclick="setStudioWallpaper('aurora'); updatePresetTuningUI();" class="p-2 rounded-xl bg-obsidian-850 border border-white/10 hover:border-aura-cyan/40 flex flex-col items-center gap-1">
+                <span class="w-5 h-5 rounded-full bg-gradient-to-tr from-aura-cyan to-aura-emerald"></span>
+                <span class="text-[10px] font-mono text-slate-300">極光</span>
+              </button>
+              <button type="button" onclick="setStudioWallpaper('sunset'); updatePresetTuningUI();" class="p-2 rounded-xl bg-obsidian-850 border border-white/10 hover:border-aura-rose/40 flex flex-col items-center gap-1">
+                <span class="w-5 h-5 rounded-full bg-gradient-to-tr from-aura-violet to-aura-rose"></span>
+                <span class="text-[10px] font-mono text-slate-300">薄暮</span>
+              </button>
+              <button type="button" onclick="setStudioWallpaper('ocean'); updatePresetTuningUI();" class="p-2 rounded-xl bg-obsidian-850 border border-white/10 hover:border-blue-400/40 flex flex-col items-center gap-1">
+                <span class="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-400"></span>
+                <span class="text-[10px] font-mono text-slate-300">深海</span>
+              </button>
+              <button type="button" onclick="setStudioWallpaper('obsidian'); updatePresetTuningUI();" class="p-2 rounded-xl bg-obsidian-850 border border-white/10 hover:border-slate-400/40 flex flex-col items-center gap-1">
+                <span class="w-5 h-5 rounded-full bg-slate-600"></span>
+                <span class="text-[10px] font-mono text-slate-300">黑曜</span>
+              </button>
+              <button type="button" onclick="setStudioWallpaper('cyber'); updatePresetTuningUI();" class="p-2 rounded-xl bg-obsidian-850 border border-white/10 hover:border-fuchsia-400/40 flex flex-col items-center gap-1">
+                <span class="w-5 h-5 rounded-full bg-gradient-to-tr from-fuchsia-500 to-cyan-400"></span>
+                <span class="text-[10px] font-mono text-slate-300">霓虹</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部狀態列 -->
+      <div class="mt-4 pt-3.5 border-t border-white/10 flex items-center justify-between text-xs font-mono text-slate-400 shrink-0 flex-wrap gap-2">
+        <div class="flex items-center gap-2 text-[11px]">
+          <span class="w-2 h-2 rounded-full bg-aura-emerald animate-pulse"></span>
+          <span>工作階段自動保存：已啟用 (重新整理或重開頁面自動還原)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="closeProjectPresetsModal()" class="px-4 py-1.5 rounded-xl bg-obsidian-850 border border-white/10 text-slate-300 hover:text-white text-xs">
+            關閉
+          </button>
         </div>
       </div>
     </div>
@@ -1020,6 +1197,9 @@
       ratio: '16:9',
       wallpaper: 'aurora',
       padding: 'cozy',
+      borderRadius: 'md',
+      shadowLevel: 'studio',
+      windowTitle: 'AURA REC — 4K 60FPS',
       ripplePolish: true,
       zoomSimActive: false,
       webcamPosIndex: 0
@@ -1031,9 +1211,9 @@
       'top-14 left-4'
     ];
 
-    function setStudioRatio(ratio) {
+    function setStudioRatio(ratio, skipSave = false) {
       studioConfig.ratio = ratio;
-      audioSynth.playClick();
+      if (!skipSave) audioSynth.playClick();
       const outer = document.getElementById('stage-outer-container');
       const badge = document.getElementById('window-ratio-badge');
       if (!outer) return;
@@ -1062,11 +1242,12 @@
 
       setTimeout(resizeAnnotationCanvas, 150);
       safeLucide();
+      if (!skipSave) saveSessionToLocalStorage();
     }
 
-    function setStudioWallpaper(theme) {
+    function setStudioWallpaper(theme, skipSave = false) {
       studioConfig.wallpaper = theme;
-      audioSynth.playClick();
+      if (!skipSave) audioSynth.playClick();
       const wrapper = document.getElementById('stage-wrapper');
       if (!wrapper) return;
 
@@ -1092,11 +1273,12 @@
         cyber: 'rgba(255, 0, 128, 0.3)'
       };
       document.documentElement.style.setProperty('--glow-color', glowMap[theme] || 'rgba(0,240,255,0.25)');
+      if (!skipSave) saveSessionToLocalStorage();
     }
 
-    function setStudioPadding(pad) {
+    function setStudioPadding(pad, skipSave = false) {
       studioConfig.padding = pad;
-      audioSynth.playClick();
+      if (!skipSave) audioSynth.playClick();
       const wrapper = document.getElementById('stage-wrapper');
       if (!wrapper) return;
 
@@ -1121,11 +1303,80 @@
       }
 
       setTimeout(resizeAnnotationCanvas, 150);
+      if (!skipSave) saveSessionToLocalStorage();
     }
 
-    function toggleCursorRipplePolish() {
-      studioConfig.ripplePolish = !studioConfig.ripplePolish;
+    function setWindowBorderRadius(radiusKey, skipSave = false) {
+      studioConfig.borderRadius = radiusKey;
+      if (!skipSave) audioSynth.playClick();
+      const mockup = document.getElementById('window-mockup');
+      if (mockup) {
+        if (radiusKey === 'sm') mockup.style.borderRadius = '8px';
+        else if (radiusKey === 'lg') mockup.style.borderRadius = '24px';
+        else mockup.style.borderRadius = '16px';
+      }
+      document.querySelectorAll('.radius-pill').forEach(btn => {
+        btn.classList.remove('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40', 'font-bold');
+        btn.classList.add('text-slate-300', 'border-white/10', 'bg-obsidian-850');
+      });
+      const activeBtn = document.getElementById(`radius-btn-${radiusKey}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('text-slate-300', 'border-white/10', 'bg-obsidian-850');
+        activeBtn.classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40', 'font-bold');
+      }
+      if (!skipSave) saveSessionToLocalStorage();
+    }
+
+    function setWindowShadowLevel(shadowKey, skipSave = false) {
+      studioConfig.shadowLevel = shadowKey;
+      if (!skipSave) audioSynth.playClick();
+      if (shadowKey === 'subtle') {
+        document.documentElement.style.setProperty('--shadow-style', '0 15px 35px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.08), 0 0 20px -5px var(--glow-color)');
+      } else if (shadowKey === 'neon') {
+        document.documentElement.style.setProperty('--shadow-style', '0 35px 85px -10px rgba(0,0,0,0.95), 0 0 0 1.5px rgba(255,255,255,0.22), 0 0 75px 5px var(--glow-color)');
+      } else {
+        document.documentElement.style.setProperty('--shadow-style', '0 30px 70px -15px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.12), 0 0 50px -10px var(--glow-color)');
+      }
+      document.querySelectorAll('.shadow-pill').forEach(btn => {
+        btn.classList.remove('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40', 'font-bold');
+        btn.classList.add('text-slate-300', 'border-white/10', 'bg-obsidian-850');
+      });
+      const activeBtn = document.getElementById(`shadow-btn-${shadowKey}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('text-slate-300', 'border-white/10', 'bg-obsidian-850');
+        activeBtn.classList.add('bg-aura-cyan/20', 'text-aura-cyan', 'border-aura-cyan/40', 'font-bold');
+      }
+      if (!skipSave) saveSessionToLocalStorage();
+    }
+
+    function setWindowTitle(title, skipSave = false) {
+      const val = (title || 'AURA REC — 4K 60FPS').trim();
+      studioConfig.windowTitle = val;
+      const el = document.getElementById('window-title-text');
+      if (el) el.innerText = val;
+      const inp = document.getElementById('preset-input-window-title');
+      if (inp && inp.value !== val) inp.value = val;
+      if (!skipSave) saveSessionToLocalStorage();
+    }
+
+    function onWindowTitleInput(e) {
+      setWindowTitle(e.target.value, false);
+    }
+
+    function promptEditWindowTitle() {
       audioSynth.playClick();
+      const current = studioConfig.windowTitle || 'AURA REC — 4K 60FPS';
+      const userTitle = prompt('請輸入視窗標題列文字：', current);
+      if (userTitle !== null && userTitle.trim().length > 0) {
+        setWindowTitle(userTitle.trim());
+        audioSynth.playChime();
+        showProjectToast('✏️ 已更新視窗標題：' + userTitle.trim());
+      }
+    }
+
+    function toggleCursorRipplePolish(skipSave = false) {
+      studioConfig.ripplePolish = !studioConfig.ripplePolish;
+      if (!skipSave) audioSynth.playClick();
       const btn = document.getElementById('btn-toggle-ripple');
       if (btn) {
         if (studioConfig.ripplePolish) {
@@ -1134,6 +1385,476 @@
           btn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-obsidian-900/90 border border-white/10 text-xs font-mono text-slate-400 hover:text-white transition-all shadow-lg';
         }
       }
+      if (!skipSave) saveSessionToLocalStorage();
+    }
+
+    // ==========================================
+    // 2c. 專案存檔與風格預設集系統 (.auraproj Project & Presets Engine)
+    // ==========================================
+    const BUILTIN_PRESETS = [
+      {
+        id: 'builtin_aurora',
+        name: '🌌 極光旗艦 (Aurora Master)',
+        desc: '官方預設 · 極光擴散漸層、劇院立體光暈、16:9 橫向、標準留白',
+        theme: {
+          wallpaper: 'aurora',
+          ratio: '16:9',
+          padding: 'cozy',
+          borderRadius: 'md',
+          shadowLevel: 'studio',
+          filter: 'none',
+          speed: 1.0
+        },
+        window: {
+          title: 'AURA REC — 4K 60FPS',
+          showFrame: true,
+          showGlow: true
+        },
+        behavior: {
+          ripplePolish: true,
+          micEnabled: true,
+          sfxEnabled: true
+        }
+      },
+      {
+        id: 'builtin_sunset',
+        name: '🌇 暮光發布會 (Sunset Keynote)',
+        desc: '大器莊重 · 薄暮暖色漸層、寬鬆大留白、圓潤 24px 大圓角、展現旗艦氣勢',
+        theme: {
+          wallpaper: 'sunset',
+          ratio: '16:9',
+          padding: 'spacious',
+          borderRadius: 'lg',
+          shadowLevel: 'studio',
+          filter: 'none',
+          speed: 1.0
+        },
+        window: {
+          title: 'Keynote Demo • Release v2.0',
+          showFrame: true,
+          showGlow: true
+        },
+        behavior: {
+          ripplePolish: true,
+          micEnabled: true,
+          sfxEnabled: true
+        }
+      },
+      {
+        id: 'builtin_reel',
+        name: '📱 短影音大師 (Reel Short Master)',
+        desc: '社群必備 · 9:16 直式短影音、賽博霓虹炫光、緊湊留白、高對比視覺衝擊',
+        theme: {
+          wallpaper: 'cyber',
+          ratio: '9:16',
+          padding: 'tight',
+          borderRadius: 'md',
+          shadowLevel: 'neon',
+          filter: 'cyberpunk',
+          speed: 1.0
+        },
+        window: {
+          title: 'AURA REEL — Mobile Showcase',
+          showFrame: true,
+          showGlow: true
+        },
+        behavior: {
+          ripplePolish: true,
+          micEnabled: true,
+          sfxEnabled: true
+        }
+      },
+      {
+        id: 'builtin_obsidian',
+        name: '⬛ 黑曜極簡科技 (Obsidian Minimal)',
+        desc: '極簡極客 · 黑曜石碳纖點陣、微光深色陰影、緊緻 8px 圓角、專注純粹內容',
+        theme: {
+          wallpaper: 'obsidian',
+          ratio: '16:9',
+          padding: 'cozy',
+          borderRadius: 'sm',
+          shadowLevel: 'subtle',
+          filter: 'none',
+          speed: 1.0
+        },
+        window: {
+          title: 'Terminal / Dev Studio',
+          showFrame: true,
+          showGlow: true
+        },
+        behavior: {
+          ripplePolish: false,
+          micEnabled: true,
+          sfxEnabled: true
+        }
+      }
+    ];
+
+    let customPresets = [];
+    try {
+      const stored = localStorage.getItem('aura_custom_presets');
+      if (stored) customPresets = JSON.parse(stored);
+      if (!Array.isArray(customPresets)) customPresets = [];
+    } catch (e) {
+      customPresets = [];
+    }
+
+    function openProjectPresetsModal() {
+      audioSynth.playClick();
+      renderBuiltinPresets();
+      renderCustomPresets();
+      updatePresetTuningUI();
+      const modal = document.getElementById('modal-project-presets');
+      if (modal) modal.classList.remove('hidden');
+      safeLucide();
+    }
+
+    function closeProjectPresetsModal() {
+      audioSynth.playClick();
+      const modal = document.getElementById('modal-project-presets');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function switchPresetTab(tab) {
+      audioSynth.playClick();
+      const btnLib = document.getElementById('tab-btn-library');
+      const btnTune = document.getElementById('tab-btn-tuning');
+      const contLib = document.getElementById('tab-content-library');
+      const contTune = document.getElementById('tab-content-tuning');
+
+      if (tab === 'library') {
+        btnLib.className = 'px-4 py-1.5 rounded-xl text-xs font-mono font-bold bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 transition-all';
+        btnTune.className = 'px-4 py-1.5 rounded-xl text-xs font-mono text-slate-400 hover:text-white border border-transparent hover:border-white/10 transition-all';
+        contLib.classList.remove('hidden');
+        contTune.classList.add('hidden');
+      } else {
+        btnTune.className = 'px-4 py-1.5 rounded-xl text-xs font-mono font-bold bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 transition-all';
+        btnLib.className = 'px-4 py-1.5 rounded-xl text-xs font-mono text-slate-400 hover:text-white border border-transparent hover:border-white/10 transition-all';
+        contTune.classList.remove('hidden');
+        contLib.classList.add('hidden');
+        updatePresetTuningUI();
+      }
+      safeLucide();
+    }
+
+    function updatePresetTuningUI() {
+      const inp = document.getElementById('preset-input-window-title');
+      if (inp) inp.value = studioConfig.windowTitle || 'AURA REC — 4K 60FPS';
+
+      ['sm', 'md', 'lg'].forEach(r => {
+        const btn = document.getElementById(`radius-btn-${r}`);
+        if (!btn) return;
+        if (studioConfig.borderRadius === r) {
+          btn.className = 'radius-pill px-2.5 py-1.5 rounded-lg border border-aura-cyan/40 bg-aura-cyan/20 text-aura-cyan font-bold text-center font-mono';
+        } else {
+          btn.className = 'radius-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono';
+        }
+      });
+
+      ['subtle', 'studio', 'neon'].forEach(s => {
+        const btn = document.getElementById(`shadow-btn-${s}`);
+        if (!btn) return;
+        if (studioConfig.shadowLevel === s) {
+          btn.className = 'shadow-pill px-2.5 py-1.5 rounded-lg border border-aura-cyan/40 bg-aura-cyan/20 text-aura-cyan font-bold text-center font-mono';
+        } else {
+          btn.className = 'shadow-pill px-2.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-300 text-center font-mono';
+        }
+      });
+    }
+
+    function renderBuiltinPresets() {
+      const grid = document.getElementById('builtin-presets-grid');
+      if (!grid) return;
+      grid.innerHTML = BUILTIN_PRESETS.map(p => `
+        <div class="p-3 rounded-xl bg-obsidian-900 border border-white/10 hover:border-aura-cyan/40 transition-all flex flex-col justify-between gap-2.5 group">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="font-display font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                ${p.name}
+              </div>
+              <div class="text-[11px] text-slate-400 font-sans mt-0.5 leading-relaxed">
+                ${p.desc}
+              </div>
+            </div>
+            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300 shrink-0">
+              ${p.theme.ratio}
+            </span>
+          </div>
+          <div class="flex items-center justify-between pt-1 border-t border-white/5 text-[11px] font-mono">
+            <span class="text-slate-500 text-[10px] uppercase tracking-wider">
+              ${p.theme.wallpaper} · ${p.theme.padding}
+            </span>
+            <button type="button" onclick="applyPresetById('${p.id}')" class="px-2.5 py-1 rounded-lg bg-aura-cyan/15 hover:bg-aura-cyan/25 text-aura-cyan font-bold border border-aura-cyan/30 transition-colors flex items-center gap-1">
+              <i data-lucide="check" class="w-3 h-3"></i> 套用風格
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderCustomPresets() {
+      const cont = document.getElementById('custom-presets-container');
+      const countEl = document.getElementById('custom-presets-count');
+      if (!cont) return;
+      if (countEl) countEl.innerText = `${customPresets.length} 組自訂預設`;
+
+      if (customPresets.length === 0) {
+        cont.innerHTML = `
+          <div class="p-4 rounded-xl bg-obsidian-900/60 border border-dashed border-white/10 text-center text-slate-500 font-mono text-xs">
+            尚無自訂預設集。點擊上方「另存為新預設集」即可將目前畫框、漸層桌布與視窗參數存入本機！
+          </div>
+        `;
+        return;
+      }
+
+      cont.innerHTML = customPresets.map(p => `
+        <div class="p-3 rounded-xl bg-obsidian-900 border border-white/10 hover:border-aura-violet/40 transition-all flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-aura-cyan via-aura-violet to-aura-rose p-[1px] shrink-0">
+              <div class="w-full h-full bg-obsidian-950 rounded-[7px] flex items-center justify-center font-mono font-bold text-aura-cyan text-[10px]">
+                PRO
+              </div>
+            </div>
+            <div>
+              <div class="font-display font-bold text-slate-100 text-xs">
+                ${p.name || '自訂預設集'}
+              </div>
+              <div class="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                <span>${p.theme?.ratio || '16:9'}</span>
+                <span>•</span>
+                <span>${p.theme?.wallpaper || 'aurora'}</span>
+                <span>•</span>
+                <span>${p.createdAt || '近期'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" onclick="applyPresetById('${p.id}')" class="px-2.5 py-1 rounded-lg bg-aura-cyan/15 hover:bg-aura-cyan/25 text-aura-cyan font-mono text-[11px] font-bold border border-aura-cyan/30 transition-colors">
+              套用
+            </button>
+            <button type="button" onclick="exportPresetById('${p.id}')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors" title="匯出此範本 .auraproj">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button" onclick="deleteCustomPreset('${p.id}')" class="p-1 rounded-lg text-slate-400 hover:text-aura-rose hover:bg-white/5 transition-colors" title="刪除預設集">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function applyPresetById(id) {
+      const builtin = BUILTIN_PRESETS.find(p => p.id === id);
+      if (builtin) {
+        applyProjectData(builtin, true);
+        return;
+      }
+      const custom = customPresets.find(p => p.id === id);
+      if (custom) {
+        applyProjectData(custom, true);
+      }
+    }
+
+    function getCurrentProjectState() {
+      return {
+        format: 'auraproj',
+        version: '1.0',
+        savedAt: new Date().toISOString(),
+        theme: {
+          wallpaper: studioConfig.wallpaper || 'aurora',
+          ratio: studioConfig.ratio || '16:9',
+          padding: studioConfig.padding || 'cozy',
+          borderRadius: studioConfig.borderRadius || 'md',
+          shadowLevel: studioConfig.shadowLevel || 'studio',
+          filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none',
+          speed: (typeof activeSpeed !== 'undefined') ? activeSpeed : 1.0
+        },
+        window: {
+          title: (studioConfig.windowTitle || document.getElementById('window-title-text')?.innerText || 'AURA REC — 4K 60FPS').trim(),
+          showFrame: true,
+          showGlow: true
+        },
+        behavior: {
+          ripplePolish: !!studioConfig.ripplePolish,
+          micEnabled: !!(document.getElementById('chk-mic')?.checked),
+          sfxEnabled: !!(document.getElementById('chk-sfx')?.checked)
+        },
+        export: {
+          resolution: (typeof mockupExportState !== 'undefined') ? mockupExportState.resolution : '1080p',
+          fps: (typeof mockupExportState !== 'undefined') ? mockupExportState.fps : 30
+        }
+      };
+    }
+
+    function applyProjectData(data, showToast = true) {
+      if (!data) return;
+      if (data.theme) {
+        if (data.theme.ratio) setStudioRatio(data.theme.ratio, true);
+        if (data.theme.wallpaper) setStudioWallpaper(data.theme.wallpaper, true);
+        if (data.theme.padding) setStudioPadding(data.theme.padding, true);
+        if (data.theme.borderRadius) setWindowBorderRadius(data.theme.borderRadius, true);
+        if (data.theme.shadowLevel) setWindowShadowLevel(data.theme.shadowLevel, true);
+        if (data.theme.filter && typeof setFilter === 'function') setFilter(data.theme.filter, true);
+        if (data.theme.speed && typeof setPlaybackSpeed === 'function') setPlaybackSpeed(data.theme.speed, true);
+      }
+      if (data.window && data.window.title) {
+        setWindowTitle(data.window.title, true);
+      }
+      if (data.behavior) {
+        if (typeof data.behavior.ripplePolish === 'boolean') {
+          studioConfig.ripplePolish = data.behavior.ripplePolish;
+          const btn = document.getElementById('btn-toggle-ripple');
+          if (btn) {
+            btn.className = studioConfig.ripplePolish
+              ? 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-obsidian-900/90 border border-aura-cyan/40 text-xs font-mono text-aura-cyan bg-aura-cyan/10 transition-all shadow-lg'
+              : 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-obsidian-900/90 border border-white/10 text-xs font-mono text-slate-400 hover:text-white transition-all shadow-lg';
+          }
+        }
+        if (typeof data.behavior.micEnabled === 'boolean') {
+          const mic = document.getElementById('chk-mic');
+          if (mic) mic.checked = data.behavior.micEnabled;
+        }
+        if (typeof data.behavior.sfxEnabled === 'boolean') {
+          const sfx = document.getElementById('chk-sfx');
+          if (sfx) sfx.checked = data.behavior.sfxEnabled;
+        }
+      }
+      if (data.export && typeof mockupExportState !== 'undefined') {
+        if (data.export.resolution) mockupExportState.resolution = data.export.resolution;
+        if (data.export.fps) mockupExportState.fps = data.export.fps;
+      }
+
+      saveSessionToLocalStorage();
+      updatePresetTuningUI();
+      if (showToast) {
+        showProjectToast('✨ 已套用風格：' + (data.name || '自訂專案範本'));
+      }
+    }
+
+    function exportCurrentProjectFile() {
+      audioSynth.playClick();
+      const current = getCurrentProjectState();
+      const titleName = (studioConfig.windowTitle || 'AURA_Project').trim();
+      const payload = {
+        name: titleName + ' 風格範本',
+        createdAt: new Date().toISOString(),
+        ...current
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const safe = titleName.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '_');
+      downloadBlob(blob, `${safe}.auraproj`);
+      audioSynth.playChime();
+      showProjectToast('📁 已匯出專案檔：' + safe + '.auraproj');
+    }
+
+    function exportPresetById(id) {
+      audioSynth.playClick();
+      const p = customPresets.find(x => x.id === id) || BUILTIN_PRESETS.find(x => x.id === id);
+      if (!p) return;
+      const json = JSON.stringify(p, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const safe = (p.name || 'AURA_Preset').replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '_');
+      downloadBlob(blob, `${safe}.auraproj`);
+      audioSynth.playChime();
+      showProjectToast('📁 已匯出預設集：' + safe + '.auraproj');
+    }
+
+    function importProjectFromFile(source) {
+      const file = (source && source.target) ? (source.target.files && source.target.files[0]) : source;
+      if (!file) return;
+      audioSynth.playClick();
+      const reader = new FileReader();
+      reader.onload = (re) => {
+        try {
+          const parsed = JSON.parse(re.target.result);
+          if (parsed && (parsed.theme || parsed.format === 'auraproj')) {
+            applyProjectData(parsed, true);
+          } else {
+            alert('此檔案格式不支援，請選擇正確的 .auraproj 或 .json 專案範本！');
+          }
+        } catch (err) {
+          alert('無法解析專案檔：' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      if (source && source.target) {
+        try { source.target.value = ''; } catch (_) {}
+      }
+    }
+
+    function saveCurrentAsPreset() {
+      audioSynth.playClick();
+      const defName = (studioConfig.windowTitle || '團隊風格') + ' 模板';
+      const name = prompt('請輸入新預設集名稱：', defName);
+      if (name === null) return;
+      const clean = name.trim() || defName;
+      const item = {
+        id: 'preset_' + Date.now(),
+        name: clean,
+        createdAt: new Date().toLocaleDateString(),
+        ...getCurrentProjectState()
+      };
+      customPresets.unshift(item);
+      try {
+        localStorage.setItem('aura_custom_presets', JSON.stringify(customPresets));
+      } catch (e) {}
+      renderCustomPresets();
+      audioSynth.playChime();
+      showProjectToast('⭐ 已儲存為新預設集：' + clean);
+    }
+
+    function deleteCustomPreset(id) {
+      audioSynth.playClick();
+      if (!confirm('確定要刪除此自訂預設集嗎？')) return;
+      customPresets = customPresets.filter(p => p.id !== id);
+      try {
+        localStorage.setItem('aura_custom_presets', JSON.stringify(customPresets));
+      } catch (e) {}
+      renderCustomPresets();
+      showProjectToast('🗑️ 已刪除預設集');
+    }
+
+    function resetToFactoryDefaults() {
+      audioSynth.playClick();
+      if (!confirm('確定要將工作台風格與參數還原為原廠預設狀態嗎？')) return;
+      try {
+        localStorage.removeItem('aura_project_session');
+      } catch (e) {}
+      applyProjectData(BUILTIN_PRESETS[0], false);
+      showProjectToast('🔄 已還原原廠預設狀態');
+    }
+
+    function saveSessionToLocalStorage() {
+      try {
+        localStorage.setItem('aura_project_session', JSON.stringify(getCurrentProjectState()));
+      } catch (e) {}
+    }
+
+    function restoreSessionFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem('aura_project_session');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          applyProjectData(parsed, false);
+        }
+      } catch (e) {}
+    }
+
+    function showProjectToast(msg, icon = '✨') {
+      const toast = document.getElementById('aura-toast');
+      const tMsg = document.getElementById('aura-toast-message');
+      const tIcon = document.getElementById('aura-toast-icon');
+      if (!toast) return;
+      if (tMsg) tMsg.innerText = msg;
+      if (tIcon) tIcon.innerText = icon;
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+      }, 2600);
     }
 
     function triggerAutoZoomDemo() {
@@ -1412,8 +2133,8 @@
     // ==========================================
     // 4. 電影濾鏡與播放倍速引擎 (Filters & Speed)
     // ==========================================
-    function setFilter(type) {
-      audioSynth.playClick();
+    function setFilter(type, skipSave = false) {
+      if (!skipSave) audioSynth.playClick();
       activeFilter = FILTER_CSS[type] ? type : 'none';
       stageVideo.classList.remove('filter-cyberpunk', 'filter-noir', 'filter-warm');
       if (activeFilter !== 'none') stageVideo.classList.add(`filter-${activeFilter}`);
@@ -1425,10 +2146,11 @@
         b.classList.toggle('font-bold', on);
         b.classList.toggle('text-slate-400', !on);
       });
+      if (!skipSave && typeof saveSessionToLocalStorage === 'function') saveSessionToLocalStorage();
     }
 
-    function setPlaybackSpeed(speed) {
-      audioSynth.playClick();
+    function setPlaybackSpeed(speed, skipSave = false) {
+      if (!skipSave) audioSynth.playClick();
       activeSpeed = Number(speed) || 1;
       stageVideo.playbackRate = activeSpeed;
       const order = [0.5, 1, 1.5, 2];
@@ -1439,6 +2161,7 @@
         b.classList.toggle('font-bold', on);
         b.classList.toggle('text-slate-400', !on);
       });
+      if (!skipSave && typeof saveSessionToLocalStorage === 'function') saveSessionToLocalStorage();
     }
 
     function stageContentRect() {
@@ -2460,6 +3183,9 @@
         showGlow: mockupExportState.showGlow,
         padding: mockupExportState.padding,
         ratio: mockupExportState.ratio,
+        borderRadius: studioConfig.borderRadius || 'md',
+        shadowLevel: studioConfig.shadowLevel || 'studio',
+        windowTitle: (studioConfig.windowTitle || 'AURA REC — 4K 60FPS').trim(),
         filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none'
       });
     }
@@ -2625,7 +3351,14 @@
       const winH = Math.round(ch + headerH);
       const winX = Math.round((W - winW) / 2);
       const winY = Math.round((H - winH) / 2);
-      const winRadius = Math.max(10, Math.round(winW * 0.016));
+
+      // 圓角半徑計算
+      let winRadius = Math.max(10, Math.round(winW * 0.016));
+      if (opts.borderRadius === 'sm') winRadius = Math.max(6, Math.round(winW * 0.009));
+      else if (opts.borderRadius === 'lg') winRadius = Math.max(16, Math.round(winW * 0.024));
+
+      // 陰影與光暈深度係數
+      const shadowFactor = opts.shadowLevel === 'subtle' ? 0.5 : (opts.shadowLevel === 'neon' ? 1.7 : 1.0);
 
       // 3. 環境光暈與深邃陰影
       if (showGlow) {
@@ -2636,12 +3369,12 @@
           obsidian: 'rgba(255, 255, 255, 0.12)',
           cyber: 'rgba(255, 0, 128, 0.4)'
         };
-        const glowColor = glowMap[theme] || 'rgba(0, 240, 255, 0.35)';
+        const glowColor = opts.glowColor || glowMap[theme] || 'rgba(0, 240, 255, 0.35)';
 
         ctx.save();
         ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-        ctx.shadowBlur = Math.round(winW * 0.04);
-        ctx.shadowOffsetY = Math.round(winW * 0.018);
+        ctx.shadowBlur = Math.round(winW * 0.04 * shadowFactor);
+        ctx.shadowOffsetY = Math.round(winW * 0.018 * shadowFactor);
         ctx.fillStyle = '#06080d';
         roundRect(ctx, winX, winY, winW, winH, winRadius);
         ctx.fill();
@@ -2649,9 +3382,9 @@
 
         ctx.save();
         ctx.shadowColor = glowColor;
-        ctx.shadowBlur = Math.round(winW * 0.035);
+        ctx.shadowBlur = Math.round(winW * 0.035 * shadowFactor);
         ctx.strokeStyle = glowColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = opts.shadowLevel === 'neon' ? 3 : 2;
         roundRect(ctx, winX, winY, winW, winH, winRadius);
         ctx.stroke();
         ctx.restore();
@@ -2703,7 +3436,7 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const titleEl = document.getElementById('window-title-text');
-        const titleText = (titleEl ? titleEl.innerText : 'AURA REC • 4K 60FPS').trim();
+        const titleText = (opts.windowTitle || (titleEl ? titleEl.innerText : 'AURA REC — 4K 60FPS')).trim();
         ctx.fillText(titleText, winX + winW / 2, winY + headerH / 2);
 
         // 比例膠囊
@@ -2799,7 +3532,10 @@
         showGlow: mockupExportState.showGlow,
         padding: mockupExportState.padding,
         ratio: mockupExportState.ratio,
-        filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none'
+        filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none',
+        borderRadius: studioConfig.borderRadius || 'md',
+        shadowLevel: studioConfig.shadowLevel || 'studio',
+        windowTitle: (studioConfig.windowTitle || 'AURA REC — 4K 60FPS').trim()
       };
 
       const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined';
@@ -3163,8 +3899,11 @@
           if (file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(file.name)) {
             audioSynth.playChime();
             loadVideoToWorkspace(file);
+          } else if (file.name.endsWith('.auraproj') || file.name.endsWith('.json') || file.type === 'application/json') {
+            audioSynth.playChime();
+            importProjectFromFile(file);
           } else {
-            alert('請拖入影片檔案 (MP4, WebM, MOV 等)！');
+            alert('請拖入影片檔案 (MP4, WebM, MOV 等) 或 .auraproj 專案範本！');
           }
         }
       });
@@ -3230,6 +3969,9 @@
         if (document.exitFullscreen) document.exitFullscreen();
       }
     }
+
+    // 初始化載入使用者先前的工作階段設定
+    restoreSessionFromLocalStorage();
   </script>
 
   <script>

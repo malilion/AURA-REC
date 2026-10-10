@@ -6,15 +6,15 @@
 	<dict>
 		<key>Resources/AURA-REC.html</key>
 		<data>
-		R2zW0RUIytH+1o+GL276f0BRuwg=
+		hYvswDNpgGL226PNVa3xlqyUlNk=
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		7bX3UWnn+UyWAdhQt/FHDJlguT0=
+		V/g7K1ddOaKK9WYSrPb5DFrNZHY=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
-		/X8AB4XlbtZpdOCxrxh5gLUD00Q=
+		il+f0YHIVNdTjtnrcUckeJS48Xg=
 		</data>
 		<key>Resources/aura_widgets.py</key>
 		<data>
@@ -58,11 +58,11 @@
 		</data>
 		<key>Resources/platform_utils.py</key>
 		<data>
-		I/KivXZwPa3WigiaZixRt5gAHOo=
+		X6M75LjZwNQnIpm6AMQW9agh5sA=
 		</data>
 		<key>Resources/recorder.py</key>
 		<data>
-		QqTLOTlv0w76BibfOwFnMe5//sQ=
+		fgfm9bUoBBgK/OgWp9RYKGrUIkQ=
 		</data>
 		<key>Resources/region_picker.py</key>
 		<data>
@@ -79,21 +79,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			EGuwMSINaEK6mJbwM3usbLA2VK4Y8BpWY4YmD0srpP4=
+			ss/neVRKvB5RzL0bbOYrbxiXXb7pc9QLuinoDAatHek=
 			</data>
 		</dict>
 		<key>Resources/README.md</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			hF1As9KmiCwS0zh/5bKCLWR6lovZ59F8XaZ63Z6g33U=
+			QwIDpl5sO6mSCqHt5WU9M7fv53ptuzm8fvYnvjjwiTs=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			P/rGW41RRTzLSpOIhHiZbpCDYGFDVVtBIPPGV793Mrg=
+			LbI945WtYv7gRdI7881blo9HIQHr12t3FdTnsl8jVtk=
 			</data>
 		</dict>
 		<key>Resources/aura_widgets.py</key>
@@ -170,14 +170,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			/VZPyQsyTK+XPinZhf/a2pzf422ZA310b3bx/vTTV38=
+			uzMqxVTq2PbS1Tcp/RgfSF4fjxAJ0YkJWy3JssA4EbU=
 			</data>
 		</dict>
 		<key>Resources/recorder.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			fzQvgZlsrpcZCqvOom7WjWN89wp6A2wErjr3UQ8g0d4=
+			rWAuVGBlS1BLKgT9rjntCQMIN11wr0UiQJzsYpWM5IE=
 			</data>
 		</dict>
 		<key>Resources/region_picker.py</key>

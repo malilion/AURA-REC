@@ -551,8 +551,8 @@ class LiteRecorderApp:
         ]
         self.res_combo.current(self._saved_index("res_index", self.capture_advice["res_index"], 3))
         self.fps_combo = labeled_combo(3, 2, "幀率")
-        self.fps_combo["values"] = ["30 FPS", "60 FPS（較吃資源）", "15 FPS（較省）"]
-        self.fps_combo.current(self._saved_index("fps_index", self.capture_advice["fps_index"], 2))
+        self.fps_combo["values"] = ["30 FPS", "60 FPS（流暢高幀率）", "120 FPS（電競/極限流暢）", "15 FPS（較省空間）"]
+        self.fps_combo.current(self._saved_index("fps_index", self.capture_advice["fps_index"], 3))
         self.quality_combo = labeled_combo(4, 0, "畫質")
         self.quality_combo["values"] = ["標準", "較省", "較清晰"]
         self.quality_combo.current(self._saved_index("quality_index", 0, 2))
@@ -1474,7 +1474,7 @@ class LiteRecorderApp:
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
         resolution = res_map.get(self.res_combo.current(), "native")
 
-        fps_map = {0: 30, 1: 60, 2: 15}
+        fps_map = {0: 30, 1: 60, 2: 120, 3: 15}
         fps = fps_map.get(self.fps_combo.current(), 30)
 
         use_accel = self.hardware_accel_var.get()
@@ -1798,7 +1798,7 @@ class LiteRecorderApp:
     def _selection_label(self):
         """準備錄影時顯示目前的解析度。和建議相同才保留順暢或平衡。"""
         res = {0: "原生", 1: "2K", 2: "1080p", 3: "720p"}.get(self.res_combo.current(), "1080p")
-        fps = {0: "30 FPS", 1: "60 FPS", 2: "15 FPS"}.get(self.fps_combo.current(), "30 FPS")
+        fps = {0: "30 FPS", 1: "60 FPS", 2: "120 FPS", 3: "15 FPS"}.get(self.fps_combo.current(), "30 FPS")
         advice = self.capture_advice
         if (
             self.res_combo.current() == advice["res_index"]
@@ -2643,9 +2643,13 @@ class LiteRecorderApp:
             ("FFmpeg 版本", diag["ffmpeg_version"]),
             ("使用中影像編碼器", f"{diag['active_encoder']} (硬體加速: {'是' if 'x264' not in diag['active_encoder'] else 'CPU 軟體'})"),
             ("支援之編碼器", ", ".join(diag["hardware_encoders"]) or "無"),
+        ]
+        if IS_WINDOWS and "win_capture_engine" in diag:
+            lines.append(("Windows 擷取引擎", diag["win_capture_engine"]))
+        lines.extend([
             ("錄影儲存目錄", str(self.recorder.output_dir)),
             ("剩餘磁碟空間", free_gb),
-        ]
+        ])
 
         report_text = "\n".join(f"[{k}] {v}" for k, v in lines)
 
