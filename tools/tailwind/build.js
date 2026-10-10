@@ -38,6 +38,14 @@ for (const page of pages) {
   const a = html.indexOf(START), b = html.indexOf(END);
   if (a < 0 || b < 0) throw new Error('markers missing in ' + page);
   html = html.slice(0, a + START.length) + '\n  <style>' + css.trim() + '</style>\n  ' + html.slice(b);
+  const VS = '<!-- vendor:start -->', VE = '<!-- vendor:end -->';
+  const va = html.indexOf(VS), vb = html.indexOf(VE);
+  if (va >= 0 && vb >= 0) {
+    // Single-file page: inline vendored libraries (web_studio/vendor) so it works fully offline.
+    const libs = ['lucide-1.55.0.min.js', 'mp4-muxer-5.1.4.min.js'].map((f) =>
+      fs.readFileSync(path.resolve(__dirname, '../../web_studio/vendor', f), 'utf8').replace(/<\/script/gi, '<\\/script'));
+    html = html.slice(0, va + VS.length) + '\n' + libs.map((l) => '  <script>' + l + '</script>').join('\n') + '\n  ' + html.slice(vb);
+  }
   html = applyCspHashes(html);
   fs.writeFileSync(page, html);
   console.log(path.basename(page), (css.length / 1024).toFixed(1) + ' KB');

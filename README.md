@@ -58,7 +58,7 @@
 5. 用時間軸看。要指出某一格，用左上角的畫筆。要換看法，用右上角的濾鏡和倍速。
 6. 在時間軸標好起點和終點，按「✨ 匯出霓虹外框 (MP4)」或「原始片段 (WebM)」。要圖就按「導出精華截圖」。
 
-需要網路載入字型與前端函式庫（Tailwind、Lucide、mp4-muxer，版本已固定），所以不是 100% 離線；錄影與匯出內容只在本機瀏覽器處理，不會上傳。本機也可以直接雙擊 `open_studio.command`（macOS）或 `open_studio.bat`（Windows），開的是同一個工作站。
+`AURA-REC.html` 單檔已內嵌字型、Tailwind CSS、Lucide 與 mp4-muxer，開啟後不需任何網路連線（完全離線）；官網首頁另載入 Lucide／GSAP／Lenis（版本已固定並加 SRI）。錄影與匯出內容只在本機瀏覽器處理，不會上傳。本機也可以直接雙擊 `open_studio.command`（macOS）或 `open_studio.bat`（Windows），開的是同一個工作站。
 
 ---
 

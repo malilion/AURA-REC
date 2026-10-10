@@ -104,10 +104,6 @@ fi
 
 rm -rf "$DMG_STAGING"
 
-if [ -d "web_studio/download" ]; then
-    cp -f "$DIST_DIR/$ZIP_NAME" "web_studio/download/$ZIP_NAME"
-    echo "      已同步至官網下載區: web_studio/download/$ZIP_NAME"
-fi
 
 echo "=================================================="
 echo "   打包完成！產出檔案如下："
