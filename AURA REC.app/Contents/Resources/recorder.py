@@ -33,6 +33,7 @@ from platform_utils import (
     video_encode_args,
     lower_process_priority,
     hold_awake,
+    check_windows_modern_capture_support,
 )
 
 
@@ -79,8 +80,9 @@ class ScreenRecorder:
         self._cmd_fd = None
         self._cmd_lock = threading.Lock()
 
-        # 跨平台尋找 FFmpeg
+        # 跨平台尋找 FFmpeg 與 Windows 現代 WGC / D3D11 支援探測
         self.ffmpeg_bin = find_executable("ffmpeg")
+        self.wgc_supported = check_windows_modern_capture_support(self.ffmpeg_bin) if IS_WINDOWS else False
 
     def ffmpeg_ok(self):
         return ffmpeg_is_available(self.ffmpeg_bin)
@@ -118,8 +120,9 @@ class ScreenRecorder:
                             audio_devs.append({"index": idx, "name": name})
 
             elif IS_WINDOWS:
-                # Windows DirectShow 設備掃描
-                video_devs.append({"index": "desktop", "name": "全螢幕桌面 (Primary Desktop)"})
+                # Windows DirectShow 設備掃描與 WGC 現代抓屏標示
+                desk_name = "全螢幕桌面 (WGC / D3D11 硬體加速)" if self.wgc_supported else "全螢幕桌面 (Primary Desktop)"
+                video_devs.append({"index": "desktop", "name": desk_name})
 
                 cmd = [self.ffmpeg_bin, "-list_devices", "true", "-f", "dshow", "-i", "dummy"]
                 p = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors="ignore", timeout=8)
@@ -175,8 +178,9 @@ class ScreenRecorder:
         profile=None,
         segment_sec=None,
         pip_config=None,
+        win_capture_mode="auto",
     ):
-        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。支援麥克風與系統音效獨立多音軌 (Multi-track) 錄製。"""
+        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。支援麥克風與系統音效獨立多音軌 (Multi-track) 錄製，並原生支援 Windows 現代 Direct3D 11 / WGC (ddagrab) 60/120 FPS 高幀率擷取。"""
         profile = profile or machine_profile()
         cmd = [
             self.ffmpeg_bin,
@@ -193,6 +197,15 @@ class ScreenRecorder:
         has_dual = has_mic and has_sys
         has_any_audio = has_mic or has_sys
         pip_enabled = bool(pip_config and pip_config.get("enabled"))
+
+        # Windows 擷取 API 模式選擇 (wgc / ddagrab / gdi / auto)
+        win_mode = str(win_capture_mode or "auto").lower()
+        use_wgc = False
+        if IS_WINDOWS:
+            if win_mode in ("wgc", "ddagrab"):
+                use_wgc = True
+            elif win_mode == "auto":
+                use_wgc = self.wgc_supported
 
         if pip_enabled:
             pip_camera_idx = str(pip_config.get("camera_idx", "0")).strip()
@@ -223,13 +236,20 @@ class ScreenRecorder:
                         "-i", f":{sys_audio_idx}",
                     ])
             elif IS_WINDOWS:
-                if video_idx is None or video_idx == "desktop":
-                    cmd.extend([
-                        "-f", "gdigrab",
-                        "-framerate", str(fps),
-                        "-draw_mouse", "1" if capture_cursor else "0",
-                        "-i", "desktop",
-                    ])
+                if video_idx is None or video_idx == "desktop" or str(video_idx).isdigit():
+                    if use_wgc:
+                        out_idx = int(video_idx) if (video_idx is not None and str(video_idx).isdigit()) else 0
+                        cmd.extend([
+                            "-f", "lavfi",
+                            "-i", f"ddagrab=output_idx={out_idx}:framerate={fps}:draw_mouse={1 if capture_cursor else 0}",
+                        ])
+                    else:
+                        cmd.extend([
+                            "-f", "gdigrab",
+                            "-framerate", str(fps),
+                            "-draw_mouse", "1" if capture_cursor else "0",
+                            "-i", "desktop",
+                        ])
                 else:
                     cmd.extend([
                         "-f", "dshow",
@@ -264,6 +284,9 @@ class ScreenRecorder:
             # 2. 濾鏡圖 (filter_complex)
             filter_parts = []
             base_label = "0:v"
+            if IS_WINDOWS and use_wgc:
+                filter_parts.append(f"[{base_label}]hwdownload,format=bgra[main_bgra]")
+                base_label = "main_bgra"
             if region:
                 x, y, w, h = [int(v) for v in region]
                 x -= x % 2
@@ -378,13 +401,20 @@ class ScreenRecorder:
                         "-i", f":{sys_audio_idx}",
                     ])
             elif IS_WINDOWS:
-                if video_idx is None or video_idx == "desktop":
-                    cmd.extend([
-                        "-f", "gdigrab",
-                        "-framerate", str(fps),
-                        "-draw_mouse", "1" if capture_cursor else "0",
-                        "-i", "desktop",
-                    ])
+                if video_idx is None or video_idx == "desktop" or str(video_idx).isdigit():
+                    if use_wgc:
+                        out_idx = int(video_idx) if (video_idx is not None and str(video_idx).isdigit()) else 0
+                        cmd.extend([
+                            "-f", "lavfi",
+                            "-i", f"ddagrab=output_idx={out_idx}:framerate={fps}:draw_mouse={1 if capture_cursor else 0}",
+                        ])
+                    else:
+                        cmd.extend([
+                            "-f", "gdigrab",
+                            "-framerate", str(fps),
+                            "-draw_mouse", "1" if capture_cursor else "0",
+                            "-i", "desktop",
+                        ])
                 else:
                     cmd.extend([
                         "-f", "dshow",
@@ -408,6 +438,8 @@ class ScreenRecorder:
                     cmd.extend(["-f", "pulse", "-i", str(sys_audio_idx)])
 
             filters = []
+            if IS_WINDOWS and use_wgc:
+                filters.extend(["hwdownload", "format=bgra"])
             if region:
                 x, y, w, h = [int(v) for v in region]
                 x -= x % 2
@@ -497,9 +529,10 @@ class ScreenRecorder:
         follow=None,
         prefix=None,
         pip_config=None,
+        win_capture_mode="auto",
     ):
         """
-        跨平台啟動錄影程序 (支援麥克風與系統音效獨立多音軌)
+        跨平台啟動錄影程序 (支援麥克風與系統音效獨立多音軌，Windows 優先啟用 WGC / Direct3D 11 高幀率硬體擷取)
         """
         if self.is_recording:
             return False, "錄影已在進行中"
@@ -548,15 +581,39 @@ class ScreenRecorder:
             "region": region,
             "quality": quality,
             "pip_config": pip_config,
+            "win_capture_mode": win_capture_mode,
         }
         actual = self._segment_file(0) if self._segment_seconds else self.current_output_file
         self._stderr_lines = []
         ok, msg = self._spawn(actual)
         if not ok:
+            # 若為 Windows 且原本使用 WGC 模式失敗，嘗試回退 GDI 模式重試
+            if IS_WINDOWS and self._capture_kwargs.get("win_capture_mode") != "gdi":
+                print("[Capture] WGC 擷取啟動失敗，平滑回退至 GDI 傳統相容模式...")
+                self._capture_kwargs["win_capture_mode"] = "gdi"
+                self._stderr_lines = []
+                ok, msg = self._spawn(actual)
+
+        if not ok:
             self.is_recording = False
             self.process = None
             self._segment_seconds = None
             return False, msg
+
+        # Windows: 若在啟動初期的 0.25 秒內因 Direct3D 裝置問題異常崩潰，自動重試 GDI
+        if IS_WINDOWS and self._capture_kwargs.get("win_capture_mode") != "gdi":
+            time.sleep(0.25)
+            if self.process and self.process.poll() is not None and self.process.returncode != 0:
+                print("[Capture] WGC/ddagrab 初始化受阻，自動平滑切換至 GDI 傳統相容模式...")
+                self._capture_kwargs["win_capture_mode"] = "gdi"
+                self._stderr_lines = []
+                ok, msg = self._spawn(actual)
+                if not ok:
+                    self.is_recording = False
+                    self.process = None
+                    self._segment_seconds = None
+                    return False, msg
+
         self.is_recording = True
         self.start_time = time.time()
         self._segment_started_at = self.start_time
