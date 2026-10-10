@@ -318,7 +318,8 @@ class LiteRecorderApp:
         self._recent_generation = 0
         self.auto_mini_var = tk.BooleanVar(value=self._flag("auto_mini", True))
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
-        self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
+        # 預設關閉：x264 依內容分配位元，同樣清晰度的檔案約為硬體編碼的 1/3 ~ 1/7。舊版存的 "hardware_accel" 不沿用。
+        self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel_v2", False))
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
         self.multitrack_var = tk.BooleanVar(value=self._flag("multitrack", True))
         self.sys_audio_var = tk.StringVar(value=str(self._saved.get("sys_audio_device", "")))
@@ -695,7 +696,7 @@ class LiteRecorderApp:
         self.reselect_btn.pack(side=tk.RIGHT)
         self._update_area_label()
 
-        accel_text = "使用硬體加速" if IS_MAC else ("使用 GPU 硬體加速" if IS_WINDOWS else "使用硬體加速")
+        accel_text = "硬體加速（速度優先，檔案較大）"
         checks = tk.Frame(settings_card, bg=UI["card"])
         checks.pack(fill=tk.X, padx=14, pady=(0, 8))
         checks.columnconfigure(0, weight=1)
@@ -1495,7 +1496,7 @@ class LiteRecorderApp:
         payload = {
             "res_index": self.res_combo.current(),
             "fps_index": self.fps_combo.current(),
-            "hardware_accel": bool(self.hardware_accel_var.get()),
+            "hardware_accel_v2": bool(self.hardware_accel_var.get()),
             "countdown": bool(self.countdown_var.get()),
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
@@ -2109,6 +2110,9 @@ class LiteRecorderApp:
         quality_scale = {1: 0.7, 2: 1.35}.get(self.quality_combo.current(), 1.0)
         fps = {0: 30, 1: 60, 2: 120, 3: 15}.get(self.fps_combo.current(), 30)
         video_k = max(500, int(capture_bitrate_k(resolution, machine_profile(), fps) * quality_scale))
+        if not self.hardware_accel_var.get():
+            # 軟體 x264 (CRF) 依畫面內容分配，桌面錄影實測約為上限碼率的 3 成；這裡是估計值
+            video_k = max(300, int(video_k * 0.3))
         audio_count = (1 if self.audio_combo.current() > 0 else 0) + (1 if hasattr(self, "sys_audio_combo") and self.sys_audio_combo.current() > 0 else 0)
         audio_k = 96 * audio_count
         return video_k, audio_k
@@ -3234,7 +3238,7 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="錄製滑鼠游標", variable=self.capture_cursor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="滑鼠點擊發光漣漪 (Click Ripple)", variable=self.click_ripple_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="即時按鍵浮水印 (Keystroke HUD)", variable=self.keystroke_hud_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
-        AuraCheck(opt_box, text="啟用晶片 GPU 硬體加速", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="硬體加速（速度優先，檔案較大）", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用錄影與截圖音效提示", variable=self.sound_alert_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟動時自動檢查新版本", variable=self.check_updates_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
 

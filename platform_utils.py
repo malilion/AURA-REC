@@ -1528,15 +1528,17 @@ def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced", q
         return ["-c:v", "h264_qsv", "-global_quality", level(base), "-pix_fmt", "nv12"]
     if enc == "h264_amf":
         return ["-c:v", "h264_amf", "-quality", "speed", "-b:v", rate, "-pix_fmt", "yuv420p"]
-    preset = "ultrafast" if profile != "high" else "veryfast"
-    crf = "32" if profile == "light" else ("28" if profile == "balanced" else "24")
+    # 軟體 x264：以 CRF（固定畫質）為主，位元依畫面內容分配，靜止的桌面幾乎不花位元；
+    # maxrate 只是動作很大時的保險。同樣清晰度的檔案約為硬體編碼的 1/3 ~ 1/7。
+    preset = "superfast" if profile == "light" else "veryfast"
+    crf = {"light": "24", "balanced": "20", "high": "18"}.get(profile, "20")
     return [
         "-c:v", "libx264",
         "-preset", preset,
-        "-tune", "zerolatency",
+        "-profile:v", "high",
         "-crf", level(crf),
-        "-maxrate", rate,
-        "-bufsize", f"{int(bitrate_k) * 2}k",
+        "-maxrate", f"{int(int(bitrate_k) * 1.5)}k",
+        "-bufsize", f"{int(bitrate_k) * 3}k",
         "-threads", str(threads),
         "-pix_fmt", "yuv420p",
     ]
