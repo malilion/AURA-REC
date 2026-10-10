@@ -30,6 +30,7 @@ from pathlib import Path
 from recorder import LOW_DISK_BYTES, ScreenRecorder, format_bytes, free_disk_bytes, save_still
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
+from input_overlay import InputOverlayManager
 from region_picker import (
     bar_origin,
     box_to_points,
@@ -300,7 +301,10 @@ class LiteRecorderApp:
         self.pip_pos_var = tk.StringVar(value=str(self._saved.get("pip_pos", "右下角")))
         self.pip_size_var = tk.StringVar(value=str(self._saved.get("pip_size", "中 (260px)")))
         self.pip_border_var = tk.StringVar(value=str(self._saved.get("pip_border", "極光霓虹藍 (#00f0ff)")))
+        self.click_ripple_var = tk.BooleanVar(value=self._flag("click_ripple", True))
+        self.keystroke_hud_var = tk.BooleanVar(value=self._flag("keystroke_hud", True))
         self._camera_bubble_win = None
+        self._input_overlay_mgr = None
 
         self.video_devices = []
         self.audio_devices = []
@@ -580,6 +584,8 @@ class LiteRecorderApp:
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
             ("錄下游標", self.capture_cursor_var),
+            ("點擊發光波紋", self.click_ripple_var),
+            ("即時按鍵顯示", self.keystroke_hud_var),
             ("截圖自動複製", self.auto_copy_screenshot_var),
             ("音效提示", self.sound_alert_var),
         )):
@@ -1285,6 +1291,8 @@ class LiteRecorderApp:
             "pip_pos": self.pip_pos_var.get() if hasattr(self, "pip_pos_var") else "",
             "pip_size": self.pip_size_var.get() if hasattr(self, "pip_size_var") else "",
             "pip_border": self.pip_border_var.get() if hasattr(self, "pip_border_var") else "",
+            "click_ripple": bool(self.click_ripple_var.get()) if hasattr(self, "click_ripple_var") else True,
+            "keystroke_hud": bool(self.keystroke_hud_var.get()) if hasattr(self, "keystroke_hud_var") else True,
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -1501,6 +1509,9 @@ class LiteRecorderApp:
         if self.pip_enabled_var.get() and self.pip_floating_var.get():
             self._show_camera_bubble()
 
+        if self.click_ripple_var.get() or self.keystroke_hud_var.get():
+            self._start_input_overlay()
+
         if self.recorder.process is not None:
             hold_awake(self.recorder.process.pid)
         if conceal is not None:
@@ -1561,6 +1572,7 @@ class LiteRecorderApp:
         release_awake()
         self._play_alert("stop")
         self._restore_conceal()
+        self._stop_input_overlay()
 
         if self.is_mini_mode:
             self._switch_to_normal_mode()
@@ -1643,6 +1655,7 @@ class LiteRecorderApp:
                 self.shot_btn.config(state=tk.NORMAL)
         else:
             self._close_camera_bubble()
+            self._stop_input_overlay()
             self.status_badge.config(text="●  就緒", fg=UI["ok"])
             self.record_btn.config(text="開始錄影", style="Primary.TButton")
             self._layout_record_buttons(False)
@@ -2366,6 +2379,33 @@ class LiteRecorderApp:
                 pass
             self._camera_bubble_win = None
 
+    def _start_input_overlay(self):
+        """啟動滑鼠點擊發光波紋與按鍵 HUD"""
+        self._stop_input_overlay()
+        ripple_on = bool(self.click_ripple_var.get())
+        hud_on = bool(self.keystroke_hud_var.get())
+        if not ripple_on and not hud_on:
+            return
+        try:
+            self._input_overlay_mgr = InputOverlayManager(
+                self.root,
+                ripple_enabled=ripple_on,
+                hud_enabled=hud_on,
+                region=self.region,
+            )
+            self._input_overlay_mgr.start()
+        except Exception as e:
+            print(f"啟動輸入覆蓋層異常: {e}")
+
+    def _stop_input_overlay(self):
+        """停止滑鼠點擊發光波紋與按鍵 HUD"""
+        if self._input_overlay_mgr:
+            try:
+                self._input_overlay_mgr.stop()
+            except Exception as e:
+                print(f"停止輸入覆蓋層異常: {e}")
+            self._input_overlay_mgr = None
+
     def _show_system_audio_guide(self):
         """開啟系統內部聲音錄製指南對話框"""
         win = tk.Toplevel(self.root)
@@ -2694,6 +2734,8 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="錄影時縮成小視窗", variable=self.auto_mini_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="截圖後自動複製至剪貼簿", variable=self.auto_copy_screenshot_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="錄製滑鼠游標", variable=self.capture_cursor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="滑鼠點擊發光漣漪 (Click Ripple)", variable=self.click_ripple_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="即時按鍵浮水印 (Keystroke HUD)", variable=self.keystroke_hud_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用晶片 GPU 硬體加速", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用錄影與截圖音效提示", variable=self.sound_alert_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
 
@@ -3116,6 +3158,7 @@ class LiteRecorderApp:
 
     def _on_close(self):
         self._close_camera_bubble()
+        self._stop_input_overlay()
         self._remember_window()
         if self.recorder.is_recording:
             if not messagebox.askyesno("正在錄影", "錄影還沒停。要停下來並結束嗎？"):
@@ -3133,6 +3176,7 @@ class LiteRecorderApp:
 
     def _destroy_after_stop(self):
         self._close_camera_bubble()
+        self._stop_input_overlay()
         release_awake()
         self.root.destroy()
 
