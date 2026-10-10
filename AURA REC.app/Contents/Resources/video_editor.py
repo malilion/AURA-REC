@@ -234,6 +234,72 @@ def gif_export_settings(duration, fps=12, width=640, profile=None):
     }
 
 
+def build_blur_mask_graph(blur_masks, base_label="0:v", width=1920, height=1080, out_label="outv"):
+    """
+    產生多遮罩串聯之 filter_complex 濾鏡語句與最終輸出標籤。
+    支援高斯/盒式模糊 (blur) 與 局部馬賽克/像素化 (mosaic)。
+    blur_masks: 遮罩清單，每一項為 dict:
+      {
+        "type": "blur" | "mosaic",
+        "norm_rect": (nx, ny, nw, nh), # 0.0 ~ 1.0 (left, top, width, height)
+        "time_range": (start_sec, end_sec) 或 None (全程套用),
+        "strength": int (模糊半徑或馬賽克顆粒大小)
+      }
+    """
+    if not blur_masks:
+        return "", base_label
+
+    width = _even(width or 1920)
+    height = _even(height or 1080)
+    statements = []
+    curr_label = base_label
+
+    for idx, mask in enumerate(blur_masks):
+        m_type = mask.get("type", "blur")
+        rect = mask.get("norm_rect") or (0.0, 0.0, 1.0, 1.0)
+        nx = max(0.0, min(1.0, float(rect[0])))
+        ny = max(0.0, min(1.0, float(rect[1])))
+        nw = max(0.01, min(1.0 - nx, float(rect[2])))
+        nh = max(0.01, min(1.0 - ny, float(rect[3])))
+
+        w = max(4, _even(int(round(nw * width))))
+        h = max(4, _even(int(round(nh * height))))
+        x = max(0, min(width - w, _even(int(round(nx * width)))))
+        y = max(0, min(height - h, _even(int(round(ny * height)))))
+
+        strength = mask.get("strength")
+        if m_type == "mosaic":
+            blk = int(strength or 16)
+            blk = max(4, min(64, blk))
+            eff_filter = f"scale=max(2\,iw/{blk}):max(2\,ih/{blk}):flags=neighbor,scale={w}:{h}:flags=neighbor"
+        else:
+            rad = int(strength or 20)
+            rad = max(4, min(80, rad))
+            eff_filter = f"boxblur={rad}:3"
+
+        time_range = mask.get("time_range")
+        enable_str = ""
+        if time_range and len(time_range) == 2:
+            t0, t1 = time_range
+            if t0 is not None and t1 is not None and float(t1) > float(t0):
+                enable_str = f":enable='between(t,{float(t0):.3f},{float(t1):.3f})'"
+
+        next_label = f"m{idx}_out" if idx < len(blur_masks) - 1 else out_label
+        split_main = f"m{idx}_main"
+        split_crop = f"m{idx}_crop"
+        eff_lbl = f"m{idx}_eff"
+
+        stmt = (
+            f"[{curr_label}]split[{split_main}][{split_crop}];"
+            f"[{split_crop}]crop={w}:{h}:{x}:{y},{eff_filter}[{eff_lbl}];"
+            f"[{split_main}][{eff_lbl}]overlay={x}:{y}{enable_str}[{next_label}]"
+        )
+        statements.append(stmt)
+        curr_label = next_label
+
+    return ";".join(statements), curr_label
+
+
 class VideoEditor:
     def __init__(self, ffmpeg_bin=None, ffprobe_bin=None, ffplay_bin=None):
         self.ffmpeg_bin = ffmpeg_bin or find_executable("ffmpeg")
@@ -789,9 +855,10 @@ class VideoEditor:
         volume=1.0,
         target_resolution="original",
         zoom_config=None,
+        blur_masks=None,
     ):
         """
-        高級精準幀剪輯 (支援自動縮放運鏡、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
+        高級精準幀剪輯 (支援自動縮放運鏡、隱私遮罩模糊/馬賽克、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -814,6 +881,7 @@ class VideoEditor:
 
         profile = machine_profile()
         vf_list = []
+        has_blur_masks = bool(blur_masks and len(blur_masks) > 0)
 
         # 1. 智慧運鏡與自動縮放 (Auto Zoom & Pan)
         if zoom_config and zoom_config.get("enabled"):
@@ -848,19 +916,37 @@ class VideoEditor:
         if aspect_ratio == "9:16" and anchor == "fit":
             canvas_w, canvas_h = vertical_canvas_size(profile)
             graph = vertical_fit_graph(canvas_w, canvas_h)
-            if vf_list:
-                pre_chain = ",".join(vf_list)
-                graph = f"[0:v]{pre_chain}[pre];[pre]{graph}[outv]"
+            if has_blur_masks:
+                mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
+                if vf_list:
+                    pre_chain = ",".join(vf_list)
+                    graph = f"{mask_graph};[{mask_out}]{pre_chain}[pre];[pre]{graph}[outv]"
+                else:
+                    graph = f"{mask_graph};[{mask_out}]{graph}[outv]"
             else:
-                graph = f"[0:v]{graph}[outv]"
+                if vf_list:
+                    pre_chain = ",".join(vf_list)
+                    graph = f"[0:v]{pre_chain}[pre];[pre]{graph}[outv]"
+                else:
+                    graph = f"[0:v]{graph}[outv]"
             cmd.extend(["-filter_complex", graph, "-map", "[outv]"])
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
             if crop:
                 vf_list.append(crop)
-            if vf_list:
-                cmd.extend(["-vf", ",".join(vf_list)])
-            cmd.extend(["-map", "0:v"])
+            if has_blur_masks:
+                if vf_list:
+                    mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
+                    vf_chain = ",".join(vf_list)
+                    graph = f"{mask_graph};[{mask_out}]{vf_chain}[outv]"
+                    cmd.extend(["-filter_complex", graph, "-map", "[outv]"])
+                else:
+                    mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="outv")
+                    cmd.extend(["-filter_complex", mask_graph, "-map", "[outv]"])
+            else:
+                if vf_list:
+                    cmd.extend(["-vf", ",".join(vf_list)])
+                cmd.extend(["-map", "0:v"])
 
         export_rate = {"light": 1800, "balanced": 2800, "high": 4500}.get(profile, 2800)
         cmd.extend(["-threads", str(encode_threads(profile))])
@@ -899,9 +985,9 @@ class VideoEditor:
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
 
-    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center", zoom_config=None):
+    def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center", zoom_config=None, blur_masks=None):
         """
-        GIF 導出。文書電腦降低幀率、寬度和調色盤，避免兩遍 lanczos 把機器卡住。
+        GIF 導出。支援隱私遮罩模糊、自動縮放。
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -917,12 +1003,14 @@ class VideoEditor:
             width = min(int(width), 360)
         budget = gif_export_settings(duration, fps=fps, width=width, profile=profile)
 
+        has_blur_masks = bool(blur_masks and len(blur_masks) > 0)
+        info = self.get_video_info(input_file) or {}
+        v_w = info.get("width", 1920) or 1920
+        v_h = info.get("height", 1080) or 1080
+        v_fps = info.get("fps", 30.0) or 30.0
+
         zoom_filters = []
         if zoom_config and zoom_config.get("enabled"):
-            info = self.get_video_info(input_file) or {}
-            v_w = info.get("width", 1920) or 1920
-            v_h = info.get("height", 1080) or 1080
-            v_fps = info.get("fps", 30.0) or 30.0
             z_filter = build_zoom_filter(
                 zoom_mode=zoom_config.get("mode", "off"),
                 zoom_level=zoom_config.get("level", 1.5),
@@ -943,10 +1031,20 @@ class VideoEditor:
         if fit:
             canvas_w, canvas_h = (270, 480) if profile == "light" else (360, 640)
             vert = vertical_fit_graph(canvas_w, canvas_h)
-            if zoom_filters:
-                vf = ",".join(zoom_filters) + "," + vert + "," + palette
+            if has_blur_masks:
+                mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
+                if zoom_filters:
+                    pre_chain = ",".join(zoom_filters)
+                    fc = f"{mask_graph};[{mask_out}]{pre_chain}[pre];[pre]{vert}[vfit];[vfit]{palette}[outv]"
+                else:
+                    fc = f"{mask_graph};[{mask_out}]{vert}[vfit];[vfit]{palette}[outv]"
+                cmd_filters = ["-filter_complex", fc, "-map", "[outv]"]
             else:
-                vf = vert + "," + palette
+                if zoom_filters:
+                    vf = ",".join(zoom_filters) + "," + vert + "," + palette
+                else:
+                    vf = vert + "," + palette
+                cmd_filters = ["-vf", vf]
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
             chain = []
@@ -954,8 +1052,18 @@ class VideoEditor:
                 chain.extend(zoom_filters)
             if crop:
                 chain.append(crop)
-            chain.append(palette)
-            vf = ",".join(chain)
+            if has_blur_masks:
+                mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
+                if chain:
+                    mid_chain = ",".join(chain)
+                    fc = f"{mask_graph};[{mask_out}]{mid_chain},{palette}[outv]"
+                else:
+                    fc = f"{mask_graph};[{mask_out}]{palette}[outv]"
+                cmd_filters = ["-filter_complex", fc, "-map", "[outv]"]
+            else:
+                chain.append(palette)
+                vf = ",".join(chain)
+                cmd_filters = ["-vf", vf]
 
         cmd = [self.ffmpeg_bin, "-y"]
         if budget["profile"] == "light":
@@ -965,7 +1073,7 @@ class VideoEditor:
             "-ss", f"{start_sec:.3f}",
             "-i", input_file,
             "-t", f"{duration:.3f}",
-            "-vf", vf,
+            *cmd_filters,
             output_file,
         ])
 
