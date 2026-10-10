@@ -6,15 +6,15 @@
 	<dict>
 		<key>Resources/AURA-REC.html</key>
 		<data>
-		GE8b+jEdR/6YTOE/YPz6fvTs354=
+		VoRHtFz1P3sy5jH/NrBHw83HDzw=
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		CFSj/UpoHzbtixuBe/gIIFH4sVg=
+		XyFW4gVb76OzEfzif2VTxF60HhQ=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
-		9xTYskVQeSHCoTcCa+PyDpvyMVA=
+		H4FbA6oAeLM7jv3/DbRrxglE4cU=
 		</data>
 		<key>Resources/aura_widgets.py</key>
 		<data>
@@ -22,11 +22,11 @@
 		</data>
 		<key>Resources/auto_updater.py</key>
 		<data>
-		8Azb7UAjF/d8Sk8jBdODMCH30bI=
+		3I6xAUz/UbhTJTjGi2oMjby+/9c=
 		</data>
 		<key>Resources/editor_window.py</key>
 		<data>
-		ZOve6MTaeAFMd2jf+qD+BBNsars=
+		tdjbTdWd6LjyEFC19nsYUrVs/hE=
 		</data>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
 		<data>
@@ -46,7 +46,7 @@
 		</data>
 		<key>Resources/i18n.py</key>
 		<data>
-		7r+5aVFt+4P0gaYgdRfd8tPLCA4=
+		ap1Cr6ZYsBjpe54jq5JzOqoQP0Y=
 		</data>
 		<key>Resources/icon.icns</key>
 		<data>
@@ -58,7 +58,7 @@
 		</data>
 		<key>Resources/platform_utils.py</key>
 		<data>
-		D/cg9m+Pe7l0IqtaCSgfk1HhooI=
+		uXdatghqRBoOeuDmK9Rbb4UU0nk=
 		</data>
 		<key>Resources/recorder.py</key>
 		<data>
@@ -74,15 +74,15 @@
 		</data>
 		<key>Resources/speech_to_text.py</key>
 		<data>
-		Bv8wEkfqaB9IJU1IeP9Hj716Zys=
+		DfhbAMQ3Ngp0kkHrvqXYFJwIuT4=
 		</data>
 		<key>Resources/video_editor.py</key>
 		<data>
-		s6OkeTsUV+4xQ9dxKEwzG9wLsAk=
+		5gz5fbIEwobjhn3ubj1fh5b5vEU=
 		</data>
 		<key>Resources/window_exclusion_watermark.py</key>
 		<data>
-		Z5VktwR289a21LydbvJmgZsZ+sE=
+		g3VoMiCHIEje0qXgqjr0DoXyaz8=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -91,21 +91,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			ptXioUqHAfsj3aaz7lQknhEMIl4CfbsD9th2WomObHs=
+			g/6TNUnMwrAZ6r2ZsEdhIYzvX5K4JIArwUAvZ88ByCY=
 			</data>
 		</dict>
 		<key>Resources/README.md</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			7kJtTWM58++xovWwMGBFJcSnS4z26ldatiBE6qgZf4U=
+			h6BKwJcNeMpFDlj6d9mw9e9Xx23YB14+5kcdpnPbRl4=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			u0MU+h+7AUSSEPRN1iK7ddk8vB0k1GBcuxCJAp95J0U=
+			e+vZ/VMxqiARbO7TO6Pp/jWLxb3HvK+uPfR6kHwWS/A=
 			</data>
 		</dict>
 		<key>Resources/aura_widgets.py</key>
@@ -119,14 +119,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			vJS0m3fCWT02a7JIouLs1GlAkeAj0IfimGqS4F0lMsw=
+			tLFmlZu4BmQlHHMcPVhxNp3lrRVPS34Mh58F+sF1/kc=
 			</data>
 		</dict>
 		<key>Resources/editor_window.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			cxkdUQD6m5TtZJFdMXuQXTcRjmuLcILyiGFmvQkrivM=
+			qEf7o6Vi+NeoE3R+yHWs0zFu2FonWFnCgTkPZNwFLvI=
 			</data>
 		</dict>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
@@ -161,7 +161,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			P6p2T6ehIjIIBOZ738NJFCxlX9N7t1Rr/BDop4o2JLw=
+			mfqOI/HUfXDiGS/wVPAwzEWuntWT1BKsJMUFCTAqlnY=
 			</data>
 		</dict>
 		<key>Resources/icon.icns</key>
@@ -182,7 +182,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			oXgov2mJ7/yts9MpAHpBBEJSM5dikCvhIJN36YI2MYw=
+			zvOcTqRxInk+XxnUBg3vVDFqwQCIEGgc8nmzc2kgjEc=
 			</data>
 		</dict>
 		<key>Resources/recorder.py</key>
@@ -210,21 +210,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			LK22NH077/SqYcQeqNJn8gAn6UbeDj49bo8XNUo14CA=
+			cWI1WRzc/suvobk3qez4zNgRaAf/ui/1EJ/GL+kf2qg=
 			</data>
 		</dict>
 		<key>Resources/video_editor.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			qda81FFysFb4SDZ8Cq3JjQvflK0knFK0kqPfvYaOYYc=
+			bjB+8gKO8EJ/qtWIx+rh36TuLTJO0l7wgeHPaQVEPJM=
 			</data>
 		</dict>
 		<key>Resources/window_exclusion_watermark.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			87dO1nfeje1mlnw8HMqV1R8UyxM0/HifWHtq7HZVxfk=
+			QWn5+/2qG2kIXQFb8BSnOE0goTGepGHWwOdsffTdHZg=
 			</data>
 		</dict>
 	</dict>

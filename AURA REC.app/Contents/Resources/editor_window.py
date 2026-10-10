@@ -15,6 +15,8 @@ VideoEditorWindow - Recordly / Screen Studio 風格專業影片剪輯工作站
 
 import os
 import re
+import shutil
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -762,7 +764,7 @@ class VideoEditorWindow:
         AuraCheck(export_card, text="同時匯出同名 .srt 字幕檔", variable=self.export_srt_var).pack(anchor="w", padx=10, pady=(0, 2))
         AuraCheck(
             export_card,
-            text="匯出時燒錄防盜浮水印",
+            text="匯出時燒錄標示浮水印",
             variable=self.watermark_enabled_var,
             command=self._on_editor_watermark_toggle,
         ).pack(anchor="w", padx=10, pady=(0, 6))
@@ -1363,14 +1365,14 @@ class VideoEditorWindow:
         if dist_in <= 12 and dist_in <= dist_out:
             if self._hover_target != "in_handle":
                 self._hover_target = "in_handle"
-                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow")
                 self._skimmer_x = None
                 self._redraw_filmstrip()
             return
         elif dist_out <= 12:
             if self._hover_target != "out_handle":
                 self._hover_target = "out_handle"
-                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow")
                 self._skimmer_x = None
                 self._redraw_filmstrip()
             return

@@ -122,8 +122,8 @@ def build_zoom_filter(
     if zoom_mode == "static":
         crop_w = f"trunc(iw/{zoom_level:.2f}/2)*2"
         crop_h = f"trunc(ih/{zoom_level:.2f}/2)*2"
-        crop_x = f"trunc(max(0\,min(iw-iw/{zoom_level:.2f}\,iw*{focus_x:.3f}-iw/{zoom_level:.2f}/2))/2)*2"
-        crop_y = f"trunc(max(0\,min(ih-ih/{zoom_level:.2f}\,ih*{focus_y:.3f}-ih/{zoom_level:.2f}/2))/2)*2"
+        crop_x = rf"trunc(max(0\,min(iw-iw/{zoom_level:.2f}\,iw*{focus_x:.3f}-iw/{zoom_level:.2f}/2))/2)*2"
+        crop_y = rf"trunc(max(0\,min(ih-ih/{zoom_level:.2f}\,ih*{focus_y:.3f}-ih/{zoom_level:.2f}/2))/2)*2"
         return f"crop=w={crop_w}:h={crop_h}:x={crop_x}:y={crop_y},scale={width}:{height}"
 
     total_frames = max(1, int(round(duration_sec * fps)))
@@ -132,17 +132,17 @@ def build_zoom_filter(
         trans_frames = max(1, int(round(trans_sec * fps)))
         out_start_frame = max(trans_frames, total_frames - trans_frames)
         z_expr = (
-            f"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,"
-            f"if(gte(on\,{out_start_frame})\,{zoom_level:.2f}-({zoom_level:.2f}-1.0)*((on-{out_start_frame})/{trans_frames})\,"
+            rf"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,"
+            rf"if(gte(on\,{out_start_frame})\,{zoom_level:.2f}-({zoom_level:.2f}-1.0)*((on-{out_start_frame})/{trans_frames})\,"
             f"{zoom_level:.2f}))"
         )
     else:  # smooth_in
         trans_sec = min(0.8, max(0.25, duration_sec * 0.3))
         trans_frames = max(1, int(round(trans_sec * fps)))
-        z_expr = f"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,{zoom_level:.2f})"
+        z_expr = rf"if(lte(on\,{trans_frames})\,1.0+({zoom_level:.2f}-1.0)*(on/{trans_frames})\,{zoom_level:.2f})"
 
-    x_expr = f"max(0\,min(iw-iw/zoom\,iw*{focus_x:.3f}-iw/zoom/2))"
-    y_expr = f"max(0\,min(ih-ih/zoom\,ih*{focus_y:.3f}-ih/zoom/2))"
+    x_expr = rf"max(0\,min(iw-iw/zoom\,iw*{focus_x:.3f}-iw/zoom/2))"
+    y_expr = rf"max(0\,min(ih-ih/zoom\,ih*{focus_y:.3f}-ih/zoom/2))"
     return f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':d=1:s={width}x{height}:fps={fps:.2f}"
 
 
@@ -160,8 +160,8 @@ def preview_video_filter(aspect_ratio, anchor="center", width=512, height=288, z
         if z_level > 1.01:
             cw = f"trunc(iw/{z_level:.2f}/2)*2"
             ch = f"trunc(ih/{z_level:.2f}/2)*2"
-            cx = f"trunc(max(0\,min(iw-iw/{z_level:.2f}\,iw*{fx:.3f}-iw/{z_level:.2f}/2))/2)*2"
-            cy = f"trunc(max(0\,min(ih-ih/{z_level:.2f}\,ih*{fy:.3f}-ih/{z_level:.2f}/2))/2)*2"
+            cx = rf"trunc(max(0\,min(iw-iw/{z_level:.2f}\,iw*{fx:.3f}-iw/{z_level:.2f}/2))/2)*2"
+            cy = rf"trunc(max(0\,min(ih-ih/{z_level:.2f}\,ih*{fy:.3f}-ih/{z_level:.2f}/2))/2)*2"
             zoom_crop = f"crop=w={cw}:h={ch}:x={cx}:y={cy}"
 
     if aspect_ratio == "9:16" and anchor == "fit":
@@ -272,7 +272,7 @@ def build_blur_mask_graph(blur_masks, base_label="0:v", width=1920, height=1080,
         if m_type == "mosaic":
             blk = int(strength or 16)
             blk = max(4, min(64, blk))
-            eff_filter = f"scale=max(2\,iw/{blk}):max(2\,ih/{blk}):flags=neighbor,scale={w}:{h}:flags=neighbor"
+            eff_filter = rf"scale=max(2\,iw/{blk}):max(2\,ih/{blk}):flags=neighbor,scale={w}:{h}:flags=neighbor"
         else:
             rad = int(strength or 20)
             rad = max(4, min(80, rad))

@@ -487,7 +487,7 @@ class SpeechToTextEngine:
             ]
 
             try:
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=1800)
                 srt_file = f"{out_base}.srt"
                 if os.path.exists(srt_file):
                     track = SubtitleTrack.from_srt(srt_file)
@@ -498,6 +498,8 @@ class SpeechToTextEngine:
                             cue.end = round(cue.end + start_sec, 2)
                     return True, track
                 return False, f"Whisper 辨識未輸出字幕: {res.stderr}"
+            except subprocess.TimeoutExpired:
+                return False, "Whisper 辨識逾時（超過 30 分鐘），已終止。請改用較小的模型。"
             except Exception as e:
                 return False, f"執行 Whisper 異常: {str(e)}"
 
@@ -901,10 +903,12 @@ class SubtitleDialog:
 
                 self.win.after(0, finish)
             except Exception as e:
+                err_msg = str(e)  # Python 3 會在 except 結束後刪除 e，閉包需先保存
+
                 def err():
                     self._is_generating = False
                     self.btn_generate.config(text="✨ 開始產生字幕", state=tk.NORMAL)
-                    self.lbl_gen_status.config(text=f"❌ 錯誤: {e}")
+                    self.lbl_gen_status.config(text=f"❌ 錯誤: {err_msg}")
                 self.win.after(0, err)
 
         threading.Thread(target=work, daemon=True).start()
