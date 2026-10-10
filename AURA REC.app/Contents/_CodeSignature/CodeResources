@@ -10,11 +10,11 @@
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		V/g7K1ddOaKK9WYSrPb5DFrNZHY=
+		SgJXWCSh4gliiHyn95VeCFS9nGw=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
-		il+f0YHIVNdTjtnrcUckeJS48Xg=
+		7Vf2mG4A5AyCH95hhRj1DyHWjMY=
 		</data>
 		<key>Resources/aura_widgets.py</key>
 		<data>
@@ -58,7 +58,7 @@
 		</data>
 		<key>Resources/platform_utils.py</key>
 		<data>
-		X6M75LjZwNQnIpm6AMQW9agh5sA=
+		dnPpwrwVE3x1Zq+Y3RXd38cGaO0=
 		</data>
 		<key>Resources/recorder.py</key>
 		<data>
@@ -67,6 +67,10 @@
 		<key>Resources/region_picker.py</key>
 		<data>
 		ak4zs18Td++YnW+i+PFUR5lGHvk=
+		</data>
+		<key>Resources/screen_annotation.py</key>
+		<data>
+		6FJGRthC55nCG91hKZj0J2Ew8p4=
 		</data>
 		<key>Resources/video_editor.py</key>
 		<data>
@@ -86,14 +90,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			QwIDpl5sO6mSCqHt5WU9M7fv53ptuzm8fvYnvjjwiTs=
+			N2iCqBbJ4dWflkmt81yibtTPWJzKMDiH4RAjrzKUdK8=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			LbI945WtYv7gRdI7881blo9HIQHr12t3FdTnsl8jVtk=
+			UH76py1Qvkynyay1x7mNG+BIy0L5oF3InjhESvxas9M=
 			</data>
 		</dict>
 		<key>Resources/aura_widgets.py</key>
@@ -170,7 +174,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			uzMqxVTq2PbS1Tcp/RgfSF4fjxAJ0YkJWy3JssA4EbU=
+			AD/mzjKPmh7k/VemvSjc6FKevjPIFjCCWZpsIphl6JE=
 			</data>
 		</dict>
 		<key>Resources/recorder.py</key>
@@ -185,6 +189,13 @@
 			<key>hash2</key>
 			<data>
 			lx/wtMuTsH9EsPzwX+pSaoACxt9Td6PeOQJcnSGGfnU=
+			</data>
+		</dict>
+		<key>Resources/screen_annotation.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			ete2IxIzX3P0trA01VyPdspY2790pCrQCUZI5p/urDI=
 			</data>
 		</dict>
 		<key>Resources/video_editor.py</key>

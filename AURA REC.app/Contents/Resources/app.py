@@ -32,6 +32,7 @@ from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
 from input_overlay import InputOverlayManager
 from auto_updater import AutoUpdater
+from screen_annotation import ScreenAnnotationOverlay
 from region_picker import (
     bar_origin,
     box_to_points,
@@ -309,6 +310,7 @@ class LiteRecorderApp:
         self.check_updates_var = tk.BooleanVar(value=self._flag("check_updates_on_startup", True))
         self._camera_bubble_win = None
         self._input_overlay_mgr = None
+        self._annotation_overlay = None
 
         self.video_devices = []
         self.audio_devices = []
@@ -375,6 +377,7 @@ class LiteRecorderApp:
             "開始或停止錄影：\n"
             f"{self.shortcut_hint}\n\n"
             "暫停或繼續：F8\n\n"
+            "螢幕即時塗鴉與聚光燈：F6（或 ⇧⌘D / ⇧Ctrl+D）。支援畫筆、箭頭、矩形框與聚光燈焦點。\n\n"
             "截圖：F7。有自訂範圍或視窗時只截那一塊。\n\n"
             "選單裡的「選擇視窗」會錄下那個視窗開始時的位置，檔名也會帶上程式名稱。\n"
             "若會縮成小條，小條會先讓到不擋住那個視窗的角落。\n\n"
@@ -390,6 +393,7 @@ class LiteRecorderApp:
         file_menu.add_command(label="變更儲存位置…", command=self.change_output_folder)
         file_menu.add_separator()
         file_menu.add_command(label="暫停或繼續", command=self.toggle_pause, accelerator="F8")
+        file_menu.add_command(label="螢幕塗鴉與聚光燈", command=self.toggle_screen_annotation, accelerator="F6")
         file_menu.add_command(label="展開錄影畫面", command=self._expand_from_mini, accelerator="Esc")
         file_menu.add_command(label="收成小條", command=self._collapse_to_mini)
         file_menu.add_command(label="截圖", command=self.take_screenshot, accelerator="F7")
@@ -833,6 +837,10 @@ class LiteRecorderApp:
             self.mini_container, text="截圖", style="Ghost.TButton", command=self.take_screenshot
         )
         self.mini_shot_btn.pack(side=tk.RIGHT, padx=3, pady=5)
+        self.mini_draw_btn = AuraButton(
+            self.mini_container, text="塗鴉", style="Ghost.TButton", command=self.toggle_screen_annotation
+        )
+        self.mini_draw_btn.pack(side=tk.RIGHT, padx=3, pady=5)
         self.mini_expand_btn = AuraButton(
             self.mini_container, text="展開", style="Ghost.TButton", command=self._expand_from_mini
         )
@@ -848,7 +856,12 @@ class LiteRecorderApp:
         self.root.geometry(f"+{x}+{y}")
 
     def _bind_shortcuts(self):
-        # 跨平台快捷鍵 Space / F9 / Ctrl+R / Cmd+R
+        # 跨平台快捷鍵 Space / F9 / Ctrl+R / Cmd+R / F6 / F7 / F8
+        self.root.bind_all("<F6>", lambda e: self.toggle_screen_annotation())
+        self.root.bind_all("<Shift-Command-D>", lambda e: self.toggle_screen_annotation())
+        self.root.bind_all("<Shift-Command-d>", lambda e: self.toggle_screen_annotation())
+        self.root.bind_all("<Shift-Control-D>", lambda e: self.toggle_screen_annotation())
+        self.root.bind_all("<Shift-Control-d>", lambda e: self.toggle_screen_annotation())
         self.root.bind_all("<F7>", lambda e: self.take_screenshot())
         self.root.bind_all("<F8>", lambda e: self.toggle_pause())
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
@@ -1027,8 +1040,8 @@ class LiteRecorderApp:
         else:
             prev_x, prev_y = origin
 
-        self.root.minsize(470, 48)
-        self.root.geometry(f"470x48+{int(prev_x)}+{int(prev_y)}")
+        self.root.minsize(530, 48)
+        self.root.geometry(f"530x48+{int(prev_x)}+{int(prev_y)}")
         self.root.resizable(False, False)
         self.root.config(menu="")
         self.root.attributes("-topmost", True)
@@ -1254,6 +1267,12 @@ class LiteRecorderApp:
         def on_key(name):
             if name == "f8":
                 self.toggle_pause()
+                return
+            if name == "f6":
+                self.toggle_screen_annotation()
+                return
+            if name == "f7":
+                self.take_screenshot()
                 return
             if name in {"f9", "esc"}:
                 if self.countdown_active:
@@ -1622,6 +1641,7 @@ class LiteRecorderApp:
         self._play_alert("stop")
         self._restore_conceal()
         self._stop_input_overlay()
+        self._close_annotation_overlay()
 
         if self.is_mini_mode:
             self._switch_to_normal_mode()
@@ -2459,6 +2479,34 @@ class LiteRecorderApp:
                 print(f"停止輸入覆蓋層異常: {e}")
             self._input_overlay_mgr = None
 
+    def toggle_screen_annotation(self):
+        """切換螢幕即時塗鴉與聚光燈覆蓋層"""
+        if self._annotation_overlay is None or not self._annotation_overlay.is_active:
+            if self._annotation_overlay is None:
+                self._annotation_overlay = ScreenAnnotationOverlay(
+                    self.root, on_close=self._on_annotation_closed
+                )
+            self._annotation_overlay.open()
+            if hasattr(self, "mini_draw_btn"):
+                self.mini_draw_btn.config(text="關閉塗鴉", style="Accent.TButton")
+        else:
+            self._annotation_overlay.close()
+
+    def _on_annotation_closed(self):
+        """塗鴉視窗關閉時的回呼"""
+        if hasattr(self, "mini_draw_btn"):
+            self.mini_draw_btn.config(text="塗鴉", style="Ghost.TButton")
+
+    def _close_annotation_overlay(self):
+        """安全關閉塗鴉覆蓋層"""
+        if self._annotation_overlay is not None:
+            try:
+                self._annotation_overlay.close()
+            except Exception:
+                pass
+            self._annotation_overlay = None
+            self._on_annotation_closed()
+
     def _show_system_audio_guide(self):
         """開啟系統內部聲音錄製指南對話框"""
         win = tk.Toplevel(self.root)
@@ -3233,6 +3281,7 @@ class LiteRecorderApp:
     def _on_close(self):
         self._close_camera_bubble()
         self._stop_input_overlay()
+        self._close_annotation_overlay()
         self._remember_window()
         if self.recorder.is_recording:
             if not messagebox.askyesno("正在錄影", "錄影還沒停。要停下來並結束嗎？"):
@@ -3251,6 +3300,7 @@ class LiteRecorderApp:
     def _destroy_after_stop(self):
         self._close_camera_bubble()
         self._stop_input_overlay()
+        self._close_annotation_overlay()
         release_awake()
         self.root.destroy()
 
