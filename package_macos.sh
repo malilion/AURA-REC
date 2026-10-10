@@ -34,6 +34,7 @@ cp -f auto_updater.py "$RESOURCES_DIR/"
 cp -f screen_annotation.py "$RESOURCES_DIR/"
 cp -f speech_to_text.py "$RESOURCES_DIR/"
 cp -f window_exclusion_watermark.py "$RESOURCES_DIR/"
+cp -f i18n.py "$RESOURCES_DIR/"
 [ -f README.md ] && cp -f README.md "$RESOURCES_DIR/"
 
 # 拷貝字型目錄

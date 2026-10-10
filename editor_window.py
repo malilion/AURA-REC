@@ -51,6 +51,13 @@ from window_exclusion_watermark import (
     WindowExclusionWatermarkDialog,
     render_watermark_png,
 )
+from i18n import (
+    tr,
+    get_language,
+    get_language_badge,
+    next_language,
+    translate_widget_tree,
+)
 
 
 def sec_to_time_str(seconds):
@@ -295,6 +302,9 @@ class VideoEditorWindow:
         top_actions = tk.Frame(top_bar, bg=UI["bg"])
         top_actions.pack(side=tk.RIGHT)
 
+        self.lang_btn = self._tool_button(top_actions, get_language_badge(get_language()), self._cycle_editor_language)
+        self.lang_btn._i18n_skip = True
+        self.lang_btn.pack(side=tk.LEFT, padx=(0, 8))
         self._tool_button(top_actions, "開啟影片…", self.select_video_file).pack(side=tk.LEFT, padx=(0, 8))
         self._tool_button(top_actions, "💬 智慧字幕…", self._open_subtitle_manager).pack(side=tk.LEFT, padx=(0, 8))
         self._tool_button(top_actions, "💧 浮水印保護…", self._open_watermark_dialog).pack(side=tk.LEFT, padx=(0, 8))
@@ -767,6 +777,18 @@ class VideoEditorWindow:
         self._update_ratio_buttons_ui()
         self._update_theme_buttons_ui()
         self._update_mockup_geometry()
+        translate_widget_tree(self.window, get_language())
+
+    def _cycle_editor_language(self):
+        from i18n import set_language
+        new_lang = next_language(get_language())
+        set_language(new_lang)
+        save_settings({"language": new_lang})
+        if hasattr(self, "lang_btn"):
+            self.lang_btn.config(text=get_language_badge(new_lang))
+        translate_widget_tree(self.window, new_lang)
+        self._update_selection_length_label()
+        self._update_focus_coord_label()
 
     def _inspector_card(self, parent, title):
         card = tk.Frame(parent, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
@@ -2058,18 +2080,31 @@ class VideoEditorWindow:
         fx = getattr(self, "zoom_focus_x", 0.5)
         fy = getattr(self, "zoom_focus_y", 0.5)
         if hasattr(self, "lbl_zoom_coords"):
-            self.lbl_zoom_coords.config(text=f"焦點座標: X {int(fx * 100)}% · Y {int(fy * 100)}%")
+            raw = f"焦點座標: X {int(fx * 100)}% · Y {int(fy * 100)}%"
+            self.lbl_zoom_coords._i18n_orig_text = raw
+            self.lbl_zoom_coords.config(text=tr(raw, get_language()))
 
     def _on_zoom_pos_changed(self, _event=None):
         pos_val = self.zoom_pos_combo.get()
         mapping = {
             "畫面中心": (0.50, 0.50),
-            "左上角": (0.25, 0.25),
-            "右上角": (0.75, 0.25),
-            "左下角": (0.25, 0.75),
-            "右下角": (0.75, 0.75),
+            "Center": (0.50, 0.50),
+            "中央": (0.50, 0.50),
+            "画面中心": (0.50, 0.50),
+            "左上": (0.25, 0.25),
+            "Top-Left": (0.25, 0.25),
+            "右上": (0.75, 0.25),
+            "Top-Right": (0.75, 0.25),
+            "左下": (0.25, 0.75),
+            "Bottom-Left": (0.25, 0.75),
+            "右下": (0.75, 0.75),
+            "Bottom-Right": (0.75, 0.75),
             "上方中": (0.50, 0.25),
+            "Top-Center": (0.50, 0.25),
+            "上中央": (0.50, 0.25),
             "下方中": (0.50, 0.75),
+            "Bottom-Center": (0.50, 0.75),
+            "下中央": (0.50, 0.75),
         }
         for k, (x, y) in mapping.items():
             if k in pos_val:
@@ -2090,7 +2125,7 @@ class VideoEditorWindow:
     def _detect_action_focus(self):
         if not self.current_file or self.total_duration <= 0:
             return
-        self.btn_detect_focus.config(text="偵測中…", state=tk.DISABLED)
+        self.btn_detect_focus.config(text=tr("偵測中…", get_language()), state=tk.DISABLED)
 
         def work():
             fx, fy = self.editor.detect_motion_focus(
@@ -2099,11 +2134,11 @@ class VideoEditorWindow:
             def done():
                 self.zoom_focus_x = fx
                 self.zoom_focus_y = fy
-                self.zoom_pos_combo.set("🎯 自訂 / 點擊畫面")
+                self.zoom_pos_combo.set(tr("🎯 自訂 / 點擊畫面", get_language()))
                 self._update_focus_coord_label()
-                if self.zoom_mode_combo.get().startswith("關閉"):
+                if self.zoom_mode_combo.current() == 0:
                     self.zoom_mode_combo.current(1)
-                self.btn_detect_focus.config(text="🎯 智慧偵測焦點", state=tk.NORMAL)
+                self.btn_detect_focus.config(text=tr("🎯 智慧偵測焦點", get_language()), state=tk.NORMAL)
                 self._redraw_preview_canvas()
                 if self.preview_zoom_var.get():
                     self._request_preview(self.current_time)
@@ -2116,13 +2151,13 @@ class VideoEditorWindow:
         if not hasattr(self, "zoom_mode_combo"):
             return {"enabled": False, "mode": "off"}
         mode_val = self.zoom_mode_combo.get()
-        if "關閉" in mode_val:
+        if any(k in mode_val for k in ("關閉", "关闭", "Off", "オフ", "1.0x")):
             return {"enabled": False, "mode": "off"}
 
         mode = "smooth_in_out"
-        if "推進特寫" in mode_val:
+        if any(k in mode_val for k in ("推進特寫", "推进特写", "Smooth Zoom In", "ズームイン")):
             mode = "smooth_in"
-        elif "全程" in mode_val or "固定" in mode_val:
+        elif any(k in mode_val for k in ("全程", "固定", "Static", "固定ズーム")):
             mode = "static"
 
         lvl_val = self.zoom_level_combo.get()
@@ -2190,8 +2225,10 @@ class VideoEditorWindow:
     def _update_selection_length_label(self):
         sel_dur = max(0.0, self.end_sec - self.start_sec)
         pct = (sel_dur / self.total_duration * 100) if self.total_duration > 0 else 100
+        raw = f"選取長度 {sec_to_time_str(sel_dur)} ({pct:.0f}%)"
+        self.lbl_selected_len._i18n_orig_text = raw
         self.lbl_selected_len.config(
-            text=f"選取長度 {sec_to_time_str(sel_dur)} ({pct:.0f}%)"
+            text=tr(raw, get_language())
         )
 
     def preview_play_selection(self):

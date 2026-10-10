@@ -900,6 +900,11 @@ class WindowExclusionWatermarkDialog:
 
         self._build_ui()
         self._refresh_window_list()
+        try:
+            from i18n import get_language, translate_widget_tree
+            translate_widget_tree(self.win, get_language())
+        except Exception:
+            pass
         self._update_watermark_preview()
 
     def _build_ui(self):
@@ -1182,10 +1187,14 @@ class WindowExclusionWatermarkDialog:
                     sel_owners.append(item["owner"])
 
         mask_val = "blur"
-        for lbl, val in EXCLUSION_MASK_MODES:
-            if lbl == self.mask_mode_var.get():
-                mask_val = val
-                break
+        m_idx = self.mask_combo.current()
+        if 0 <= m_idx < len(EXCLUSION_MASK_MODES):
+            mask_val = EXCLUSION_MASK_MODES[m_idx][1]
+        else:
+            for lbl, val in EXCLUSION_MASK_MODES:
+                if lbl == self.mask_mode_var.get():
+                    mask_val = val
+                    break
 
         excl = {
             "enabled": bool(self.excl_enabled_var.get()),
@@ -1200,28 +1209,44 @@ class WindowExclusionWatermarkDialog:
 
         # 收集浮水印設定
         wm_mode = "none"
-        for lbl, val in WATERMARK_MODES:
-            if lbl == self.wm_mode_var.get():
-                wm_mode = val
-                break
+        wm_m_idx = self.wm_mode_combo.current()
+        if 0 <= wm_m_idx < len(WATERMARK_MODES):
+            wm_mode = WATERMARK_MODES[wm_m_idx][1]
+        else:
+            for lbl, val in WATERMARK_MODES:
+                if lbl == self.wm_mode_var.get():
+                    wm_mode = val
+                    break
 
         wm_pos = "bottom-right"
-        for lbl, val in WATERMARK_POSITIONS:
-            if lbl == self.wm_pos_var.get():
-                wm_pos = val
-                break
+        wm_p_idx = self.wm_pos_combo.current()
+        if 0 <= wm_p_idx < len(WATERMARK_POSITIONS):
+            wm_pos = WATERMARK_POSITIONS[wm_p_idx][1]
+        else:
+            for lbl, val in WATERMARK_POSITIONS:
+                if lbl == self.wm_pos_var.get():
+                    wm_pos = val
+                    break
 
         wm_style = "aurora"
-        for lbl, val in WATERMARK_STYLES:
-            if lbl == self.wm_style_var.get():
-                wm_style = val
-                break
+        wm_s_idx = self.wm_style_combo.current()
+        if 0 <= wm_s_idx < len(WATERMARK_STYLES):
+            wm_style = WATERMARK_STYLES[wm_s_idx][1]
+        else:
+            for lbl, val in WATERMARK_STYLES:
+                if lbl == self.wm_style_var.get():
+                    wm_style = val
+                    break
 
         wm_op = "medium"
-        for lbl, val in WATERMARK_OPACITIES:
-            if lbl == self.wm_opacity_var.get():
-                wm_op = val
-                break
+        wm_o_idx = self.wm_opacity_combo.current()
+        if 0 <= wm_o_idx < len(WATERMARK_OPACITIES):
+            wm_op = WATERMARK_OPACITIES[wm_o_idx][1]
+        else:
+            for lbl, val in WATERMARK_OPACITIES:
+                if lbl == self.wm_opacity_var.get():
+                    wm_op = val
+                    break
 
         wm = {
             "enabled": wm_mode != "none",
