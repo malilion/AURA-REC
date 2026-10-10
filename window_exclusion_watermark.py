@@ -15,8 +15,8 @@
    - 支援 5 種浮水印模式：
      * corner: 角落品牌簽名浮水印（右下、左下、右上、左上、正中）
      * timestamp: 錄影日期時間與版權簽章浮水印
-     * tiled: 滿版防盜斜紋平鋪網格浮水印（防止局部裁切盜錄）
-     * floating: 動態巡航漂浮防盜浮水印（隨時間 Lissajous 曲線平滑移動，防止固定位置抹除）
+     * tiled: 滿版標示斜紋平鋪網格浮水印（防止局部裁切盜錄）
+     * floating: 動態巡航漂浮標示浮水印（隨時間 Lissajous 曲線平滑移動，防止固定位置抹除）
      * image: 自訂 PNG/JPG 品牌 Logo 圖片浮水印
    - 相容 FFmpeg -filter_complex 與 -vf（使用 movie 濾鏡載入，不影響既有音視訊輸入索引）。
 """
@@ -67,8 +67,8 @@ WATERMARK_MODES = [
     ("關閉浮水印 (Off)", "none"),
     ("角落品牌簽名 (Corner Badge)", "corner"),
     ("錄影時間戳記簽章 (Timestamp)", "timestamp"),
-    ("動態巡航防盜浮水印 (Floating Anti-Piracy)", "floating"),
-    ("滿版防盜網格浮水印 (Tiled Grid)", "tiled"),
+    ("動態巡航標示浮水印 (Floating Attribution)", "floating"),
+    ("滿版標示網格浮水印 (Tiled Grid)", "tiled"),
     ("自訂 Logo 圖片浮水印 (Custom Logo)", "image"),
 ]
 
@@ -85,7 +85,7 @@ WATERMARK_STYLES = [
     ("純白防偽陰影字 (Pure White)", "white"),
     ("尊爵琥珀金標章 (Amber Gold)", "gold"),
     ("機密警示紅標章 (Confidential Red)", "crimson"),
-    ("極簡半透明防盜浮印 (Subtle Ghost)", "subtle"),
+    ("極簡半透明標示浮印 (Subtle Ghost)", "subtle"),
 ]
 
 WATERMARK_OPACITIES = [
@@ -736,7 +736,7 @@ def render_watermark_png(
             f.write(png_data)
         return output_path
 
-    # 滿版防盜網格 (Tiled Grid): 將單一浮印交錯平鋪於透明畫布上
+    # 滿版標示網格 (Tiled Grid): 將單一浮印交錯平鋪於透明畫布上
     tw = max(w * 2, int(tile_w))
     th = max(h * 2, int(tile_h))
     canvas_rgba = bytearray(tw * th * 4)
@@ -828,7 +828,7 @@ def build_watermark_filter_steps(
     esc_path = _escape_ffmpeg_filter_path(png_path)
 
     if mode == "floating":
-        # 動態防盜巡航曲線：平滑在畫面四處巡航且絕不超出邊界
+        # 動態標示巡航曲線：平滑在畫面四處巡航且絕不超出邊界
         x_expr = "'(W-w)*(0.5+0.42*sin(t*0.65))'"
         y_expr = "'(H-h)*(0.5+0.42*cos(t*0.48))'"
         steps = [
@@ -878,7 +878,7 @@ class WindowExclusionWatermarkDialog:
     視窗排除與浮水印保護設定面板。
     同時管理：
     1. 原生作業系統自身視窗穿透排除 + 第三方敏感視窗智慧模糊/盾牌排除
-    2. 品牌簽名 / 時間戳 / 動態巡航防盜 / 滿版網格 / Logo 浮水印與即時預覽
+    2. 品牌簽名 / 時間戳 / 動態巡航標示 / 滿版網格 / Logo 浮水印與即時預覽
     """
 
     def __init__(self, parent, initial_exclusion=None, initial_watermark=None, screen_index=0, on_save=None):
@@ -921,7 +921,7 @@ class WindowExclusionWatermarkDialog:
         ).pack(anchor="w")
         tk.Label(
             header,
-            text="防止敏感對話或密碼外洩 · 為教學與商務錄影加上防盜動態浮水印",
+            text="防止敏感對話或密碼外洩 · 為教學與商務錄影加上標示動態浮水印",
             font=("SF Pro Text", 11) if IS_MAC else ("Segoe UI", 9),
             fg="#a1a1aa",
             bg="#121217",
