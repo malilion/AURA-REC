@@ -206,6 +206,7 @@ PHRASE_DICT = {
     "指定視窗": {"en": "Specific Window", "ja": "ウィンドウ指定"},
 
     # --- 勾選框 ---
+    "硬體加速（速度優先，檔案較大）": {"en": "Hardware acceleration (faster, larger files)", "ja": "ハードウェア高速化（速度優先・ファイル大）"},
     "使用硬體加速": {"en": "Hardware Acceleration", "ja": "ハードウェア高速化"},
     "使用 GPU 硬體加速": {"en": "GPU Acceleration", "ja": "GPU ハードウェア高速化"},
     "獨立多音軌 (Multi-track)": {"en": "Multi-track Audio", "ja": "マルチトラック音声"},
