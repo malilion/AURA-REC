@@ -26,6 +26,11 @@ CANDIDATE_PYS=(
     "$HOME/.pyenv/shims/python3"
     "$HOME/miniforge3/bin/python3"
     "$HOME/miniconda3/bin/python3"
+    "$HOME/anaconda3/bin/python3"
+    "$HOME/opt/anaconda3/bin/python3"
+    "/opt/anaconda3/bin/python3"
+    "/opt/miniconda3/bin/python3"
+    "/opt/miniforge3/bin/python3"
     "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
     "$(command -v python3 2>/dev/null || true)"
     "/usr/bin/python3"
@@ -42,17 +47,8 @@ for candidate in "${CANDIDATE_PYS[@]}"; do
     fi
 done
 
-# 第二輪：退回任何具備 tkinter 的 Python
-if [ -z "$CHOSEN_PY" ]; then
-    for candidate in "${CANDIDATE_PYS[@]}"; do
-        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-            if "$candidate" -c "import tkinter, subprocess, threading" 2>/dev/null; then
-                CHOSEN_PY="$candidate"
-                break
-            fi
-        fi
-    done
-fi
+# 注意：Tk 8.5（例如 Xcode / Command Line Tools 內建的 /usr/bin/python3）在新版 macOS 上
+# 會顯示空白視窗，因此不再退回舊版 Tk；找不到 Tk 8.6+ 時改為提示使用者安裝。
 
 if [ -z "$CHOSEN_PY" ]; then
     # 彈出友善的 macOS 原生對話框
@@ -60,7 +56,7 @@ if [ -z "$CHOSEN_PY" ]; then
         tell application "System Events"
             activate
             set dialogResult to display alert "需要 Python 3 與 Tkinter" ¬
-                message "AURA REC 桌面版需要 Python 3 運行環境。\n\n建議從 Python 官方網站下載安裝（已內建完整圖形介面支援），安裝完成後即可直接開啟 AURA REC。" ¬
+                message "AURA REC 桌面版需要 Python 3.9 以上且內建 Tk 8.6 的環境（macOS 內建或 Xcode 附的 Python 使用舊版 Tk，會顯示空白視窗）。\n\n建議從 Python 官方網站下載安裝（已內建完整圖形介面支援），安裝完成後即可直接開啟 AURA REC。" ¬
                 as critical ¬
                 buttons {"前往下載 Python", "關閉"} ¬
                 default button "前往下載 Python"
