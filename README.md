@@ -2,7 +2,7 @@
 
 真正把畫面與聲音留下來的原生桌面錄影工作站。
 
-- **桌面應用程式（主要推薦）**：支援 macOS（`AURA REC.app` / DMG / ZIP）與 Windows（`AURA-REC.exe` / ZIP）。晶片級硬體加速（Apple Silicon VideoToolbox / NVIDIA NVENC）、電腦系統聲音內錄、動態視窗追蹤、全域快捷鍵（F8/F9/F7/F6 螢幕即時塗鴉與聚光燈）、錄影避讓收合與離線無損剪輯。
+- **桌面應用程式（主要推薦）**：支援 macOS（`AURA REC.app` / DMG / ZIP）與 Windows（`AURA-REC.exe` / ZIP）。晶片級硬體加速（Apple Silicon VideoToolbox / NVIDIA NVENC）、電腦系統聲音內錄、動態視窗追蹤、全域快捷鍵（F8/F9/F7/F6 螢幕即時塗鴉與聚光燈）、錄影避讓收合、AI 離線語音識別智慧字幕軌與離線無損剪輯。
 - **瀏覽器工作站（免安裝體驗版）**：輕量單一檔案 `AURA-REC.html`。官網在 [malilion.github.io/Record](https://malilion.github.io/Record/)，可直接在線上或離線雙擊開啟作為快速預覽與時間軸標記工具。
 
 ---
@@ -76,6 +76,7 @@
 - 畫中畫（PiP）人臉鏡頭覆蓋：可勾選開啟 PiP 人臉鏡頭，支援圓形相機（含極光霓虹藍或純白光暈邊框）與圓角矩形，可自訂擺放於四個角落（右下/左下/右上/左上）與尺寸（小 200px / 中 260px / 大 340px）。錄影期間可在桌面顯示即時浮動小圓圈（可自由拖曳挪開），並提供「鏡頭試看 👁」功能。
 - 滑鼠點擊發光波紋與按鍵顯示：錄製時在滑鼠點擊處產生發光水波紋漣漪（Click Ripple，左鍵極光藍、右鍵活力珊瑚紅，~260ms 平滑外擴漸隱），並於畫面底部浮現時尚圓角深色半透明按鍵藥丸條（Keystroke HUD，支援 macOS ⌘/⌥/⌃/⇧ 快捷鍵與連續打字顯示，停留 1.4 秒後優雅隱藏）。教學錄影與展示一目了然，零外部套件依賴。
 - 螢幕即時塗鴉與聚光燈 (Live Screen Annotation & Spotlight)：錄影進行時（或任何演講教學）隨時按下 `F6`（或 `⇧⌘D` / `⇧Ctrl+D`）或點選懸浮控制條上的「塗鴉」按鈕，秒級喚出全螢幕置頂透明畫布。具備 4 大專業工具：自由手繪畫筆（平滑 B-spline 圓角曲線）、銳利指向箭頭、重點矩形高亮框、動態聚光燈焦點（全螢幕柔和暗化遮罩，動態圓形開孔與發光霓虹外環平滑跟隨游標）。內建 5 種極光霓虹色彩與 3 種粗細，支援可拖曳嵌入式工具列、快捷鍵 `1`/`2`/`3`/`4`、無限步復原 (`Cmd+Z`)、一鍵清空 (`C`) 與快速關閉 (`Esc`) 歸還滑鼠操作權。
+- AI 離線語音識別與智慧字幕軌 (Speech-to-Text & Subtitles)：剪輯工作站全新引入原生智慧字幕引擎與時間軸字幕軌（Subtitle Track）。支援 Whisper-CLI（whisper.cpp，Metal GPU 加速）與內建 0 依賴離線 Smart VAD（語音活動偵測與毫秒級智慧分句），0.1 秒瞬間自動識別所有人聲片段；時間軸字幕軌即時連動播放高亮與點擊跳轉，預覽畫面浮現現代黑膠囊極光字幕；支援字幕文字就地編輯、SRT/VTT 雙向匯入匯出、MP4/MOV 原生軟字幕軌封裝 (`mov_text`) 與伴隨同名 `.srt` 檔案自動產出。
 - 軟體內建自動檢查更新 (Auto Updater)：主選單「說明」與「檔案」內建「檢查更新…」，並支援啟動時非同步靜默檢查。串接 GitHub Releases API 自動比對語意化版本號（Semantic Versioning），若有新版發布即彈出質感更新對話框，展示 Changelog 更新亮點並提供一鍵前往下載。
 - 解析度、幀率、裝置、範圍、視窗和視窗位置會記住。
 - macOS 用 AVFoundation 與 VideoToolbox。Windows 原生支援 Direct3D 11 / WGC (ddagrab) 現代擷取 API，支援 60 FPS 與 120 FPS（電競/極限流暢）高幀率與超低 CPU 負載，並可走 NVENC、QSV 或 AMF 硬體加速，且具備自動回退 GDI 容錯機制。

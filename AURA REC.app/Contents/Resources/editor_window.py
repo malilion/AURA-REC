@@ -37,6 +37,14 @@ from video_editor import (
     parse_aspect_choice,
     preview_video_filter,
 )
+from speech_to_text import (
+    SubtitleTrack,
+    SubtitleCue,
+    SubtitleStyle,
+    SpeechToTextEngine,
+    SubtitleDialog,
+    sec_to_short_time,
+)
 
 
 def sec_to_time_str(seconds):
@@ -209,6 +217,14 @@ class VideoEditorWindow:
         self._mask_counter = 1
         self._mask_del_targets = {}
 
+        # AI 離線語音識別與智慧字幕軌 (Speech-to-Text & Subtitles)
+        self.subtitles = SubtitleTrack()
+        self.stt_engine = SpeechToTextEngine()
+        self.preview_subtitles_var = tk.BooleanVar(value=True)
+        self.soft_subtitles_var = tk.BooleanVar(value=True)
+        self.export_srt_var = tk.BooleanVar(value=True)
+        self._subtitle_dialog = None
+
         self._build_ui()
         self._bind_shortcuts()
 
@@ -258,6 +274,7 @@ class VideoEditorWindow:
         top_actions.pack(side=tk.RIGHT)
 
         self._tool_button(top_actions, "開啟影片…", self.select_video_file).pack(side=tk.LEFT, padx=(0, 8))
+        self._tool_button(top_actions, "💬 智慧字幕…", self._open_subtitle_manager).pack(side=tk.LEFT, padx=(0, 8))
         self.btn_play_seg = AuraButton(
             top_actions, text="播放 [Space]", style="Play.TButton", command=self.preview_play_selection
         )
@@ -380,6 +397,23 @@ class VideoEditorWindow:
         self.waveform_canvas.bind("<Leave>", self._on_waveform_leave)
         self.waveform_canvas.bind("<Button-1>", self._on_waveform_press)
         self.waveform_canvas.bind("<B1-Motion>", self._on_waveform_drag)
+
+        # (C.3) 智慧字幕軌時間軸 (Subtitle Track)
+        self.subtitle_frame = tk.Frame(left_col, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1, height=34)
+        self.subtitle_frame.pack(fill=tk.X, pady=(0, 4))
+        self.subtitle_frame.pack_propagate(False)
+
+        self.subtitle_canvas = tk.Canvas(
+            self.subtitle_frame,
+            bg=UI["card"],
+            highlightthickness=0,
+            cursor="hand2",
+            width=800,
+            height=34,
+        )
+        self.subtitle_canvas.pack(fill=tk.BOTH, expand=True)
+        self.subtitle_canvas.bind("<Configure>", lambda _e: self._redraw_subtitles())
+        self.subtitle_canvas.bind("<Button-1>", self._on_subtitle_canvas_click)
 
         # (D) 時間軸滑桿 (Aura Timeline Scale)
         self.time_slider = AuraScale(
@@ -606,6 +640,34 @@ class VideoEditorWindow:
         self.mask_list_frame = tk.Frame(mask_card, bg=UI["card"])
         self.mask_list_frame.pack(fill=tk.X, padx=10, pady=(0, 6))
 
+        # 卡片：【AI 智慧字幕軌 (AI Captions & Subtitles)】
+        sub_card = self._inspector_card(right_col, "智慧字幕 (AI Captions)")
+
+        sub_top_row = tk.Frame(sub_card, bg=UI["card"])
+        sub_top_row.pack(fill=tk.X, padx=10, pady=(2, 4))
+        self.lbl_subtitle_status = tk.Label(
+            sub_top_row, text="尚未建立字幕", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]
+        )
+        self.lbl_subtitle_status.pack(side=tk.LEFT)
+
+        self.btn_gen_subs = self._tool_button(sub_top_row, "✨ AI 產生", self._open_subtitle_manager)
+        self.btn_gen_subs.pack(side=tk.RIGHT)
+
+        sub_action_row = tk.Frame(sub_card, bg=UI["card"])
+        sub_action_row.pack(fill=tk.X, padx=10, pady=(0, 4))
+
+        self._tool_button(sub_action_row, "📋 編輯", self._open_subtitle_manager).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        self._tool_button(sub_action_row, "＋ 加句", self._add_cue_at_current_time).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self._tool_button(sub_action_row, "📥 匯入", self._import_subtitles_file).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self._tool_button(sub_action_row, "📤 匯出", self._export_subtitles_file).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+
+        AuraCheck(
+            sub_card,
+            text="預覽畫面即時顯示字幕",
+            variable=self.preview_subtitles_var,
+            command=self._redraw_preview_canvas,
+        ).pack(anchor="w", padx=10, pady=(2, 6))
+
         # 卡片 4：【剪輯範圍數值 (Trim Points)】
         trim_card = self._inspector_card(right_col, "精準剪輯範圍")
         time_edit_frame = tk.Frame(trim_card, bg=UI["card"])
@@ -662,7 +724,9 @@ class VideoEditorWindow:
         self.volume_combo = make_combo_row(opt_grid, 1, "音量增益", ["100% 原始", "150% 增強", "200% 放大", "50% 降低"], 0)
         self.scale_combo = make_combo_row(opt_grid, 2, "輸出畫質", ["原始畫質", "1080p 適合分享", "720p 節省空間"], 0)
 
-        AuraCheck(export_card, text="靜音輸出", variable=self.mute_var).pack(anchor="w", padx=10, pady=(2, 6))
+        AuraCheck(export_card, text="靜音輸出", variable=self.mute_var).pack(anchor="w", padx=10, pady=(2, 2))
+        AuraCheck(export_card, text="封裝軟字幕軌至 MP4/MOV", variable=self.soft_subtitles_var).pack(anchor="w", padx=10, pady=(0, 2))
+        AuraCheck(export_card, text="同時匯出同名 .srt 字幕檔", variable=self.export_srt_var).pack(anchor="w", padx=10, pady=(0, 6))
 
         # 側邊欄底部大按鈕
         self.btn_export_side = AuraButton(
@@ -869,6 +933,18 @@ class VideoEditorWindow:
         self._mask_drag_start = None
         self._mask_drag_curr = None
         self._update_mask_ui()
+        # 檢查是否有同目錄伴隨的 .srt 字幕檔
+        companion_srt = Path(file_path).with_suffix(".srt")
+        if companion_srt.exists():
+            try:
+                self.subtitles = SubtitleTrack.from_srt(str(companion_srt))
+            except Exception:
+                self.subtitles = SubtitleTrack()
+        else:
+            self.subtitles = SubtitleTrack()
+        self._update_subtitle_ui()
+        self._redraw_subtitles()
+
         self._redraw_filmstrip()
         self._request_preview(0.0)
         self._load_filmstrip()
@@ -883,6 +959,7 @@ class VideoEditorWindow:
         )
         self._request_preview(sec)
         self._redraw_filmstrip()
+        self._redraw_subtitles()
 
     def _load_filmstrip(self):
         if not self.current_file or self.total_duration <= 0:
@@ -1333,6 +1410,7 @@ class VideoEditorWindow:
         )
         self._request_preview(sec)
         self._redraw_filmstrip()
+        self._redraw_subtitles()
 
     def _nudge_time(self, delta):
         new_time = max(0.0, min(self.total_duration, self.current_time + delta))
@@ -1343,6 +1421,7 @@ class VideoEditorWindow:
         )
         self._request_preview(new_time)
         self._redraw_filmstrip()
+        self._redraw_subtitles()
 
     def _preview_filter(self):
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
@@ -1527,6 +1606,139 @@ class VideoEditorWindow:
                     )
                     del_btn.pack(side=tk.RIGHT, padx=4, pady=1)
 
+    def _update_subtitle_ui(self):
+        """更新屬性檢查器中的字幕狀態標籤"""
+        count = len(getattr(self, "subtitles", []))
+        if hasattr(self, "lbl_subtitle_status"):
+            if count == 0:
+                self.lbl_subtitle_status.config(text="尚未建立字幕", fg=UI["muted"])
+            else:
+                self.lbl_subtitle_status.config(text=f"已建立 {count} 句字幕", fg="#00F0FF")
+
+    def _redraw_subtitles(self):
+        """重繪時間軸上的智慧字幕軌道"""
+        if not hasattr(self, "subtitle_canvas") or not self.subtitle_canvas.winfo_exists():
+            return
+        self.subtitle_canvas.delete("all")
+        sw = self.subtitle_canvas.winfo_width()
+        sh = self.subtitle_canvas.winfo_height()
+        if sw <= 1 or sh <= 1:
+            return
+
+        total_dur = max(0.001, self.total_duration)
+
+        # 軌道背景與左側 CC 徽章
+        self.subtitle_canvas.create_rectangle(0, 0, sw, sh, fill="#0E121A", outline="")
+        self.subtitle_canvas.create_text(
+            26, sh // 2, text="CC 字幕", fill="#64748B", font=self.fonts["badge"]
+        )
+
+        if not hasattr(self, "subtitles") or self.subtitles.is_empty():
+            self.subtitle_canvas.create_text(
+                sw // 2, sh // 2, text="尚未建立字幕軌（點擊右側 ✨ AI 產生或 ＋加句）",
+                fill="#475569", font=self.fonts["badge"]
+            )
+            return
+
+        for cue in self.subtitles.cues:
+            x1 = max(54, int(sw * (cue.start / total_dur)))
+            x2 = min(sw, max(x1 + 18, int(sw * (cue.end / total_dur))))
+
+            is_active = (cue.start <= self.current_time <= cue.end)
+            fill_bg = "#15334D" if is_active else "#151D2A"
+            border_c = "#00F0FF" if is_active else "#28374D"
+            text_c = "#00F0FF" if is_active else "#CBD5E1"
+            border_w = 2 if is_active else 1
+
+            self.subtitle_canvas.create_rectangle(
+                x1, 3, x2, sh - 3,
+                fill=fill_bg, outline=border_c, width=border_w
+            )
+
+            available_w = x2 - x1 - 8
+            if available_w > 18:
+                snippet = cue.text
+                max_chars = max(3, available_w // 11)
+                if len(snippet) > max_chars:
+                    snippet = snippet[:max_chars - 1] + "…"
+                self.subtitle_canvas.create_text(
+                    (x1 + x2) // 2, sh // 2,
+                    text=snippet, fill=text_c, font=self.fonts["badge"]
+                )
+
+        # 繪製目前播放指針線
+        cur_x = int(sw * (self.current_time / total_dur))
+        self.subtitle_canvas.create_line(cur_x, 0, cur_x, sh, fill=UI["red"], width=1)
+
+    def _on_subtitle_canvas_click(self, event):
+        """點擊時間軸字幕軌自動跳轉時間或選取字幕"""
+        if not hasattr(self, "subtitle_canvas") or self.total_duration <= 0:
+            return
+        sw = self.subtitle_canvas.winfo_width()
+        if sw <= 1:
+            return
+        click_sec = (event.x / float(sw)) * self.total_duration
+        cue = self.subtitles.get_cue_at_time(click_sec)
+        if cue:
+            self._jump_to_time(cue.start)
+        else:
+            self._jump_to_time(click_sec)
+
+    def _open_subtitle_manager(self):
+        """開啟 AI 離線語音識別與智慧字幕軌對話框"""
+        if not self.current_file or not os.path.exists(self.current_file):
+            messagebox.showwarning("提示", "尚未載入影片！")
+            return
+        if self._subtitle_dialog and self._subtitle_dialog.win.winfo_exists():
+            self._subtitle_dialog.win.lift()
+            return
+        self._subtitle_dialog = SubtitleDialog(self.window, self)
+
+    def _add_cue_at_current_time(self):
+        """在目前時間點插入一句字幕"""
+        cur = self.current_time
+        self.subtitles.add_cue(cur, cur + 2.5, "點此輸入新字幕內容…")
+        self._update_subtitle_ui()
+        self._redraw_subtitles()
+        self._redraw_preview_canvas()
+
+    def _import_subtitles_file(self):
+        """匯入外部 SRT/VTT 字幕檔"""
+        f = filedialog.askopenfilename(
+            title="匯入字幕檔案",
+            filetypes=[("Subtitle Files", "*.srt;*.vtt"), ("SRT", "*.srt"), ("VTT", "*.vtt")]
+        )
+        if f:
+            try:
+                imported = SubtitleTrack.from_srt(f)
+                self.subtitles.cues = imported.cues
+                self._update_subtitle_ui()
+                self._redraw_subtitles()
+                self._redraw_preview_canvas()
+                messagebox.showinfo("匯入成功", f"成功載入 {len(imported)} 句字幕！")
+            except Exception as e:
+                messagebox.showerror("匯入失敗", f"無法解析字幕檔案: {e}")
+
+    def _export_subtitles_file(self):
+        """匯出目前字幕為 SRT 檔案"""
+        if self.subtitles.is_empty():
+            messagebox.showwarning("提示", "目前沒有字幕可供匯出！")
+            return
+        f = filedialog.asksaveasfilename(
+            title="儲存 SRT 字幕檔",
+            defaultextension=".srt",
+            filetypes=[("SRT Subtitles", "*.srt"), ("WebVTT", "*.vtt")]
+        )
+        if f:
+            try:
+                if f.endswith(".vtt"):
+                    self.subtitles.save_vtt(f)
+                else:
+                    self.subtitles.save_srt(f)
+                messagebox.showinfo("匯出成功", f"已成功儲存字幕檔至:\n{f}")
+            except Exception as e:
+                messagebox.showerror("匯出失敗", f"儲存字幕失敗: {e}")
+
     def _redraw_preview_canvas(self):
         self.preview_canvas.delete("all")
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
@@ -1618,6 +1830,33 @@ class VideoEditorWindow:
         # 若有啟用 Auto Zoom 且非遮罩模式，繪製焦點環
         if self._is_zoom_active() and not self.preview_zoom_var.get() and getattr(self, "_mask_mode", None) is None:
             self._draw_focus_reticle(cw, ch)
+
+        # 繪製即時字幕預覽 (Live Subtitle Overlay)
+        if getattr(self, "preview_subtitles_var", None) and self.preview_subtitles_var.get() and hasattr(self, "subtitles"):
+            cue = self.subtitles.get_cue_at_time(self.current_time)
+            if cue and cue.text.strip():
+                ox, oy, rw, rh = self._get_rendered_video_rect()
+                scx = ox + rw // 2
+                pos_pct = getattr(self.subtitles.style, "pos_y_pct", 0.86)
+                scy = oy + int(rh * pos_pct)
+                stext = cue.text.strip()
+                tlen = len(stext)
+                pill_w = max(70, min(rw - 20, tlen * 15 + 26))
+                pill_h = 30
+                px1 = scx - pill_w // 2
+                py1 = scy - pill_h // 2
+                px2 = scx + pill_w // 2
+                py2 = scy + pill_h // 2
+                fsize = getattr(self.subtitles.style, "font_size", 16)
+                fcol = getattr(self.subtitles.style, "font_color", "#FFFFFF")
+
+                self.preview_canvas.create_rectangle(
+                    px1, py1, px2, py2,
+                    fill="#050811", stipple="gray75", outline="#00F0FF", width=1
+                )
+                self.preview_canvas.create_text(
+                    scx, scy, text=stext, fill=fcol, font=("Helvetica", max(10, fsize - 2), "bold")
+                )
 
     def _draw_focus_reticle(self, cw, ch):
         fx = getattr(self, "zoom_focus_x", 0.5)
@@ -1974,9 +2213,35 @@ class VideoEditorWindow:
             if switched:
                 export_mode = "precise"
 
+            # 準備字幕
+            sub_srt_tmp = None
+            tmp_sub_dir = None
+            has_subs = not self.subtitles.is_empty() and (self.soft_subtitles_var.get() or self.export_srt_var.get())
+            if has_subs:
+                try:
+                    clip_cues = []
+                    clip_dur = self.end_sec - self.start_sec
+                    for c in self.subtitles.cues:
+                        if c.end > self.start_sec and c.start < self.end_sec:
+                            rel_s = max(0.0, c.start - self.start_sec)
+                            rel_e = min(clip_dur, c.end - self.start_sec)
+                            if rel_e > rel_s:
+                                clip_cues.append(SubtitleCue(id=len(clip_cues) + 1, start=rel_s, end=rel_e, text=c.text))
+                    if clip_cues:
+                        tmp_sub_dir = tempfile.mkdtemp(prefix="aura_clip_sub_")
+                        sub_srt_tmp = os.path.join(tmp_sub_dir, "clip.srt")
+                        SubtitleTrack(clip_cues).save_srt(sub_srt_tmp)
+                except Exception as ex:
+                    print("Error preparing clip subtitles:", ex)
+
             try:
                 if export_mode == "lossless":
-                    ok, msg = self.editor.trim_smart_cut(self.current_file, out_path, self.start_sec, self.end_sec)
+                    ok, msg = self.editor.trim_smart_cut(
+                        self.current_file, out_path, self.start_sec, self.end_sec,
+                        subtitles_srt_path=sub_srt_tmp,
+                        soft_subtitles=self.soft_subtitles_var.get(),
+                        export_srt_file=self.export_srt_var.get(),
+                    )
                 elif export_mode == "precise":
                     ok, msg = self.editor.trim_advanced(
                         self.current_file, out_path, self.start_sec, self.end_sec,
@@ -1986,6 +2251,9 @@ class VideoEditorWindow:
                         target_resolution=scale_res,
                         zoom_config=zoom_cfg,
                         blur_masks=self.blur_masks if has_masks else None,
+                        subtitles_srt_path=sub_srt_tmp,
+                        soft_subtitles=self.soft_subtitles_var.get(),
+                        export_srt_file=self.export_srt_var.get(),
                     )
                 elif export_mode == "gif":
                     ok, msg = self.editor.export_gif(
@@ -2002,6 +2270,9 @@ class VideoEditorWindow:
             except Exception as e:
                 ok = False
                 msg = str(e)
+            finally:
+                if tmp_sub_dir and os.path.exists(tmp_sub_dir):
+                    shutil.rmtree(tmp_sub_dir, ignore_errors=True)
 
             self.window.after(
                 0,
@@ -2049,6 +2320,10 @@ class VideoEditorWindow:
             tk.Label(box, text=f"💡 由於{reason}，已自動為您使用精準重編碼匯出。", font=fonts["badge"], fg=UI["warn"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
         elif getattr(self, "export_mode_var", None) and self.export_mode_var.get() == "lossless":
             tk.Label(box, text="⚡ Smart Cut 智慧無損：首尾毫秒級精準微編碼，主體 100% 無損複製秒出。", font=fonts["badge"], fg=UI["ok"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
+
+        companion_srt = Path(out_path).with_suffix(".srt")
+        if companion_srt.exists() and getattr(self, "export_srt_var", None) and self.export_srt_var.get():
+            tk.Label(box, text="💬 已同步產生同名 .srt 字幕檔，並已封裝字幕軌至 MP4/MOV。", font=fonts["badge"], fg=UI["blue"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
 
         sep = tk.Frame(box, bg=UI["line"], height=1)
         sep.pack(fill=tk.X, padx=16, pady=8)

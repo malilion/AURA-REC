@@ -10,7 +10,7 @@
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		SgJXWCSh4gliiHyn95VeCFS9nGw=
+		dvKzFfqAl/J79JJVgIfYYe5OA4w=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
@@ -30,7 +30,7 @@
 		</data>
 		<key>Resources/editor_window.py</key>
 		<data>
-		vbLjAmdO+iVFUahfTy5esGapSeQ=
+		iGiQHzzjAIFxLJlCFj1GqxfrUEY=
 		</data>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
 		<data>
@@ -72,9 +72,13 @@
 		<data>
 		6FJGRthC55nCG91hKZj0J2Ew8p4=
 		</data>
+		<key>Resources/speech_to_text.py</key>
+		<data>
+		Bv8wEkfqaB9IJU1IeP9Hj716Zys=
+		</data>
 		<key>Resources/video_editor.py</key>
 		<data>
-		vKrFlef9GlX7rK+0Ixy1OtyJ/i4=
+		Tp+3UgB1rzkOp9CDfK2no5zp1Is=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -90,7 +94,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			N2iCqBbJ4dWflkmt81yibtTPWJzKMDiH4RAjrzKUdK8=
+			UMEQfWmfi44JmTMPCBpjIncWLF2/GIP0Le241lNuIvw=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
@@ -125,7 +129,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			toewWEfvZSXbBjeVVCNnpq1ir4jPg7EUnsOhiq49f6k=
+			dXPqUHzwjR18P0bnWmcQCpfO3iyyIWKD4jA5Ni7103I=
 			</data>
 		</dict>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
@@ -198,11 +202,18 @@
 			ete2IxIzX3P0trA01VyPdspY2790pCrQCUZI5p/urDI=
 			</data>
 		</dict>
+		<key>Resources/speech_to_text.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			LK22NH077/SqYcQeqNJn8gAn6UbeDj49bo8XNUo14CA=
+			</data>
+		</dict>
 		<key>Resources/video_editor.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			Tn9EzCpra8AezoOhsqY6Yvy5qwrMgzGkKRQkLKfcQX8=
+			PczbUGx09/EJQ8ALp5eHAXr76ID1/MwweVqfpgxk2dA=
 			</data>
 		</dict>
 	</dict>
