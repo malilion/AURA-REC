@@ -111,5 +111,6 @@ if exist "%~dp0dist\AURA-REC-Setup.exe" (
 echo     3. 安裝精靈:     dist\AURA-REC-Setup.exe
 )
 echo.
-pause
+if not defined CI pause
 endlocal
+exit /b 0
