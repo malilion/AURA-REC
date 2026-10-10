@@ -54,6 +54,41 @@ chmod +x "$MACOS_DIR/AURARec"
 echo "[2/6] FFmpeg 不隨附 (GPL 授權)，請使用者自行安裝 (brew install ffmpeg)..."
 rm -rf "$RESOURCES_DIR/bin"
 
+# --- 內嵌 Python：用 PyInstaller 產生自帶 Python 與 Tk 的獨立 .app（預設）---
+# 設 AURA_PACKAGE_MODE=launcher 則沿用需要使用者自備 Python 的輕量啟動器版 .app。
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+if [ "${AURA_PACKAGE_MODE:-bundle}" = "bundle" ]; then
+    echo "[2b/6] 以 PyInstaller 內嵌 Python 與 Tk（$PYTHON_BIN）..."
+    "$PYTHON_BIN" - <<'PYCHECK'
+import sys, tkinter
+assert tkinter.TkVersion >= 8.6, f"需要 Tk 8.6+，目前為 {tkinter.TkVersion}（請改用 python.org 或 conda 的 Python，並以 PYTHON_BIN 指定）"
+PYCHECK
+    "$PYTHON_BIN" -m pip install --quiet pyinstaller pyobjc-framework-Cocoa
+    BUNDLE_DIR="$DIST_DIR/bundle"
+    rm -rf "$BUNDLE_DIR" "$DIST_DIR/pyi-work"
+    "$PYTHON_BIN" -m PyInstaller --noconfirm --windowed --name "AURA REC" \
+        --icon "$SCRIPT_DIR/$APP_BUNDLE/Contents/Resources/icon.icns" \
+        --osx-bundle-identifier com.aura.rec \
+        --add-data "$SCRIPT_DIR/fonts:fonts" \
+        --add-data "$SCRIPT_DIR/web_studio/download/AURA-REC.html:." \
+        --add-data "$SCRIPT_DIR/README.md:." \
+        --distpath "$BUNDLE_DIR" --workpath "$DIST_DIR/pyi-work" --specpath "$DIST_DIR/pyi-work" \
+        app.py
+    # 把隱私權限說明等鍵值合併進 PyInstaller 產生的 Info.plist
+    "$PYTHON_BIN" - "$SCRIPT_DIR/$APP_BUNDLE/Contents/Info.plist" "$BUNDLE_DIR/AURA REC.app/Contents/Info.plist" <<'PYPLIST'
+import plistlib, re, sys
+src = plistlib.load(open(sys.argv[1], "rb"))
+dst = plistlib.load(open(sys.argv[2], "rb"))
+for k, v in src.items():
+    if k.startswith("NS") or k in ("LSMinimumSystemVersion", "LSApplicationCategoryType", "ITSAppUsesNonExemptEncryption"):
+        dst[k] = v
+ver = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', open("platform_utils.py", encoding="utf8").read()).group(1)
+dst["CFBundleShortVersionString"] = dst["CFBundleVersion"] = ver
+plistlib.dump(dst, open(sys.argv[2], "wb"))
+PYPLIST
+    APP_BUNDLE="$BUNDLE_DIR/AURA REC.app"
+fi
+
 echo "[3/6] 清除 macOS 擴展屬性與快取..."
 find "$APP_BUNDLE" -name ".DS_Store" -delete 2>/dev/null || true
 find "$APP_BUNDLE" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -61,7 +96,7 @@ xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 
 echo "[4/6] 執行程式碼簽名 (Code Signing & Hardened Runtime)..."
 if [ -x "./sign_and_notarize.sh" ]; then
-    ./sign_and_notarize.sh --sign-only
+    APP_BUNDLE="$APP_BUNDLE" ./sign_and_notarize.sh --sign-only
 else
     echo "      (提示: 找不到 sign_and_notarize.sh，跳過簽名)"
 fi
