@@ -69,11 +69,9 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 ### 桌面版
 
 1. 到 [Releases](https://github.com/malilion/Record/releases/latest) 下載（已內含 Python 與 Tk，**不需另外安裝 Python**）：
-   - **macOS**（Apple Silicon，macOS 11 以上）：`AURA-REC-macOS.dmg`（拖進「應用程式」）或 `.zip`
+   - **macOS（僅支援 Apple 晶片：M1 / M2 / M3 / M4…，macOS 11 以上；不支援 Intel Mac）**：`AURA-REC-macOS.dmg`（拖進「應用程式」）或 `.zip`
    - **Windows**：`AURA-REC-Setup.exe`（安裝程式）、`AURA-REC-Windows-x64.zip` 或單檔 `AURA-REC.exe`
-2. 安裝 **FFmpeg**（因授權原因不隨附；程式找不到時會顯示指引）：
-   - macOS：`brew install ffmpeg`
-   - Windows：`winget install Gyan.FFmpeg`
+2. **FFmpeg**：macOS 版已內附（不需另外安裝）。Windows 版因授權原因不隨附，請先安裝：`winget install Gyan.FFmpeg`（程式找不到時會顯示指引）。
 3. 第一次開啟：
    - **macOS**：目前尚未通過 Apple 公證，系統會顯示「Apple 無法驗證『AURA REC』是否為惡意軟體」，**請按「完成」（不要丟到垃圾桶）**，然後二選一：
      - 到「系統設定 → 隱私權與安全性」，往下找到 AURA REC 的提示，按 **「強制打開」**，輸入密碼後再開一次。
@@ -134,6 +132,7 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 
 ## 已知限制
 
+- macOS 版只支援 Apple 晶片（arm64），不支援 Intel Mac。
 - 目前未經 Apple 公證與 Windows 程式碼簽章，首次開啟會有系統警告（見上方安裝步驟）。
 - 錄影期間會要求系統不要睡眠，但**沒有斷電或當機保護**：意外斷電可能讓進行中的檔案損毀；建議長錄影開啟自動分段。
 - 網頁版的「景深虛化／去背」只是羽化遮罩，不是人像分割；真正的人像去背在桌面版。
@@ -152,4 +151,4 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 
 ## 授權
 
-[MIT](LICENSE)。內附字型為 SIL OFL 授權。FFmpeg 需自行安裝，適用其自身授權。
+[MIT](LICENSE)。內附字型為 SIL OFL 授權。macOS 版內附的 FFmpeg 為 GPL 授權的獨立執行檔，詳見 [第三方元件與授權](THIRD_PARTY_NOTICES.md)（含對應原始碼）；Windows 版需自行安裝 FFmpeg，適用其自身授權。

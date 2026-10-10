@@ -51,7 +51,7 @@ fi
 # 確保啟動器具備執行權限
 chmod +x "$MACOS_DIR/AURARec"
 
-echo "[2/6] FFmpeg 不隨附 (GPL 授權)，請使用者自行安裝 (brew install ffmpeg)..."
+echo "[2/6] 輕量啟動器版不含 FFmpeg（內附 FFmpeg 只在獨立 bundle 模式）..."
 rm -rf "$RESOURCES_DIR/bin"
 
 # --- 內嵌 Python：用 PyInstaller 產生自帶 Python 與 Tk 的獨立 .app（預設）---
@@ -64,6 +64,21 @@ import sys, tkinter
 assert tkinter.TkVersion >= 8.6, f"需要 Tk 8.6+，目前為 {tkinter.TkVersion}（請改用 python.org 或 conda 的 Python，並以 PYTHON_BIN 指定）"
 PYCHECK
     "$PYTHON_BIN" -m pip install --quiet pyinstaller pyobjc-framework-Cocoa
+    # 內附 FFmpeg（GPL，獨立執行檔）；AURA_BUNDLE_FFMPEG=0 可略過
+    FFMPEG_ARGS=()
+    if [ "${AURA_BUNDLE_FFMPEG:-1}" = "1" ]; then
+        if [ ! -x "$SCRIPT_DIR/build/ffmpeg-bin/ffmpeg" ]; then
+            echo "      先編譯內附用的 FFmpeg（約 4 分鐘，之後會快取）..."
+            "$SCRIPT_DIR/tools/build_ffmpeg_macos.sh"
+        fi
+        FFMPEG_ARGS=(
+            --add-binary "$SCRIPT_DIR/build/ffmpeg-bin/ffmpeg:bin"
+            --add-binary "$SCRIPT_DIR/build/ffmpeg-bin/ffprobe:bin"
+            --add-data "$SCRIPT_DIR/build/ffmpeg-bin/FFMPEG-COPYING.GPLv2:."
+            --add-data "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md:."
+        )
+        cp -f "$SCRIPT_DIR/build/AURA-REC-ffmpeg-source.tar.gz" "$DIST_DIR/" 2>/dev/null || true
+    fi
     BUNDLE_DIR="$DIST_DIR/bundle"
     rm -rf "$BUNDLE_DIR" "$DIST_DIR/pyi-work"
     "$PYTHON_BIN" -m PyInstaller --noconfirm --windowed --name "AURA REC" \
@@ -72,6 +87,8 @@ PYCHECK
         --add-data "$SCRIPT_DIR/fonts:fonts" \
         --add-data "$SCRIPT_DIR/web_studio/download/AURA-REC.html:." \
         --add-data "$SCRIPT_DIR/README.md:." \
+        --add-data "$SCRIPT_DIR/LICENSE:." \
+        "${FFMPEG_ARGS[@]+"${FFMPEG_ARGS[@]}"}" \
         --distpath "$BUNDLE_DIR" --workpath "$DIST_DIR/pyi-work" --specpath "$DIST_DIR/pyi-work" \
         app.py
     # 把隱私權限說明等鍵值合併進 PyInstaller 產生的 Info.plist
