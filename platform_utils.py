@@ -19,7 +19,7 @@ from pathlib import Path
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
-APP_VERSION = "2.5.2"
+APP_VERSION = "2.5.3"
 
 
 def enable_dpi_awareness():
