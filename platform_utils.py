@@ -1250,27 +1250,36 @@ def encode_threads(profile):
     return max(1, min(4, max(1, cores - 2)))
 
 
-def scale_filter(resolution):
-    """長邊對齊，並保留比例。直向範圍不會被拉成超高的橫向畫面。"""
+def scale_filter(resolution, fps=None):
+    """長邊對齊，並保留比例。直向範圍不會被拉成超高的橫向畫面。
+
+    縮放演算法影響文字銳利度：fast_bilinear 會讓字糊掉。60 FPS 以內用 lanczos（最銳利），
+    更高幀率改用 bicubic 以免 CPU 跟不上。"""
     long_side = {"720p": 1280, "1080p": 1920, "2K": 2560}.get(resolution)
     if not long_side:
         return None
+    algo = "bicubic" if (fps or 30) > 60 else "lanczos"
     wide = f"gte(iw\\,ih)"
     return (
         f"scale=w='if({wide}\\,{long_side}\\,-2)':"
-        f"h='if({wide}\\,-2\\,{long_side})':flags=fast_bilinear"
+        f"h='if({wide}\\,-2\\,{long_side})':flags={algo}"
     )
 
 
-def capture_bitrate_k(resolution, profile):
-    """畫面錄影用的碼率。靜態桌面不需要影片那種大小。"""
-    table = {"720p": 500, "1080p": 800, "2K": 1300, "native": 1000}
-    rate = table.get(resolution, 800)
+def capture_bitrate_k(resolution, profile, fps=30):
+    """畫面錄影用的碼率（kbps）。
+
+    以前 1080p 只給 800 kbps，文字邊緣會糊成一片。這裡的基準值是 30 FPS 下文字仍清楚的量，
+    幀率越高需要的位元越多，但不是等比例（相鄰畫面差異小，編碼器吃得到壓縮）。"""
+    table = {"720p": 2500, "1080p": 4500, "2K": 8000, "native": 10000}
+    rate = table.get(resolution, 4500)
+    fps_factor = 1.0 if fps <= 30 else (1.4 if fps <= 60 else 1.8)
+    rate = int(rate * fps_factor)
     if profile == "light":
         rate = int(rate * 0.8)
     elif profile == "high":
         rate = int(rate * 1.2)
-    return max(400, rate)
+    return max(1000, rate)
 
 
 def audio_bitrate(profile):
@@ -1488,10 +1497,7 @@ def _videotoolbox_speed_flags(ffmpeg_bin):
         text = res.stdout or ""
         if "-realtime" in text:
             flags += ["-realtime", "1"]
-        if "prio_speed" in text:
-            flags += ["-prio_speed", "1"]
-        if "-constant_bit_rate" in text:
-            flags += ["-constant_bit_rate", "1"]
+        # 不再開 prio_speed / constant_bit_rate：兩者都以畫質換速度，靜態桌面的文字會明顯變糊。
     except Exception:
         pass
     _VT_FLAGS[ffmpeg_bin] = flags
@@ -1509,7 +1515,10 @@ def video_encode_args(ffmpeg_bin, use_hardware, bitrate_k, profile="balanced", q
         return str(max(16, min(40, int(base) + shift)))
 
     if enc == "h264_videotoolbox":
-        return ["-c:v", "h264_videotoolbox", "-b:v", rate, "-pix_fmt", "yuv420p", *_videotoolbox_speed_flags(ffmpeg_bin)]
+        return [
+            "-c:v", "h264_videotoolbox", "-b:v", rate, "-profile:v", "high",
+            "-pix_fmt", "yuv420p", *_videotoolbox_speed_flags(ffmpeg_bin),
+        ]
     if enc == "h264_nvenc":
         preset = "p1" if profile != "high" else "p4"
         cq = "30" if profile == "light" else "26"
