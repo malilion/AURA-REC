@@ -34,6 +34,12 @@ from platform_utils import (
     lower_process_priority,
     hold_awake,
     check_windows_modern_capture_support,
+    build_pip_filter_steps,
+)
+from window_exclusion_watermark import (
+    build_watermark_filter_steps,
+    build_window_exclusion_filter_steps,
+    resolve_excluded_window_boxes,
 )
 
 
@@ -179,8 +185,10 @@ class ScreenRecorder:
         segment_sec=None,
         pip_config=None,
         win_capture_mode="auto",
+        exclusion_config=None,
+        watermark_config=None,
     ):
-        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。支援麥克風與系統音效獨立多音軌 (Multi-track) 錄製，並原生支援 Windows 現代 Direct3D 11 / WGC (ddagrab) 60/120 FPS 高幀率擷取。"""
+        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。支援麥克風與系統音效獨立多音軌 (Multi-track) 錄製、視窗排除遮蔽與智慧浮水印保護，並原生支援 Windows 現代 Direct3D 11 / WGC (ddagrab) 60/120 FPS 高幀率擷取。"""
         profile = profile or machine_profile()
         cmd = [
             self.ffmpeg_bin,
@@ -197,6 +205,21 @@ class ScreenRecorder:
         has_dual = has_mic and has_sys
         has_any_audio = has_mic or has_sys
         pip_enabled = bool(pip_config and pip_config.get("enabled"))
+        wm_enabled = bool(watermark_config and watermark_config.get("enabled") and str(watermark_config.get("mode", "none")).lower() not in ("none", "off", ""))
+
+        # 解析視窗排除遮蔽區域
+        excl_boxes = []
+        excl_mask_mode = "blur"
+        if exclusion_config and exclusion_config.get("enabled"):
+            excl_mask_mode = exclusion_config.get("mask_mode", "blur")
+            if exclusion_config.get("excluded_boxes") is not None:
+                excl_boxes = list(exclusion_config.get("excluded_boxes") or [])
+            else:
+                try:
+                    s_idx = int(video_idx) if (video_idx is not None and str(video_idx).isdigit()) else 0
+                    excl_boxes = resolve_excluded_window_boxes(exclusion_config, screen_index=s_idx)
+                except Exception:
+                    excl_boxes = []
 
         # Windows 擷取 API 模式選擇 (wgc / ddagrab / gdi / auto)
         win_mode = str(win_capture_mode or "auto").lower()
@@ -214,6 +237,8 @@ class ScreenRecorder:
             pip_pos = str(pip_config.get("position", "bottom-right")).lower()
             border_rgb = pip_config.get("border_color", (0, 240, 255))
             margin = int(pip_config.get("margin", 32))
+            bg_mode = pip_config.get("bg_mode", "original")
+            bg_strength = pip_config.get("bg_strength", "medium")
 
             # 1. 主畫面、相機與音訊輸入
             if IS_MAC:
@@ -295,48 +320,29 @@ class ScreenRecorder:
                 h = max(2, h - h % 2)
                 filter_parts.append(f"[{base_label}]crop@aura={w}:{h}:{x}:{y}[cropped]")
                 base_label = "cropped"
+            if excl_boxes:
+                ex_steps, base_label = build_window_exclusion_filter_steps(
+                    base_label=base_label,
+                    excluded_boxes=excl_boxes,
+                    mask_mode=excl_mask_mode,
+                    region=region,
+                )
+                filter_parts.extend(ex_steps)
             scale = scale_filter(resolution)
             if scale:
                 filter_parts.append(f"[{base_label}]{scale}[scaled]")
                 base_label = "scaled"
 
-            if pip_shape == "circle":
-                r = pip_size // 2
-                b = 4 if border_rgb else 0
-                r_in = r - b
-                if border_rgb:
-                    br, bg, bb = border_rgb
-                    cam_branch = (
-                        f"[1:v]scale={pip_size}:{pip_size}:force_original_aspect_ratio=increase,"
-                        f"crop={pip_size}:{pip_size},"
-                        f"format=rgba,"
-                        f"geq=r='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {br}, r(X,Y))':"
-                        f"g='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bg}, g(X,Y))':"
-                        f"b='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bb}, b(X,Y))':"
-                        f"a='if(lte((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), 255, 0)'[cam]"
-                    )
-                else:
-                    cam_branch = (
-                        f"[1:v]scale={pip_size}:{pip_size}:force_original_aspect_ratio=increase,"
-                        f"crop={pip_size}:{pip_size},"
-                        f"format=rgba,"
-                        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-                        f"a='if(lte((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), 255, 0)'[cam]"
-                    )
-                filter_parts.append(cam_branch)
-            else:
-                w_cam = int(pip_size * 16 / 9)
-                w_cam -= w_cam % 2
-                h_cam = pip_size
-                h_cam -= h_cam % 2
-                drawbox_str = ""
-                if border_rgb:
-                    hex_color = f"0x{border_rgb[0]:02X}{border_rgb[1]:02X}{border_rgb[2]:02X}"
-                    drawbox_str = f",drawbox=x=0:y=0:w=iw:h=ih:color={hex_color}@1:t=4"
-                filter_parts.append(
-                    f"[1:v]scale={w_cam}:{h_cam}:force_original_aspect_ratio=increase,"
-                    f"crop={w_cam}:{h_cam}{drawbox_str}[cam]"
-                )
+            pip_steps = build_pip_filter_steps(
+                cam_input_label="1:v",
+                pip_size=pip_size,
+                pip_shape=pip_shape,
+                bg_mode=bg_mode,
+                bg_strength=bg_strength,
+                border_rgb=border_rgb,
+                fps=fps,
+            )
+            filter_parts.extend(pip_steps)
 
             pos_map = {
                 "bottom-right": f"W-w-{margin}:H-h-{margin}",
@@ -345,7 +351,15 @@ class ScreenRecorder:
                 "top-left": f"{margin}:{margin}",
             }
             overlay_coords = pos_map.get(pip_pos, f"W-w-{margin}:H-h-{margin}")
-            filter_parts.append(f"[{base_label}][cam]overlay={overlay_coords}:format=auto[outv]")
+            pip_out_label = "pip_out" if wm_enabled else "outv"
+            filter_parts.append(f"[{base_label}][cam]overlay={overlay_coords}:format=auto[{pip_out_label}]")
+            if wm_enabled:
+                wm_steps, _ = build_watermark_filter_steps(
+                    base_label=pip_out_label,
+                    watermark_config=watermark_config,
+                    out_label="outv",
+                )
+                filter_parts.extend(wm_steps)
 
             if has_dual:
                 mic_label = "0:a" if IS_MAC else "2:a"
@@ -437,67 +451,140 @@ class ScreenRecorder:
                 if has_sys:
                     cmd.extend(["-f", "pulse", "-i", str(sys_audio_idx)])
 
-            filters = []
-            if IS_WINDOWS and use_wgc:
-                filters.extend(["hwdownload", "format=bgra"])
-            if region:
-                x, y, w, h = [int(v) for v in region]
-                x -= x % 2
-                y -= y % 2
-                w = max(2, w - w % 2)
-                h = max(2, h - h % 2)
-                filters.append(f"crop@aura={w}:{h}:{x}:{y}")
-            scale = scale_filter(resolution)
-            if scale:
-                filters.append(scale)
+            if excl_boxes or wm_enabled:
+                # 使用 filter_complex 處理視窗排除遮罩或浮水印保護
+                filter_parts = []
+                base_label = "0:v"
+                if IS_WINDOWS and use_wgc:
+                    filter_parts.append(f"[{base_label}]hwdownload,format=bgra[main_bgra]")
+                    base_label = "main_bgra"
+                if region:
+                    x, y, w, h = [int(v) for v in region]
+                    x -= x % 2
+                    y -= y % 2
+                    w = max(2, w - w % 2)
+                    h = max(2, h - h % 2)
+                    filter_parts.append(f"[{base_label}]crop@aura={w}:{h}:{x}:{y}[cropped]")
+                    base_label = "cropped"
+                if excl_boxes:
+                    ex_steps, base_label = build_window_exclusion_filter_steps(
+                        base_label=base_label,
+                        excluded_boxes=excl_boxes,
+                        mask_mode=excl_mask_mode,
+                        region=region,
+                    )
+                    filter_parts.extend(ex_steps)
+                scale = scale_filter(resolution)
+                if scale:
+                    filter_parts.append(f"[{base_label}]{scale}[scaled]")
+                    base_label = "scaled"
+                if wm_enabled:
+                    wm_steps, base_label = build_watermark_filter_steps(
+                        base_label=base_label,
+                        watermark_config=watermark_config,
+                        out_label="outv",
+                    )
+                    filter_parts.extend(wm_steps)
+                elif base_label != "outv":
+                    filter_parts.append(f"[{base_label}]null[outv]")
 
-            if has_dual:
-                mic_label = "0:a" if IS_MAC else "1:a"
-                sys_label = "1:a" if IS_MAC else "2:a"
-                if multitrack:
-                    if filters:
-                        cmd.extend(["-vf", ",".join(filters)])
-                    cmd.extend(["-map", "0:v", "-map", mic_label, "-map", sys_label])
+                if has_dual:
+                    mic_label = "0:a" if IS_MAC else "1:a"
+                    sys_label = "1:a" if IS_MAC else "2:a"
+                    if multitrack:
+                        cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                        cmd.extend(["-map", "[outv]", "-map", mic_label, "-map", sys_label])
+                        cmd.extend([
+                            "-metadata:s:a:0", "handler_name=Microphone",
+                            "-metadata:s:a:0", "title=Microphone (麥克風)",
+                            "-metadata:s:a:1", "handler_name=System Audio",
+                            "-metadata:s:a:1", "title=System Audio (系統音效)",
+                        ])
+                    else:
+                        filter_parts.append(f"[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]")
+                        cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                        cmd.extend(["-map", "[outv]", "-map", "[outa]"])
+                elif has_mic:
+                    mic_label = "0:a" if IS_MAC else "1:a"
+                    cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                    cmd.extend(["-map", "[outv]", "-map", mic_label])
                     cmd.extend([
                         "-metadata:s:a:0", "handler_name=Microphone",
                         "-metadata:s:a:0", "title=Microphone (麥克風)",
-                        "-metadata:s:a:1", "handler_name=System Audio",
-                        "-metadata:s:a:1", "title=System Audio (系統音效)",
+                    ])
+                elif has_sys:
+                    sys_label = "1:a" if IS_MAC else "1:a"
+                    cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                    cmd.extend(["-map", "[outv]", "-map", sys_label])
+                    cmd.extend([
+                        "-metadata:s:a:0", "handler_name=System Audio",
+                        "-metadata:s:a:0", "title=System Audio (系統音效)",
+                    ])
+                else:
+                    cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                    cmd.extend(["-map", "[outv]"])
+            else:
+                filters = []
+                if IS_WINDOWS and use_wgc:
+                    filters.extend(["hwdownload", "format=bgra"])
+                if region:
+                    x, y, w, h = [int(v) for v in region]
+                    x -= x % 2
+                    y -= y % 2
+                    w = max(2, w - w % 2)
+                    h = max(2, h - h % 2)
+                    filters.append(f"crop@aura={w}:{h}:{x}:{y}")
+                scale = scale_filter(resolution)
+                if scale:
+                    filters.append(scale)
+
+                if has_dual:
+                    mic_label = "0:a" if IS_MAC else "1:a"
+                    sys_label = "1:a" if IS_MAC else "2:a"
+                    if multitrack:
+                        if filters:
+                            cmd.extend(["-vf", ",".join(filters)])
+                        cmd.extend(["-map", "0:v", "-map", mic_label, "-map", sys_label])
+                        cmd.extend([
+                            "-metadata:s:a:0", "handler_name=Microphone",
+                            "-metadata:s:a:0", "title=Microphone (麥克風)",
+                            "-metadata:s:a:1", "handler_name=System Audio",
+                            "-metadata:s:a:1", "title=System Audio (系統音效)",
+                        ])
+                    else:
+                        if filters:
+                            cmd.extend([
+                                "-filter_complex",
+                                f"[0:v]{','.join(filters)}[outv];[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
+                                "-map", "[outv]", "-map", "[outa]"
+                            ])
+                        else:
+                            cmd.extend([
+                                "-filter_complex",
+                                f"[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
+                                "-map", "0:v", "-map", "[outa]"
+                            ])
+                elif has_mic:
+                    if filters:
+                        cmd.extend(["-vf", ",".join(filters)])
+                    mic_label = "0:a" if IS_MAC else "1:a"
+                    cmd.extend(["-map", "0:v", "-map", mic_label])
+                    cmd.extend([
+                        "-metadata:s:a:0", "handler_name=Microphone",
+                        "-metadata:s:a:0", "title=Microphone (麥克風)",
+                    ])
+                elif has_sys:
+                    if filters:
+                        cmd.extend(["-vf", ",".join(filters)])
+                    sys_label = "1:a" if IS_MAC else "1:a"
+                    cmd.extend(["-map", "0:v", "-map", sys_label])
+                    cmd.extend([
+                        "-metadata:s:a:0", "handler_name=System Audio",
+                        "-metadata:s:a:0", "title=System Audio (系統音效)",
                     ])
                 else:
                     if filters:
-                        cmd.extend([
-                            "-filter_complex",
-                            f"[0:v]{','.join(filters)}[outv];[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
-                            "-map", "[outv]", "-map", "[outa]"
-                        ])
-                    else:
-                        cmd.extend([
-                            "-filter_complex",
-                            f"[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
-                            "-map", "0:v", "-map", "[outa]"
-                        ])
-            elif has_mic:
-                if filters:
-                    cmd.extend(["-vf", ",".join(filters)])
-                mic_label = "0:a" if IS_MAC else "1:a"
-                cmd.extend(["-map", "0:v", "-map", mic_label])
-                cmd.extend([
-                    "-metadata:s:a:0", "handler_name=Microphone",
-                    "-metadata:s:a:0", "title=Microphone (麥克風)",
-                ])
-            elif has_sys:
-                if filters:
-                    cmd.extend(["-vf", ",".join(filters)])
-                sys_label = "1:a" if IS_MAC else "1:a"
-                cmd.extend(["-map", "0:v", "-map", sys_label])
-                cmd.extend([
-                    "-metadata:s:a:0", "handler_name=System Audio",
-                    "-metadata:s:a:0", "title=System Audio (系統音效)",
-                ])
-            else:
-                if filters:
-                    cmd.extend(["-vf", ",".join(filters)])
+                        cmd.extend(["-vf", ",".join(filters)])
 
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
         bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
@@ -530,9 +617,11 @@ class ScreenRecorder:
         prefix=None,
         pip_config=None,
         win_capture_mode="auto",
+        exclusion_config=None,
+        watermark_config=None,
     ):
         """
-        跨平台啟動錄影程序 (支援麥克風與系統音效獨立多音軌，Windows 優先啟用 WGC / Direct3D 11 高幀率硬體擷取)
+        跨平台啟動錄影程序 (支援麥克風與系統音效獨立多音軌、視窗排除與浮水印保護，Windows 優先啟用 WGC / Direct3D 11 高幀率硬體擷取)
         """
         if self.is_recording:
             return False, "錄影已在進行中"
@@ -582,6 +671,8 @@ class ScreenRecorder:
             "quality": quality,
             "pip_config": pip_config,
             "win_capture_mode": win_capture_mode,
+            "exclusion_config": exclusion_config,
+            "watermark_config": watermark_config,
         }
         actual = self._segment_file(0) if self._segment_seconds else self.current_output_file
         self._stderr_lines = []
