@@ -24,10 +24,6 @@
 		<data>
 		8Azb7UAjF/d8Sk8jBdODMCH30bI=
 		</data>
-		<key>Resources/bin/ffmpeg</key>
-		<data>
-		DOJMNRr0E04ul770rha7OwUTVMo=
-		</data>
 		<key>Resources/editor_window.py</key>
 		<data>
 		ZOve6MTaeAFMd2jf+qD+BBNsars=
@@ -124,13 +120,6 @@
 			<key>hash2</key>
 			<data>
 			vJS0m3fCWT02a7JIouLs1GlAkeAj0IfimGqS4F0lMsw=
-			</data>
-		</dict>
-		<key>Resources/bin/ffmpeg</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			kiXxjYUSsHC+PxiM5gn4AhsqwBaTg1sYN6hd/4gnNek=
 			</data>
 		</dict>
 		<key>Resources/editor_window.py</key>
