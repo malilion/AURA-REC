@@ -1363,14 +1363,14 @@ class VideoEditorWindow:
         if dist_in <= 12 and dist_in <= dist_out:
             if self._hover_target != "in_handle":
                 self._hover_target = "in_handle"
-                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow")
                 self._skimmer_x = None
                 self._redraw_filmstrip()
             return
         elif dist_out <= 12:
             if self._hover_target != "out_handle":
                 self._hover_target = "out_handle"
-                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow")
                 self._skimmer_x = None
                 self._redraw_filmstrip()
             return
