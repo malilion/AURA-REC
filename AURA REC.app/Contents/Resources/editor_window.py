@@ -196,6 +196,10 @@ class VideoEditorWindow:
         self._drag_target = None
         self.filmstrip_thumbs = []
 
+        # 聲音音量波形圖 (Audio Waveform Track)
+        self.audio_waveform = []
+        self._waveform_loading = False
+
         self._build_ui()
         self._bind_shortcuts()
 
@@ -336,6 +340,8 @@ class VideoEditorWindow:
             bg=UI["card"],
             highlightthickness=0,
             cursor="crosshair",
+            width=800,
+            height=76,
         )
         self.filmstrip_canvas.pack(fill=tk.BOTH, expand=True)
         self.filmstrip_canvas.bind("<Configure>", lambda _e: self._redraw_filmstrip())
@@ -344,6 +350,26 @@ class VideoEditorWindow:
         self.filmstrip_canvas.bind("<Button-1>", self._on_filmstrip_press)
         self.filmstrip_canvas.bind("<B1-Motion>", self._on_filmstrip_drag)
         self.filmstrip_canvas.bind("<ButtonRelease-1>", self._on_filmstrip_release)
+
+        # (C.2) 聲音音量波形圖時間軸 (Audio Waveform Track)
+        self.waveform_frame = tk.Frame(left_col, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1, height=44)
+        self.waveform_frame.pack(fill=tk.X, pady=(0, 4))
+        self.waveform_frame.pack_propagate(False)
+
+        self.waveform_canvas = tk.Canvas(
+            self.waveform_frame,
+            bg=UI["card"],
+            highlightthickness=0,
+            cursor="crosshair",
+            width=800,
+            height=44,
+        )
+        self.waveform_canvas.pack(fill=tk.BOTH, expand=True)
+        self.waveform_canvas.bind("<Configure>", lambda _e: self._redraw_waveform())
+        self.waveform_canvas.bind("<Motion>", self._on_waveform_motion)
+        self.waveform_canvas.bind("<Leave>", self._on_waveform_leave)
+        self.waveform_canvas.bind("<Button-1>", self._on_waveform_press)
+        self.waveform_canvas.bind("<B1-Motion>", self._on_waveform_drag)
 
         # (D) 時間軸滑桿 (Aura Timeline Scale)
         self.time_slider = AuraScale(
@@ -736,9 +762,11 @@ class VideoEditorWindow:
         self._update_selection_length_label()
         self._scrub_cache.clear()
         self.filmstrip_thumbs = []
+        self.audio_waveform = []
         self._redraw_filmstrip()
         self._request_preview(0.0)
         self._load_filmstrip()
+        self._load_waveform()
 
     def _jump_to_time(self, sec):
         sec = max(0.0, min(self.total_duration, float(sec)))
@@ -777,6 +805,30 @@ class VideoEditorWindow:
                     except Exception:
                         pass
                 self._redraw_filmstrip()
+
+            try:
+                self.window.after(0, apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _load_waveform(self):
+        if not self.current_file or self.total_duration <= 0:
+            return
+        video_path = self.current_file
+        self._waveform_loading = True
+        self._redraw_waveform()
+
+        def work():
+            peaks = self.editor.extract_audio_waveform(video_path, num_bins=320)
+
+            def apply():
+                if self.current_file != video_path:
+                    return
+                self.audio_waveform = peaks
+                self._waveform_loading = False
+                self._redraw_waveform()
 
             try:
                 self.window.after(0, apply)
@@ -920,6 +972,146 @@ class VideoEditorWindow:
 
             canvas.create_rectangle(bx1, by1, bx2, by2, fill="#060709", outline=UI["warn"], width=1)
             canvas.create_text((bx1 + bx2) // 2, (by1 + by2) // 2, text=t_str, fill=UI["warn"], font=("Helvetica", 9, "bold"))
+
+        # 同步重繪音訊波形軌道
+        self._redraw_waveform()
+
+    def _get_waveform_dimensions(self):
+        canvas = getattr(self, "waveform_canvas", None)
+        if canvas is None:
+            return 800, 44
+        W = canvas.winfo_width()
+        H = canvas.winfo_height()
+        if W <= 1:
+            try:
+                c_w = int(canvas.cget("width"))
+                if c_w > 1:
+                    W = c_w
+                elif hasattr(self, "waveform_frame"):
+                    W = self.waveform_frame.winfo_width()
+            except Exception:
+                W = 800
+            if W <= 1:
+                W = 800
+        if H <= 1:
+            try:
+                c_h = int(canvas.cget("height"))
+                if c_h > 1:
+                    H = c_h
+                elif hasattr(self, "waveform_frame"):
+                    H = self.waveform_frame.winfo_height()
+            except Exception:
+                H = 44
+            if H <= 1:
+                H = 44
+        return max(30, W), max(20, H)
+
+    def _redraw_waveform(self):
+        canvas = getattr(self, "waveform_canvas", None)
+        if canvas is None:
+            return
+        try:
+            if not canvas.winfo_exists():
+                return
+        except (tk.TclError, AttributeError):
+            return
+
+        W, H = self._get_waveform_dimensions()
+        canvas.delete("all")
+
+        # 1. 軌道底色與中心對齊線
+        canvas.create_rectangle(0, 0, W, H, fill="#08090D", outline="")
+        mid_y = H // 2
+        canvas.create_line(0, mid_y, W, mid_y, fill="#141822", width=1)
+
+        dur = max(self.total_duration, 0.001)
+        in_x = int(max(0.0, min(1.0, self.start_sec / dur)) * W)
+        out_x = int(max(0.0, min(1.0, self.end_sec / dur)) * W)
+
+        # 2. 狀態標記與波形繪製
+        if getattr(self, "_waveform_loading", False):
+            canvas.create_text(
+                W // 2, mid_y,
+                text="🎙 正在分析音訊波形…",
+                fill=UI["muted"],
+                font=self.fonts["badge"],
+            )
+        elif not getattr(self, "audio_waveform", None):
+            canvas.create_text(
+                W // 2, mid_y,
+                text="🔇 無音訊軌道 (靜音影片)",
+                fill=UI["muted"],
+                font=self.fonts["badge"],
+            )
+        else:
+            peaks = self.audio_waveform
+            n = len(peaks)
+            step_w = W / float(n)
+
+            for i, p in enumerate(peaks):
+                x1 = int(i * step_w)
+                x2 = int((i + 1) * step_w)
+                bw = max(1, x2 - x1 - 1)
+                bh = max(2, int(p * ((H - 8) / 2.0)))
+
+                is_selected = (in_x <= x1 <= out_x) or (in_x <= (x1 + bw) <= out_x)
+                if is_selected:
+                    color = UI["ok"] if p > 0.05 else "#124B3C"
+                else:
+                    color = "#2E3646" if p > 0.05 else "#151B26"
+
+                canvas.create_rectangle(x1, mid_y - bh, x1 + bw, mid_y + bh, fill=color, outline="")
+
+        # 3. 未選取區暗色遮罩
+        if in_x > 0:
+            canvas.create_rectangle(0, 0, in_x, H, fill="#000000", stipple="gray50", outline="")
+        if out_x < W:
+            canvas.create_rectangle(out_x, 0, W, H, fill="#000000", stipple="gray50", outline="")
+
+        # 4. 選取區起迄端點指示線
+        if out_x > in_x:
+            canvas.create_line(in_x, 0, in_x, H, fill=UI["ok"], width=2)
+            canvas.create_line(out_x, 0, out_x, H, fill=UI["red"], width=2)
+
+        # 5. 當前播放指針
+        cur_x = int(max(0.0, min(1.0, self.current_time / dur)) * W)
+        canvas.create_line(cur_x, 0, cur_x, H, fill=UI["blue"], width=2)
+
+        # 6. 即時 Hover 刷屏指針
+        if self._skimmer_x is not None:
+            sx = self._skimmer_x
+            canvas.create_line(sx, 0, sx, H, fill=UI["warn"], width=1.5, dash=(3, 2))
+
+    def _on_waveform_motion(self, event):
+        W, H = self._get_waveform_dimensions()
+        self._hover_target = "track"
+        self._skimmer_x = event.x
+        hover_sec = max(0.0, min(self.total_duration, (event.x / float(W)) * self.total_duration))
+        self._skimmer_time = hover_sec
+        self._redraw_filmstrip()
+        self._request_preview(hover_sec)
+
+    def _on_waveform_leave(self, _event):
+        if self._drag_target is None:
+            self._skimmer_x = None
+            self._skimmer_time = None
+            self._hover_target = None
+            self._redraw_filmstrip()
+            self._request_preview(self.current_time)
+
+    def _on_waveform_press(self, event):
+        if self._playing_process and self._playing_process.poll() is None:
+            self._playing_process.terminate()
+            self._playing_process = None
+
+        W, H = self._get_waveform_dimensions()
+        click_time = max(0.0, min(self.total_duration, (event.x / float(W)) * self.total_duration))
+        self._jump_to_time(click_time)
+
+    def _on_waveform_drag(self, event):
+        W, H = self._get_waveform_dimensions()
+        drag_time = max(0.0, min(self.total_duration, (event.x / float(W)) * self.total_duration))
+        self._jump_to_time(drag_time)
 
     def _on_filmstrip_motion(self, event):
         if self._drag_target is not None:

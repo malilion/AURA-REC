@@ -18,6 +18,7 @@ VideoEditor - 頂級跨平台影片剪輯核心
 import json
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
@@ -299,6 +300,72 @@ class VideoEditor:
         except Exception as e:
             print(f"[VideoEditor] get_video_info error: {e}")
             return None
+
+    def extract_audio_waveform(self, file_path, num_bins=320):
+        """
+        快速從影片提取音量波形振幅數據 (0.0 ~ 1.0)。
+        透過 ffmpeg 下採樣提取單聲道 16-bit PCM 串流，依 num_bins 區間計算峰值振幅。
+        回傳長度為 num_bins 的浮點數列表；若影片無音訊或失敗則回傳空列表 []。
+        """
+        file_path = str(file_path)
+        if not os.path.exists(file_path):
+            return []
+
+        info = self.get_video_info(file_path)
+        if not info or not info.get("has_audio", False):
+            return []
+
+        duration = info.get("duration", 0.0)
+        if duration <= 0:
+            return []
+
+        cmd = [
+            self.ffmpeg_bin,
+            "-v", "error",
+            "-i", file_path,
+            "-vn",
+            "-ac", "1",
+            "-ar", "2000",
+            "-f", "s16le",
+            "-",
+        ]
+
+        try:
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            raw = res.stdout
+            if not raw or len(raw) < 2:
+                return []
+
+            total_samples = len(raw) // 2
+            samples_per_bin = max(1, total_samples // num_bins)
+            peaks = []
+
+            for i in range(num_bins):
+                start_byte = i * samples_per_bin * 2
+                end_byte = min(len(raw), (i + 1) * samples_per_bin * 2)
+                chunk = raw[start_byte:end_byte]
+                if chunk and len(chunk) >= 2:
+                    cnt = len(chunk) // 2
+                    vals = struct.unpack(f"<{cnt}h", chunk[: cnt * 2])
+                    peak = max(abs(v) for v in vals) / 32768.0
+                    peaks.append(round(min(1.0, max(0.0, peak)), 3))
+                else:
+                    peaks.append(0.0)
+
+            max_p = max(peaks) if peaks else 0.0
+            if 0.05 < max_p < 0.6:
+                scale = 0.85 / max_p
+                peaks = [round(min(1.0, p * scale), 3) for p in peaks]
+
+            return peaks
+        except Exception as e:
+            print(f"[VideoEditor] extract_audio_waveform error: {e}")
+            return []
 
     def detect_motion_focus(self, file_path, start_sec=0.0, end_sec=None):
         """
