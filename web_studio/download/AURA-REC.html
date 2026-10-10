@@ -2477,8 +2477,8 @@
       stageVideo.muted = false;
       standbyOverlay.classList.add('hidden');
 
-      stageVideo.onloadedmetadata = () => {
-        videoDuration = stageVideo.duration || 1;
+      const initTimeline = () => {
+        videoDuration = (isFinite(stageVideo.duration) && stageVideo.duration > 0) ? stageVideo.duration : 1;
         inPoint = 0;
         outPoint = videoDuration;
         updateTimelineDisplay();
@@ -2517,6 +2517,27 @@
       const curPercent = (stageVideo.currentTime / videoDuration) * 100;
 
       handleIn.style.left = `${inPercent}%`;
+
+      stageVideo.onloadedmetadata = () => {
+        // MediaRecorder 產生的 WebM 沒有 duration 標頭 → duration === Infinity。
+        // 把 currentTime 拉到極大值強迫瀏覽器掃描完整檔案解析出實際長度，再回到 0。
+        if (stageVideo.duration === Infinity) {
+          let settled = false;
+          const settle = () => {
+            if (settled || !isFinite(stageVideo.duration)) return;
+            settled = true;
+            stageVideo.removeEventListener('durationchange', settle);
+            stageVideo.removeEventListener('timeupdate', settle);
+            stageVideo.currentTime = 0;
+            initTimeline();
+          };
+          stageVideo.addEventListener('durationchange', settle);
+          stageVideo.addEventListener('timeupdate', settle);
+          stageVideo.currentTime = 1e9;
+        } else {
+          initTimeline();
+        }
+      };
       handleOut.style.left = `calc(${outPercent}% - 12px)`;
       selectionRange.style.left = `${inPercent}%`;
       selectionRange.style.width = `${outPercent - inPercent}%`;
@@ -2639,7 +2660,9 @@
       await new Promise(r => hiddenVideo.onloadedmetadata = r);
 
       const count = Math.min(14, Math.floor(filmstripCanvas.width / 60));
-      const step = hiddenVideo.duration / count;
+      // MediaRecorder WebM 的 duration 可能是 Infinity，改用已解析的 videoDuration
+      const hiddenDur = isFinite(hiddenVideo.duration) ? hiddenVideo.duration : videoDuration;
+      const step = hiddenDur / count;
       const thumbW = filmstripCanvas.width / count;
 
       for (let i = 0; i < count; i++) {
