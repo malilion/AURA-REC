@@ -70,8 +70,8 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 
 1. 到 [Releases](https://github.com/malilion/Record/releases/latest) 下載（已內含 Python 與 Tk，**不需另外安裝 Python**）：
    - **macOS（僅支援 Apple 晶片：M1 / M2 / M3 / M4…，macOS 11 以上；不支援 Intel Mac）**：`AURA-REC-macOS.dmg`（拖進「應用程式」）或 `.zip`
-   - **Windows**：`AURA-REC-Setup.exe`（安裝程式）、`AURA-REC-Windows-x64.zip` 或單檔 `AURA-REC.exe`
-2. **FFmpeg**：macOS 版已內附（不需另外安裝）。Windows 版因授權原因不隨附，請先安裝：`winget install Gyan.FFmpeg`（程式找不到時會顯示指引）。
+   - **Windows（64 位元）**：`AURA-REC-Setup.exe`（安裝程式，**不需要系統管理員權限**）或 `AURA-REC-Windows-x64.zip`（解壓即用）
+2. **FFmpeg 已內附**，macOS 與 Windows 都不需要另外安裝。
 3. 第一次開啟：
    - **macOS**：目前尚未通過 Apple 公證，系統會顯示「Apple 無法驗證『AURA REC』是否為惡意軟體」，**請按「完成」（不要丟到垃圾桶）**，然後二選一：
      - 到「系統設定 → 隱私權與安全性」，往下找到 AURA REC 的提示，按 **「強制打開」**，輸入密碼後再開一次。
@@ -81,6 +81,15 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
      接著到「系統設定 → 隱私權與安全性」允許 **螢幕錄製** 與 **麥克風**，授權後重新開啟程式。
    - **Windows**：若跳出 SmartScreen，按「其他資訊 → 仍要執行」。
 4. 想驗證檔案完整性，可對照 Release 內的 `SHA256SUMS.txt`。
+
+### 需要系統管理員權限嗎？
+
+**不需要。** 程式以一般使用者身分執行，從不要求 `sudo` 或「以系統管理員身分執行」。
+
+- **Windows**：安裝程式預設安裝到你的使用者資料夾，不跳 UAC；`.zip` 解壓即用。安裝時可自行選擇「為所有使用者安裝」（這時才會要求管理員）。
+- **macOS**：把 app 拖進「應用程式」即可（若你的帳號是一般使用者，系統可能要求輸入密碼，也可放在 `~/Applications`）。系統會依功能詢問**一般的隱私權限**，由你在「系統設定 → 隱私權與安全性」同意：
+  - 螢幕錄製（錄影必要）、麥克風（收音）、相機（畫中畫鏡頭）
+  - 輔助使用／輸入監控（**選用**，只有「點擊發光波紋」和「按鍵顯示」需要；不開也能錄影）
 
 ### 網頁版
 
@@ -151,4 +160,4 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 
 ## 授權
 
-[MIT](LICENSE)。內附字型為 SIL OFL 授權。macOS 版內附的 FFmpeg 為 GPL 授權的獨立執行檔，詳見 [第三方元件與授權](THIRD_PARTY_NOTICES.md)（含對應原始碼）；Windows 版需自行安裝 FFmpeg，適用其自身授權。
+[MIT](LICENSE)。內附字型為 SIL OFL 授權。內附的 FFmpeg 為 GPL 授權的獨立執行檔，詳見 [第三方元件與授權](THIRD_PARTY_NOTICES.md)（含對應原始碼）。

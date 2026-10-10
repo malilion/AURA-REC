@@ -48,8 +48,42 @@ jobs:
             dist/AURA-REC-ffmpeg-source.tar.gz
           if-no-files-found: warn
 
+  build-ffmpeg-windows:
+    name: Build FFmpeg for Windows (GPL, static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchain build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/ffmpeg-win-prefix
+            build/ffmpeg-win-src
+          key: ffmpeg-win-${{ hashFiles('tools/build_ffmpeg_windows.sh') }}
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 nasm cmake pkg-config make git curl
+          # 使用 posix 執行緒模型，靜態連結後不需 winpthread DLL
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+      - name: Build FFmpeg
+        run: ./tools/build_ffmpeg_windows.sh
+
+      - name: Upload FFmpeg
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-windows
+          path: |
+            build/ffmpeg-win-bin/*
+            build/AURA-REC-ffmpeg-win-source.tar.gz
+
   build-windows:
     name: Build Windows (EXE & ZIP)
+    needs: build-ffmpeg-windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,22 +98,40 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pyinstaller
 
+      - name: Download bundled FFmpeg
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-windows
+          path: ffmpeg-dl
+
+      - name: Place FFmpeg next to the build script
+        shell: pwsh
+        run: |
+          Copy-Item ffmpeg-dl/build/ffmpeg-win-bin/* . -Exclude FFMPEG-VERSION
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item ffmpeg-dl/build/AURA-REC-ffmpeg-win-source.tar.gz dist/
+          # 煙霧測試：確認編碼器與擷取濾鏡齊全，且能執行
+          ./ffmpeg.exe -hide_banner -version
+          $enc = ./ffmpeg.exe -hide_banner -encoders 2>&1 | Out-String
+          foreach ($e in 'libx264','libmp3lame','h264_nvenc','h264_amf','h264_qsv') { if ($enc -notmatch $e) { throw "missing encoder $e" } }
+          $flt = ./ffmpeg.exe -hide_banner -filters 2>&1 | Out-String
+          if ($flt -notmatch 'ddagrab') { throw "missing ddagrab filter" }
+          ./ffprobe.exe -hide_banner -version
+
       - name: Build Windows EXE & Package
         shell: cmd
         run: |
           build_windows_exe.bat
         env:
           PYTHONUNBUFFERED: "1"
-          # FFmpeg 為 GPL/LGPL 混合授權，發行包不隨附；使用者自行安裝（winget install Gyan.FFmpeg）
-          AURA_NO_FFMPEG_BUNDLE: "1"
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AURA-REC-Windows
           path: |
-            dist/AURA-REC.exe
             dist/AURA-REC-Windows-x64.zip
+            dist/AURA-REC-ffmpeg-win-source.tar.gz
             dist/AURA-REC-Setup.exe
           if-no-files-found: warn
 

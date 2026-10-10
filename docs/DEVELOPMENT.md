@@ -58,7 +58,7 @@ cd tools/tailwind && npm install && npm run build
 
 ### 發行流程
 
-推送 `v*` tag 後，CI（`build_desktop.yml`）會在 macOS 與 Windows 上建置並發佈 GitHub Release，附 `SHA256SUMS.txt`。macOS 發行包內附 GPL 版 FFmpeg 與對應原始碼；Windows 發行包不隨附 FFmpeg。
+推送 `v*` tag 後，CI（`build_desktop.yml`）會在 macOS 與 Windows 上建置並發佈 GitHub Release，附 `SHA256SUMS.txt`。兩個平台的發行包都內附 GPL 版 FFmpeg 與對應原始碼。Windows 的 FFmpeg 由 CI 的 `build-ffmpeg-windows` 工作在 Ubuntu 上以 `tools/build_ffmpeg_windows.sh`（mingw-w64 交叉編譯，需 nasm、cmake、pkg-config）產生，並在 Windows 工作中做煙霧測試（編碼器與 `ddagrab` 濾鏡是否齊全）。
 
 ---
 

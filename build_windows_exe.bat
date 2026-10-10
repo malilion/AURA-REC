@@ -83,12 +83,17 @@ if defined LOCAL_FFMPEG (
     if exist "!LOCAL_FFMPEG!" (
         copy /y "!LOCAL_FFMPEG!" "%~dp0dist\ffmpeg.exe" >nul
         echo      已將 ffmpeg.exe 複製至 dist 資料夾以供免安裝使用
+        REM ffprobe 與授權檔放在 ffmpeg 旁邊
+        for %%F in ("!LOCAL_FFMPEG!") do (
+            if exist "%%~dpFffprobe.exe" copy /y "%%~dpFffprobe.exe" "%~dp0dist\ffprobe.exe" >nul
+            if exist "%%~dpFFFMPEG-COPYING.GPLv2" copy /y "%%~dpFFFMPEG-COPYING.GPLv2" "%~dp0dist\FFMPEG-COPYING.GPLv2" >nul
+        )
     )
 )
 
 REM 使用 PowerShell 製作免安裝 ZIP 包
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$dist = '%~dp0dist'; $zip = Join-Path $dist 'AURA-REC-Windows-x64.zip'; Remove-Item -Force -ErrorAction SilentlyContinue $zip; $files = @((Join-Path $dist 'AURA-REC.exe')); if (Test-Path (Join-Path $dist 'ffmpeg.exe')) { $files += (Join-Path $dist 'ffmpeg.exe') }; Compress-Archive -Path $files -DestinationPath $zip; Write-Host '      已建立免安裝 ZIP 包: ' $zip"
+    "$dist = '%~dp0dist'; $zip = Join-Path $dist 'AURA-REC-Windows-x64.zip'; Remove-Item -Force -ErrorAction SilentlyContinue $zip; $files = @((Join-Path $dist 'AURA-REC.exe')); foreach ($n in 'ffmpeg.exe','ffprobe.exe','FFMPEG-COPYING.GPLv2') { if (Test-Path (Join-Path $dist $n)) { $files += (Join-Path $dist $n) } }; foreach ($n in 'THIRD_PARTY_NOTICES.md','LICENSE') { $files += (Join-Path '%~dp0' $n) }; Compress-Archive -Path $files -DestinationPath $zip; Write-Host '      已建立免安裝 ZIP 包: ' $zip"
 
 REM 檢查是否有 Inno Setup 編譯器 (ISCC.exe)
 set "ISCC_PATH="
