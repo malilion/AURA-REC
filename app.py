@@ -323,6 +323,7 @@ class LiteRecorderApp:
         self.multitrack_var = tk.BooleanVar(value=self._flag("multitrack", True))
         self.sys_audio_var = tk.StringVar(value=str(self._saved.get("sys_audio_device", "")))
         self.auto_copy_screenshot_var = tk.BooleanVar(value=self._flag("auto_copy_screenshot", True))
+        self.auto_open_editor_var = tk.BooleanVar(value=self._flag("auto_open_editor", True))
         self.sound_alert_var = tk.BooleanVar(value=self._flag("sound_alerts", True))
         self.pip_enabled_var = tk.BooleanVar(value=self._flag("pip_enabled", False))
         self.pip_floating_var = tk.BooleanVar(value=self._flag("pip_floating", True))
@@ -483,7 +484,8 @@ class LiteRecorderApp:
         file_menu.add_command(label="截圖", command=self.take_screenshot, accelerator="F7")
         file_menu.add_command(label="選擇視窗…", command=self._pick_window)
         file_menu.add_command(label="視窗排除與浮水印保護…", command=self._open_exclusion_watermark_dialog)
-        file_menu.add_command(label="剪輯影片…", command=self.open_editor)
+        file_menu.add_command(label="開啟影片剪輯…", command=self.choose_and_edit_video, accelerator="Cmd/Ctrl+O")
+        file_menu.add_command(label="剪輯最新錄影", command=self.open_editor)
         file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
         file_menu.add_command(
             label="複製最新檔案",
@@ -602,6 +604,13 @@ class LiteRecorderApp:
             state=tk.DISABLED,
         )
         self.record_btn.pack(fill=tk.X)
+        self.edit_file_btn = AuraButton(
+            self.record_row,
+            text="剪輯影片（選擇檔案）",
+            style="Ghost.TButton",
+            command=self.choose_and_edit_video,
+        )
+        self.edit_file_btn.pack(fill=tk.X, pady=(6, 0))
 
         settings_card = self._card(self.main_container)
         settings_card.pack(fill=tk.X, pady=(0, 10))
@@ -700,6 +709,7 @@ class LiteRecorderApp:
             ("點擊發光波紋", self.click_ripple_var),
             ("即時按鍵顯示", self.keystroke_hud_var),
             ("截圖自動複製", self.auto_copy_screenshot_var),
+            ("錄完自動開啟剪輯", self.auto_open_editor_var),
             ("音效提示", self.sound_alert_var),
         )):
             AuraCheck(
@@ -1025,6 +1035,8 @@ class LiteRecorderApp:
         self.root.bind_all("<F9>", lambda e: self.toggle_recording())
         self.root.bind_all("<Control-r>", lambda e: self.toggle_recording())
         self.root.bind_all("<Command-r>", lambda e: self.toggle_recording())
+        self.root.bind_all("<Command-o>", lambda e: self.choose_and_edit_video())
+        self.root.bind_all("<Control-o>", lambda e: self.choose_and_edit_video())
         self.root.bind_all("<Command-comma>", lambda e: self._show_preferences())
         self.root.bind_all("<Control-comma>", lambda e: self._show_preferences())
         self.root.bind_all("<Shift-Command-c>", lambda e: self.copy_latest_file())
@@ -1488,6 +1500,7 @@ class LiteRecorderApp:
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
             "auto_copy_screenshot": bool(self.auto_copy_screenshot_var.get()),
+            "auto_open_editor": bool(self.auto_open_editor_var.get()),
             "sound_alerts": bool(self.sound_alert_var.get()),
             "quality_index": self.quality_combo.current(),
             "format_index": self.format_combo.current(),
@@ -1941,7 +1954,11 @@ class LiteRecorderApp:
             else:
                 self.timer_hint.config(text=f"已儲存 {name}")
             if offer_editor:
-                self._show_record_completed(msg)
+                if self.auto_open_editor_var.get():
+                    # 錄完直接帶入剪輯工作站，不需要再選檔
+                    self.root.after(150, lambda m=msg: self.open_editor(m))
+                else:
+                    self._show_record_completed(msg)
         else:
             messagebox.showwarning("錄影沒有完成", msg)
 
@@ -2271,6 +2288,23 @@ class LiteRecorderApp:
             return "break"
         messagebox.showwarning("複製檔案", "沒有放到剪貼簿。")
         return "break"
+
+    def choose_and_edit_video(self):
+        """選一支現成影片，直接開啟剪輯工作站。"""
+        start_dir = None
+        try:
+            if self.recorder.output_dir and Path(self.recorder.output_dir).exists():
+                start_dir = str(self.recorder.output_dir)
+        except Exception:
+            pass
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            title="選擇要剪輯的影片",
+            initialdir=start_dir,
+            filetypes=[("影片檔", "*.mp4 *.mov *.mkv *.webm *.m4v *.avi"), ("所有檔案", "*.*")],
+        )
+        if path:
+            self.open_editor(path)
 
     def open_editor(self, video_path=None):
         """開啟影片剪輯編輯視窗"""
@@ -3195,6 +3229,7 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="開始前倒數 3 秒", variable=self.countdown_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="錄影時縮成小視窗", variable=self.auto_mini_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="截圖後自動複製至剪貼簿", variable=self.auto_copy_screenshot_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="錄完自動開啟剪輯", variable=self.auto_open_editor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="錄製滑鼠游標", variable=self.capture_cursor_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="滑鼠點擊發光漣漪 (Click Ripple)", variable=self.click_ripple_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="即時按鍵浮水印 (Keystroke HUD)", variable=self.keystroke_hud_var, command=self._save_capture_settings).pack(anchor="w", pady=2)

@@ -214,6 +214,13 @@ PHRASE_DICT = {
     "錄下游標": {"en": "Capture Cursor", "ja": "カーソルを録画"},
     "點擊發光波紋": {"en": "Click Ripple Effect", "ja": "クリック波紋エフェクト"},
     "即時按鍵顯示": {"en": "Keystroke HUD", "ja": "キー入力 HUD 表示"},
+    "剪輯影片（選擇檔案）": {"en": "Edit a Video (Choose File)", "ja": "動画を編集（ファイル選択）"},
+    "錄完自動開啟剪輯": {"en": "Open Editor After Recording", "ja": "録画後に編集を自動で開く"},
+    "開啟影片剪輯…": {"en": "Open Video in Editor…", "ja": "動画を編集で開く…"},
+    "剪輯最新錄影": {"en": "Edit Latest Recording", "ja": "最新の録画を編集"},
+    "選擇要剪輯的影片": {"en": "Choose a video to edit", "ja": "編集する動画を選択"},
+    "影片檔": {"en": "Video files", "ja": "動画ファイル"},
+    "所有檔案": {"en": "All files", "ja": "すべてのファイル"},
     "截圖自動複製": {"en": "Auto-Copy Screenshot", "ja": "スクショを自動コピー"},
     "音效提示": {"en": "Sound Alerts", "ja": "効果音通知"},
 
