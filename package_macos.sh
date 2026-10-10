@@ -20,7 +20,7 @@ mkdir -p "$DIST_DIR"
 mkdir -p "$RESOURCES_DIR"
 mkdir -p "$MACOS_DIR"
 
-echo "[1/5] 同步最新原始碼與資源至 App Bundle..."
+echo "[1/6] 同步最新原始碼與資源至 App Bundle..."
 # 拷貝核心 Python 程式碼
 cp -f app.py "$RESOURCES_DIR/"
 cp -f recorder.py "$RESOURCES_DIR/"
@@ -46,7 +46,7 @@ fi
 # 確保啟動器具備執行權限
 chmod +x "$MACOS_DIR/AURARec"
 
-echo "[2/5] 檢查 FFmpeg 工具支援..."
+echo "[2/6] 檢查 FFmpeg 工具支援..."
 mkdir -p "$RESOURCES_DIR/bin"
 # 若本機已有 ffmpeg，可拷貝或建立連結至 bundle 內供隨身使用
 FFMPEG_SYS="$(command -v ffmpeg || true)"
@@ -62,18 +62,25 @@ if [ -n "$FFMPEG_SYS" ] && [ -x "$FFMPEG_SYS" ]; then
     chmod +x "$RESOURCES_DIR/bin/ffmpeg" 2>/dev/null || true
 fi
 
-echo "[3/5] 清除 macOS 擴展屬性與快取..."
+echo "[3/6] 清除 macOS 擴展屬性與快取..."
 find "$APP_BUNDLE" -name ".DS_Store" -delete 2>/dev/null || true
 find "$APP_BUNDLE" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 
-echo "[4/5] 產生 ZIP 封裝包..."
+echo "[4/6] 執行程式碼簽名 (Code Signing & Hardened Runtime)..."
+if [ -x "./sign_and_notarize.sh" ]; then
+    ./sign_and_notarize.sh --sign-only
+else
+    echo "      (提示: 找不到 sign_and_notarize.sh，跳過簽名)"
+fi
+
+echo "[5/6] 產生 ZIP 封裝包..."
 ZIP_NAME="AURA-REC-macOS.zip"
 rm -f "$DIST_DIR/$ZIP_NAME"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
 echo "      已輸出: $DIST_DIR/$ZIP_NAME"
 
-echo "[5/5] 製作 DMG 安裝映象檔 (含 Applications 捷徑)..."
+echo "[6/6] 製作 DMG 安裝映象檔 (含 Applications 捷徑)..."
 DMG_NAME="AURA-REC-macOS.dmg"
 DMG_STAGING="$DIST_DIR/dmg_staging"
 rm -rf "$DMG_STAGING" "$DIST_DIR/$DMG_NAME"

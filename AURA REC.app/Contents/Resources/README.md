@@ -77,8 +77,33 @@
 macOS：
 
 - 雙擊 `AURA REC.app`。可拖到「應用程式」或 Dock。
-- 首次若出現「無法驗證開發者」：在 `AURA REC.app` 上按右鍵，選「開啟」，再按一次「開啟」。
+- 首次若出現「無法驗證開發者」：在 `AURA REC.app` 上按右鍵，選「開啟」，再按一次「開啟」（或參閱下方「Apple 程式碼簽名與公證」發行正式版本）。
 - 或雙擊 `ScreenRecorder.command`，或在終端機執行 `./run.sh`。
+
+#### macOS 程式碼簽名與 Apple 官方公證 (Notarization)
+
+專案內建一鍵自動化腳本 [`sign_and_notarize.sh`](file://sign_and_notarize.sh) 與 [`entitlements.plist`](file://entitlements.plist)，支援 Hardened Runtime 與 Apple 官方 `notarytool` 公證：
+
+1. **檢查本機簽名證書與工具**：
+   ```bash
+   ./sign_and_notarize.sh --check
+   ```
+2. **本機打包與 Ad-hoc 簽名**（預設）：
+   ```bash
+   ./package_macos.sh
+   ```
+3. **官方發行：Apple Developer ID 簽名與公證**：
+   ```bash
+   # 步驟 A：設定一次性公證密鑰至 macOS 鑰匙圈
+   xcrun notarytool store-credentials "notary-profile" \
+     --apple-id "your-apple-id@example.com" \
+     --team-id "TEAMID1234" \
+     --password "xxxx-xxxx-xxxx-xxxx"   # Apple App-Specific Password
+
+   # 步驟 B：一鍵完成深度簽名、送審公證與票證裝釘 (Staple)
+   ./sign_and_notarize.sh --keychain-profile "notary-profile"
+   ```
+   公證完成後，系統會自動在 `AURA REC.app` 與 `dist/AURA-REC-macOS.dmg` 上裝釘（Staple）官方票證，任何使用者下載後雙擊即可直接通行，徹底告別 Gatekeeper 阻擋！
 
 Windows：
 

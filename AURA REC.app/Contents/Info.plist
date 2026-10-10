@@ -24,5 +24,15 @@
     <true/>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AURA REC 需要麥克風存取權限以錄製聲音。</string>
+    <key>NSCameraUsageDescription</key>
+    <string>AURA REC 需要相機存取權限以提供畫中畫 (PiP) 鏡頭。</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>AURA REC 需要螢幕錄製權限以擷取螢幕畫面與視窗。</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AURA REC 需要輔助使用與自動化權限以監聽快捷鍵與點擊波紋。</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
