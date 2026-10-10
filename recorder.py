@@ -586,6 +586,10 @@ class ScreenRecorder:
                     if filters:
                         cmd.extend(["-vf", ",".join(filters)])
 
+        # 輸出固定幀率（CFR）：擷取端的到幀間隔不固定，不指定的話 MP4 會變成可變幀率、時間戳重複，
+        # 對剪輯軟體與精準裁切都不友善。
+        cmd.extend(["-fps_mode", "cfr", "-r", str(fps)])
+
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
         bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
         cmd.extend(video_encode_args(

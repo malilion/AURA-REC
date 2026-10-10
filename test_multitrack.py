@@ -26,6 +26,20 @@ class TestMultiTrackAudio(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_output_is_constant_frame_rate(self):
+        """輸出必須是固定幀率 (CFR)，避免擷取端到幀間隔不固定造成可變幀率 MP4"""
+        for fps in (30, 60):
+            cmd = self.recorder.build_capture_command(
+                video_idx="0",
+                audio_idx="1",
+                sys_audio_idx=None,
+                fps=fps,
+                output_file=Path(self.temp_dir) / "out.mp4",
+            )
+            i = cmd.index("-fps_mode")
+            self.assertEqual(cmd[i + 1], "cfr")
+            self.assertEqual(cmd[cmd.index("-r") + 1], str(fps))
+
     def test_build_capture_command_single_audio(self):
         """單一音訊 (僅麥克風) 指令建構測試"""
         cmd = self.recorder.build_capture_command(
