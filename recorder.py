@@ -1124,6 +1124,115 @@ def format_bytes(size):
     return f"{size} B"
 
 
+COMPRESS_MIN_SAVING = 0.2
+
+
+def video_encoder_tag(ffprobe_bin, path):
+    """讀出檔案是哪個編碼器寫的（例如 h264_videotoolbox、libx264）。讀不到就回空字串。"""
+    if not ffprobe_bin:
+        return ""
+    try:
+        res = subprocess.run(
+            [ffprobe_bin, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream_tags=encoder", "-of", "default=nw=1:nk=1", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        return (res.stdout or "").strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def media_duration(ffprobe_bin, path):
+    if not ffprobe_bin:
+        return 0.0
+    try:
+        res = subprocess.run(
+            [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        return float((res.stdout or "0").strip() or 0)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0.0
+
+
+def needs_compression(encoder_tag):
+    """x264 CRF 錄的檔再壓一次幾乎不會變小（實測 0~2%），只會多損一點畫質，所以跳過。
+    硬體編碼是固定碼率，靜態桌面也照花位元，重壓通常能小 5 倍以上。"""
+    tag = (encoder_tag or "").lower()
+    return "x264" not in tag and "x265" not in tag
+
+
+def build_compress_command(ffmpeg_bin, src, dst, profile="balanced"):
+    """錄完後的重壓指令：x264 慢一點的 preset 換更好的壓縮率，音軌（含多音軌）原樣複製。"""
+    preset = "medium" if profile == "light" else "slow"
+    return [
+        ffmpeg_bin, "-hide_banner", "-nostats", "-loglevel", "error", "-y",
+        "-i", str(src),
+        "-map", "0:v:0", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", preset, "-profile:v", "high",
+        "-crf", "21", "-pix_fmt", "yuv420p",
+        "-threads", str(encode_threads(profile)),
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        "-progress", "pipe:1",
+        str(dst),
+    ]
+
+
+def compress_recording(ffmpeg_bin, path, profile=None, progress=None, ffprobe_bin=None):
+    """把硬體編碼錄出的大檔重壓成 x264 CRF。
+
+    先寫到暫存檔，壓完至少小 COMPRESS_MIN_SAVING 才取代原檔，否則保留原檔不動。
+    progress(ratio) 會在背景執行緒被呼叫，ratio 介於 0~1。
+    回傳 (取代了沒, 原大小, 新大小)。"""
+    path = Path(path)
+    profile = profile or machine_profile()
+    try:
+        old_size = path.stat().st_size
+    except OSError:
+        return False, 0, 0
+    ffprobe_bin = ffprobe_bin or find_executable("ffprobe")
+    if not needs_compression(video_encoder_tag(ffprobe_bin, path)):
+        return False, old_size, old_size
+
+    tmp = path.with_name(f"{path.stem}.compressing{path.suffix}")
+    cmd = build_compress_command(ffmpeg_bin, path, tmp, profile)
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WINDOWS else {}),
+        )
+    except OSError:
+        return False, old_size, old_size
+    lower_process_priority(proc.pid)
+    total_us = media_duration(ffprobe_bin, path) * 1_000_000 if progress else 0
+    with proc.stdout:
+        for line in proc.stdout:
+            if progress and total_us > 0 and line.startswith("out_time_us="):
+                try:
+                    progress(min(1.0, max(0.0, int(line.split("=", 1)[1]) / total_us)))
+                except ValueError:
+                    pass
+    code = proc.wait()
+
+    try:
+        new_size = tmp.stat().st_size if tmp.is_file() else 0
+    except OSError:
+        new_size = 0
+    if code == 0 and new_size > 1024 and new_size <= old_size * (1 - COMPRESS_MIN_SAVING):
+        try:
+            os.replace(tmp, path)
+            return True, old_size, new_size
+        except OSError:
+            pass
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    return False, old_size, old_size
+
+
 def free_disk_bytes(path):
     folder = Path(path)
     if not folder.exists():

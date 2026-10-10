@@ -27,7 +27,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 from pathlib import Path
 
-from recorder import LOW_DISK_BYTES, ScreenRecorder, format_bytes, free_disk_bytes, save_still
+from recorder import LOW_DISK_BYTES, ScreenRecorder, compress_recording, format_bytes, free_disk_bytes, save_still
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
 from input_overlay import InputOverlayManager
@@ -320,6 +320,8 @@ class LiteRecorderApp:
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
         # 預設關閉：x264 依內容分配位元，同樣清晰度的檔案約為硬體編碼的 1/3 ~ 1/7。舊版存的 "hardware_accel" 不沿用。
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel_v2", False))
+        # 硬體加速錄出的檔是固定碼率，錄完重壓成 x264 通常小 5 倍以上；x264 錄的檔會自動跳過。
+        self.auto_compress_var = tk.BooleanVar(value=self._flag("auto_compress", True))
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
         self.multitrack_var = tk.BooleanVar(value=self._flag("multitrack", True))
         self.sys_audio_var = tk.StringVar(value=str(self._saved.get("sys_audio_device", "")))
@@ -1497,6 +1499,7 @@ class LiteRecorderApp:
             "res_index": self.res_combo.current(),
             "fps_index": self.fps_combo.current(),
             "hardware_accel_v2": bool(self.hardware_accel_var.get()),
+            "auto_compress": bool(self.auto_compress_var.get()),
             "countdown": bool(self.countdown_var.get()),
             "auto_mini": bool(self.auto_mini_var.get()),
             "capture_cursor": bool(self.capture_cursor_var.get()),
@@ -1924,9 +1927,28 @@ class LiteRecorderApp:
 
         def work():
             ok, msg = self.recorder.stop_recording()
+            if ok and self.auto_compress_var.get():
+                self._compress_parts()
             self.root.after(0, lambda: self._finish_stop(ok, msg, offer_editor=True))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _compress_parts(self):
+        """背景執行緒裡呼叫。把這次錄的每個檔重壓，進度顯示在狀態列。"""
+        parts = self.recorder.recorded_parts()
+        saved = 0
+        for index, part in enumerate(parts):
+            prefix = f"正在壓縮 {index + 1}/{len(parts)} " if len(parts) > 1 else "正在壓縮 "
+
+            def report(ratio, prefix=prefix):
+                self.root.after(0, lambda: self.status_badge.config(text=f"●  {prefix}{int(ratio * 100)}%"))
+
+            replaced, old_size, new_size = compress_recording(
+                self.recorder.ffmpeg_bin, part, progress=report
+            )
+            if replaced:
+                saved += old_size - new_size
+        self._compress_saved = saved
 
     def _finish_stop(self, ok, msg, offer_editor):
         self._stopping = False
@@ -1954,6 +1976,10 @@ class LiteRecorderApp:
                 self.timer_hint.config(text=f"已存成 {len(parts)} 個檔")
             else:
                 self.timer_hint.config(text=f"已儲存 {name}")
+            saved = getattr(self, "_compress_saved", 0)
+            self._compress_saved = 0
+            if saved > 0:
+                self.timer_hint.config(text=self.timer_hint.cget("text") + f"（壓縮省下 {format_bytes(saved)}）")
             if offer_editor:
                 if self.auto_open_editor_var.get():
                     # 錄完直接帶入剪輯工作站，不需要再選檔
@@ -3239,6 +3265,7 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="滑鼠點擊發光漣漪 (Click Ripple)", variable=self.click_ripple_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="即時按鍵浮水印 (Keystroke HUD)", variable=self.keystroke_hud_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="硬體加速（速度優先，檔案較大）", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="硬體加速錄完自動壓縮（檔案小很多，需等一下）", variable=self.auto_compress_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用錄影與截圖音效提示", variable=self.sound_alert_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟動時自動檢查新版本", variable=self.check_updates_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
 
