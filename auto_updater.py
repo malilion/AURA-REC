@@ -17,6 +17,7 @@ import threading
 import webbrowser
 import urllib.request
 import urllib.error
+import urllib.parse
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Dict, Any, Callable
@@ -28,6 +29,46 @@ IS_WINDOWS = sys.platform.startswith("win")
 
 DEFAULT_REPO = "malilion/Record"
 GITHUB_RELEASES_URL = f"https://github.com/{DEFAULT_REPO}/releases"
+
+# 安全限制：只允許 https，且 host 必須在白名單內。
+# - api.github.com：Releases API。
+# - github.com：release 頁面與 browser_download_url
+#   (https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>)。
+# 不加入 objects.githubusercontent.com：本模組只「開啟瀏覽器」而不下載檔案，
+# github.com -> objects.githubusercontent.com 的資產轉址是由瀏覽器自己處理，
+# 程式端不會 follow 該轉址；若日後改成程式內下載才需要加入並再審查。
+ALLOWED_API_HOSTS = frozenset({"api.github.com"})
+ALLOWED_DOWNLOAD_HOSTS = frozenset({"github.com"})
+MAX_REDIRECTS = 2
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+# 精確的 Release 資產檔名白名單（需與 .github/workflows/build_desktop.yml 產物一致），依偏好順序。
+MAC_ASSET_NAMES = ("AURA-REC-macOS.dmg", "AURA-REC-macOS.zip")
+WINDOWS_ASSET_NAMES = ("AURA-REC-Setup.exe", "AURA-REC.exe", "AURA-REC-Windows-x64.zip")
+
+
+def is_safe_github_url(url, allowed_hosts=ALLOWED_DOWNLOAD_HOSTS, path_prefix: str = "") -> bool:
+    """URL 必須是 https、host 精確位於白名單、無 userinfo / 非預設 port，且 path 符合前綴。"""
+    try:
+        u = urllib.parse.urlsplit(str(url))
+        if u.scheme != "https" or u.hostname not in allowed_hosts:
+            return False
+        if u.username or u.password or u.port not in (None, 443):
+            return False
+        return u.path.startswith(path_prefix)
+    except Exception:
+        return False
+
+
+class _LimitedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """限制轉址次數，且每次轉址目標都必須是 https + API host 白名單。"""
+
+    max_redirections = MAX_REDIRECTS
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_github_url(newurl, ALLOWED_API_HOSTS):
+            raise urllib.error.URLError(f"拒絕不安全的轉址目標: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def parse_version(v: str) -> tuple:
@@ -49,40 +90,28 @@ def is_newer_version(remote_ver: str, local_ver: str) -> bool:
     return parse_version(remote_ver) > parse_version(local_ver)
 
 
-def find_matching_asset(assets: list) -> Optional[str]:
-    """根據當前作業系統尋找最佳下載檔 (DMG / ZIP / EXE)"""
+def find_matching_asset(assets: list, repo: str = DEFAULT_REPO) -> Optional[str]:
+    """依當前作業系統，以「精確檔名白名單」尋找下載連結；URL 亦須通過 https + host + 路徑驗證。"""
     if not isinstance(assets, list):
         return None
 
     if IS_MAC:
-        # 優先尋找 DMG 安裝檔
-        for a in assets:
-            name = str(a.get("name", "")).lower()
-            if name.endswith(".dmg"):
-                return a.get("browser_download_url")
-        # 其次尋找 macOS ZIP 包
-        for a in assets:
-            name = str(a.get("name", "")).lower()
-            if name.endswith(".zip") and ("mac" in name or "aura" in name):
-                return a.get("browser_download_url")
+        wanted = MAC_ASSET_NAMES
     elif IS_WINDOWS:
-        # 優先尋找 EXE 安裝/執行檔
-        for a in assets:
-            name = str(a.get("name", "")).lower()
-            if name.endswith(".exe"):
-                return a.get("browser_download_url")
-        # 其次尋找 Windows ZIP 包
-        for a in assets:
-            name = str(a.get("name", "")).lower()
-            if name.endswith(".zip") and ("win" in name or "windows" in name):
-                return a.get("browser_download_url")
+        wanted = WINDOWS_ASSET_NAMES
+    else:
+        return None
 
-    # 通用 ZIP 或第一個資產
+    prefix = f"/{repo}/releases/download/"
+    by_name = {}
     for a in assets:
-        name = str(a.get("name", "")).lower()
-        if name.endswith(".zip"):
-            return a.get("browser_download_url")
+        if isinstance(a, dict):
+            by_name.setdefault(str(a.get("name", "")), a.get("browser_download_url"))
 
+    for name in wanted:
+        url = by_name.get(name)
+        if url and is_safe_github_url(url, ALLOWED_DOWNLOAD_HOSTS, prefix) and url.rsplit("/", 1)[-1] == name:
+            return url
     return None
 
 
@@ -90,6 +119,8 @@ def fetch_latest_release(repo: str = DEFAULT_REPO, timeout: float = 6.0) -> Dict
     """
     透過 GitHub REST API 取得最新 Release 資料 (同步阻塞函式，請於背景線程呼叫)
     """
+    if not _REPO_RE.match(str(repo)):
+        return {"success": False, "error": "無效的更新來源設定"}
     api_url = f"https://api.github.com/repos/{repo}/releases/latest"
     req = urllib.request.Request(
         api_url,
@@ -100,18 +131,24 @@ def fetch_latest_release(repo: str = DEFAULT_REPO, timeout: float = 6.0) -> Dict
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        opener = urllib.request.build_opener(_LimitedRedirectHandler)
+        with opener.open(req, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
             tag = payload.get("tag_name", "")
             assets = payload.get("assets", [])
-            download_url = find_matching_asset(assets) or payload.get("html_url", GITHUB_RELEASES_URL)
+            # API 回傳的 URL 不可信：僅接受 https://github.com/<repo>/releases...，否則退回預設發布頁
+            safe_releases = f"https://github.com/{repo}/releases"
+            release_url = payload.get("html_url", "")
+            if not is_safe_github_url(release_url, ALLOWED_DOWNLOAD_HOSTS, f"/{repo}/releases"):
+                release_url = safe_releases
+            download_url = find_matching_asset(assets, repo) or release_url
 
             return {
                 "success": True,
                 "latest_version": tag,
                 "release_name": payload.get("name") or tag,
-                "release_notes": payload.get("body", "").strip(),
-                "release_url": payload.get("html_url", GITHUB_RELEASES_URL),
+                "release_notes": (payload.get("body") or "").strip(),
+                "release_url": release_url,
                 "download_url": download_url,
                 "published_at": payload.get("published_at", ""),
                 "assets_count": len(assets),
@@ -237,6 +274,8 @@ class UpdateDialog:
 
         def _on_download():
             target_url = self.info.get("download_url") or self.info.get("release_url") or GITHUB_RELEASES_URL
+            if not is_safe_github_url(target_url, ALLOWED_DOWNLOAD_HOSTS):
+                target_url = GITHUB_RELEASES_URL
             try:
                 webbrowser.open(target_url)
             except Exception:
