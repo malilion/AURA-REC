@@ -253,14 +253,14 @@ PHRASE_DICT = {
 
     # --- 視窗排除與浮水印保護 ---
     "視窗隱私排除": {"en": "Window Exclusion", "ja": "ウィンドウ除外保護"},
-    "智慧防盜浮水印": {"en": "Anti-Piracy Watermark", "ja": "透かし保護 (Watermark)"},
+    "智慧標示浮水印": {"en": "Attribution Watermark", "ja": "透かし保護 (Watermark)"},
     "🛡️ 保護與浮水印設定": {"en": "🛡️ Protection & Watermark", "ja": "🛡️ 除外・透かし設定"},
     "🛡️ 視窗排除與浮水印版權保護中心": {
         "en": "🛡️ Window Exclusion & Watermark Protection Center",
         "ja": "🛡️ ウィンドウ除外・著作権透かし保護センター",
     },
-    "防止敏感對話或密碼外洩 · 為教學與商務錄影加上防盜動態浮水印": {
-        "en": "Prevent sensitive leaks · Protect recordings with dynamic anti-piracy watermarks",
+    "防止敏感對話或密碼外洩 · 為教學與商務錄影加上標示動態浮水印": {
+        "en": "Prevent sensitive leaks · Protect recordings with dynamic attribution watermarks",
         "ja": "機密チャットやパスワードの漏洩を防止 · 動的透かしで録画の無断転載を抑止",
     },
     "🔒 1. 視窗排除與敏感應用保護 (Window Exclusion)": {
@@ -440,7 +440,7 @@ PHRASE_DICT = {
     "靜音輸出": {"en": "Mute Audio", "ja": "ミュート出力"},
     "封裝軟字幕軌至 MP4/MOV": {"en": "Embed Soft Subtitles in MP4/MOV", "ja": "MP4/MOV にソフト字幕を埋め込む"},
     "同時匯出同名 .srt 字幕檔": {"en": "Also Export Companion .srt File", "ja": "同名の .srt 字幕ファイルも書き出す"},
-    "匯出時燒錄防盜浮水印": {"en": "Burn-in Watermark on Export", "ja": "書き出し時に透かしを焼き込む"},
+    "匯出時燒錄標示浮水印": {"en": "Burn-in Watermark on Export", "ja": "書き出し時に透かしを焼き込む"},
     "⚡ 一鍵匯出影片": {"en": "⚡ Export Video Now", "ja": "⚡ ワンクリック書き出し"},
     "正在匯出…": {"en": "Exporting…", "ja": "書き出し中…"},
     "螢幕錄影與截圖": {"en": "Screen Recorder & Capture", "ja": "画面録画・スクリーンショット"},
@@ -625,7 +625,7 @@ _TRAD_TO_SIMP_WORDS = {
 }
 
 _TRAD_CHAR_MAP = str.maketrans(
-    "與為進階設訂開關後製執時長寬高點選預覽顯隱視窗螢幕錄製畫質幀數聲軌檔案夾儲刪複變頭鏡圓邊藍綠強輕標準專題範本網格動態簽章防盜浮印語系體簡繁離線識別鍵盤標註畫筆塗鴉閃爍診斷報表硬體軟件僅個訊座標",
+    "與為進階設訂開關後製執時長寬高點選預覽顯隱視窗螢幕錄製畫質幀數聲軌檔案夾儲刪複變頭鏡圓邊藍綠強輕標準專題範本網格動態簽章標示浮印語系體簡繁離線識別鍵盤標註畫筆塗鴉閃爍診斷報表硬體軟件僅個訊座標",
     "与为进阶设订开关后制执时长宽高点选预览显隐视窗屏幕录制画质帧数声轨文件夹储删复变头镜圆边蓝绿强轻标准专题范本网格动态签章防盗水印语系体简繁离线识别键盘标注画笔涂鸦闪烁诊断报表硬件软件仅个讯坐标",
 )
 
@@ -747,8 +747,8 @@ def tr(text, lang=None):
             "💧 浮水印:": "💧 Watermark:",
             "角落簽名": "Corner Badge",
             "時間戳記": "Timestamp",
-            "動態巡航防盜": "Floating Anti-Piracy",
-            "滿版防盜網格": "Tiled Grid",
+            "動態巡航標示": "Floating Attribution",
+            "滿版標示網格": "Tiled Grid",
             "Logo 圖片": "Custom Logo",
         }
         sub_map_ja = {
@@ -762,8 +762,8 @@ def tr(text, lang=None):
             "💧 浮水印:": "💧 透かし:",
             "角落簽名": "コーナー署名",
             "時間戳記": "タイムスタンプ",
-            "動態巡航防盜": "動的巡回透かし",
-            "滿版防盜網格": "全面グリッド",
+            "動態巡航標示": "動的巡回透かし",
+            "滿版標示網格": "全面グリッド",
             "Logo 圖片": "カスタムロゴ",
         }
         smap = sub_map_en if target == "en" else sub_map_ja

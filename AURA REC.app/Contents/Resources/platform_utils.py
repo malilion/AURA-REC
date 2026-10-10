@@ -1027,9 +1027,28 @@ def copy_text_to_clipboard(text):
 _ENCODER_CACHE = {}
 
 
+def _probe_video_encoder(ffmpeg_bin, encoder):
+    """實際用該編碼器編一格測試畫面；失敗（無對應 GPU / 驅動）回傳 False。"""
+    try:
+        res = subprocess.run(
+            [
+                ffmpeg_bin, "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:r=10:d=0.2",
+                "-frames:v", "1", "-c:v", encoder, "-pix_fmt", "yuv420p",
+                "-f", "null", "-",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
 def detect_best_video_encoder(ffmpeg_bin):
     """
-    偵測系統最佳硬體加速影像編碼器。結果會記住，避免每次開錄都再掃一次。
+    偵測系統最佳硬體加速影像編碼器（會實際試編確認可用，否則退回 libx264）。結果會記住，避免每次開錄都再掃一次。
     - macOS: h264_videotoolbox
     - Windows: h264_nvenc (NVIDIA) > h264_qsv (Intel) > h264_amf (AMD) > libx264
     """
@@ -1051,12 +1070,12 @@ def detect_best_video_encoder(ffmpeg_bin):
             timeout=8,
         )
         out = res.stdout
-        if "h264_nvenc" in out:
-            enc = "h264_nvenc"
-        elif "h264_qsv" in out:
-            enc = "h264_qsv"
-        elif "h264_amf" in out:
-            enc = "h264_amf"
+        # 只在編碼器清單中出現並不代表可用（ffmpeg 常編入 nvenc，但機器沒有 NVIDIA GPU），
+        # 因此逐一實際試編一格，成功才採用；全部失敗則退回軟體 libx264。
+        for cand in ("h264_nvenc", "h264_qsv", "h264_amf"):
+            if cand in out and _probe_video_encoder(ffmpeg_bin, cand):
+                enc = cand
+                break
     except Exception:
         pass
 
