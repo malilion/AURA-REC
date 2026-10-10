@@ -30,6 +30,7 @@ cp -f editor_window.py "$RESOURCES_DIR/"
 cp -f video_editor.py "$RESOURCES_DIR/"
 cp -f aura_widgets.py "$RESOURCES_DIR/"
 cp -f input_overlay.py "$RESOURCES_DIR/"
+cp -f auto_updater.py "$RESOURCES_DIR/"
 [ -f README.md ] && cp -f README.md "$RESOURCES_DIR/"
 
 # 拷貝字型目錄
