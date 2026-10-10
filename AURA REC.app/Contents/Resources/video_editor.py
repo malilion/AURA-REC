@@ -638,7 +638,7 @@ class VideoEditor:
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
 
-    def trim_smart_cut(self, input_file, output_file, start_sec, end_sec):
+    def trim_smart_cut(self, input_file, output_file, start_sec, end_sec, subtitles_srt_path=None, soft_subtitles=True, export_srt_file=False):
         """
         極速精準智慧無損裁切 (Smart Cut / Smart Render):
         1. 依據關鍵影格 (I-Frame) 分析剪輯起點與終點。
@@ -822,6 +822,10 @@ class VideoEditor:
             ]
             res_concat = subprocess.run(cmd_concat, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if res_concat.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                if subtitles_srt_path and os.path.exists(subtitles_srt_path) and soft_subtitles and output_file.lower().endswith((".mp4", ".mov", ".m4v")):
+                    self._mux_soft_subtitles(output_file, subtitles_srt_path)
+                if export_srt_file and subtitles_srt_path and os.path.exists(subtitles_srt_path):
+                    self._copy_companion_srt(subtitles_srt_path, output_file)
                 return True, output_file
 
             print(f"[VideoEditor] smart_cut concat warning: {res_concat.stderr}, falling back...")
@@ -830,13 +834,19 @@ class VideoEditor:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-        return self.trim_advanced(input_file, output_file, start_sec, end_sec)
+        return self.trim_advanced(
+            input_file, output_file, start_sec, end_sec,
+            subtitles_srt_path=subtitles_srt_path, soft_subtitles=soft_subtitles, export_srt_file=export_srt_file
+        )
 
-    def trim_lossless(self, input_file, output_file, start_sec, end_sec):
+    def trim_lossless(self, input_file, output_file, start_sec, end_sec, subtitles_srt_path=None, soft_subtitles=True, export_srt_file=False):
         """
         無損極速裁剪 (預設啟用 Smart Cut 智慧無損裁切，首尾毫秒級精準對齊，主體無損複製)
         """
-        return self.trim_smart_cut(input_file, output_file, start_sec, end_sec)
+        return self.trim_smart_cut(
+            input_file, output_file, start_sec, end_sec,
+            subtitles_srt_path=subtitles_srt_path, soft_subtitles=soft_subtitles, export_srt_file=export_srt_file
+        )
 
     def trim_advanced(
         self,
@@ -856,6 +866,9 @@ class VideoEditor:
         target_resolution="original",
         zoom_config=None,
         blur_masks=None,
+        subtitles_srt_path=None,
+        soft_subtitles=True,
+        export_srt_file=False,
     ):
         """
         高級精準幀剪輯 (支援自動縮放運鏡、隱私遮罩模糊/馬賽克、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
@@ -980,10 +993,48 @@ class VideoEditor:
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if res.returncode == 0 and os.path.exists(output_file):
+                if subtitles_srt_path and os.path.exists(subtitles_srt_path) and soft_subtitles and output_file.lower().endswith((".mp4", ".mov", ".m4v")):
+                    self._mux_soft_subtitles(output_file, subtitles_srt_path)
+                if export_srt_file and subtitles_srt_path and os.path.exists(subtitles_srt_path):
+                    self._copy_companion_srt(subtitles_srt_path, output_file)
                 return True, output_file
             return False, f"剪輯失敗: {res.stderr}"
         except Exception as e:
             return False, f"剪輯發生異常: {str(e)}"
+
+    def _mux_soft_subtitles(self, target_video_path, srt_path):
+        """將 SRT 字幕軌以 mov_text 封裝入 MP4/MOV 檔案中"""
+        try:
+            tmp_out = str(target_video_path) + ".subtmp.mp4"
+            cmd = [
+                self.ffmpeg_bin, "-y",
+                "-i", str(target_video_path),
+                "-i", str(srt_path),
+                "-map", "0:v",
+                "-map", "0:a?",
+                "-map", "1:s?",
+                "-c:v", "copy",
+                "-c:a", "copy",
+                "-c:s", "mov_text",
+                "-metadata:s:s:0", "language=chi",
+                "-movflags", "+faststart",
+                tmp_out,
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0 and os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
+                os.replace(tmp_out, target_video_path)
+            elif os.path.exists(tmp_out):
+                os.remove(tmp_out)
+        except Exception as e:
+            print(f"[VideoEditor] mux soft subtitles error: {e}")
+
+    def _copy_companion_srt(self, srt_path, output_video_path):
+        """將 SRT 字幕檔案複製為影片同名之 .srt 檔案"""
+        try:
+            target_srt = str(Path(output_video_path).with_suffix(".srt"))
+            shutil.copy2(srt_path, target_srt)
+        except Exception as e:
+            print(f"[VideoEditor] copy companion srt error: {e}")
 
     def export_gif(self, input_file, output_file, start_sec, end_sec, fps=12, width=640, aspect_ratio="original", anchor="center", zoom_config=None, blur_masks=None):
         """
