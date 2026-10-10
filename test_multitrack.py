@@ -39,6 +39,7 @@ class TestMultiTrackAudio(unittest.TestCase):
         # 不應該出現 System Audio 標籤
         self.assertNotIn("System Audio", cmd_str)
 
+    @unittest.skipUnless(IS_MAC, "macOS-only (avfoundation 多音軌指令)")
     def test_build_capture_command_multitrack_mac(self):
         """macOS 雙路音訊獨立多音軌 (Multi-track) 指令建構測試"""
         cmd = self.recorder.build_capture_command(
@@ -58,6 +59,7 @@ class TestMultiTrackAudio(unittest.TestCase):
             self.assertIn('Microphone (麥克風)', cmd_str)
             self.assertIn('System Audio (系統音效)', cmd_str)
 
+    @unittest.skipUnless(IS_MAC, "macOS-only (avfoundation 多音軌指令)")
     def test_build_capture_command_multitrack_pip_mac(self):
         """macOS 畫中畫 (PiP) 模式下雙路音訊獨立多音軌指令建構測試"""
         pip_config = {
