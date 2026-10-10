@@ -58,7 +58,7 @@ rm -rf "$RESOURCES_DIR/bin"
 # 設 AURA_PACKAGE_MODE=launcher 則沿用需要使用者自備 Python 的輕量啟動器版 .app。
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if [ "${AURA_PACKAGE_MODE:-bundle}" = "bundle" ]; then
-    echo "[2b/6] 以 PyInstaller 內嵌 Python 與 Tk（$PYTHON_BIN）..."
+    echo "[2b/6] 以 PyInstaller 內嵌 Python 與 Tk（${PYTHON_BIN}）..."
     "$PYTHON_BIN" - <<'PYCHECK'
 import sys, tkinter
 assert tkinter.TkVersion >= 8.6, f"需要 Tk 8.6+，目前為 {tkinter.TkVersion}（請改用 python.org 或 conda 的 Python，並以 PYTHON_BIN 指定）"
