@@ -822,7 +822,7 @@ class LiteRecorderApp:
 
         AuraCheck(
             prot_header,
-            text="智慧防盜浮水印",
+            text="智慧標示浮水印",
             variable=self.watermark_enabled_var,
             command=self._on_protection_toggle,
         ).pack(side=tk.LEFT, padx=(12, 0))
@@ -1571,8 +1571,8 @@ class LiteRecorderApp:
             mode_names = {
                 "corner": "角落簽名",
                 "timestamp": "時間戳記",
-                "floating": "動態巡航防盜",
-                "tiled": "滿版防盜網格",
+                "floating": "動態巡航標示",
+                "tiled": "滿版標示網格",
                 "image": "Logo 圖片",
             }
             wm_lbl = mode_names.get(wm.get("mode"), "角落簽名")

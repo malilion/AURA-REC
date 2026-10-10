@@ -764,7 +764,7 @@ class VideoEditorWindow:
         AuraCheck(export_card, text="同時匯出同名 .srt 字幕檔", variable=self.export_srt_var).pack(anchor="w", padx=10, pady=(0, 2))
         AuraCheck(
             export_card,
-            text="匯出時燒錄防盜浮水印",
+            text="匯出時燒錄標示浮水印",
             variable=self.watermark_enabled_var,
             command=self._on_editor_watermark_toggle,
         ).pack(anchor="w", padx=10, pady=(0, 6))
