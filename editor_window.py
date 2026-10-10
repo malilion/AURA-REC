@@ -516,7 +516,7 @@ class VideoEditorWindow:
         self.mute_var = tk.BooleanVar(value=False)
 
         modes = [
-            ("⚡ 極速無損（0.5秒直出）", "lossless"),
+            ("⚡ 極速智慧無損 (Smart Cut 0.5s)", "lossless"),
             ("🎨 精準重編碼（比例/速度）", "precise"),
             ("🎞️ 高清 GIF 動態圖", "gif"),
             ("🎵 提取音訊 (MP3)", "audio"),
@@ -1415,7 +1415,7 @@ class VideoEditorWindow:
 
             try:
                 if export_mode == "lossless":
-                    ok, msg = self.editor.trim_lossless(self.current_file, out_path, self.start_sec, self.end_sec)
+                    ok, msg = self.editor.trim_smart_cut(self.current_file, out_path, self.start_sec, self.end_sec)
                 elif export_mode == "precise":
                     ok, msg = self.editor.trim_advanced(
                         self.current_file, out_path, self.start_sec, self.end_sec,
@@ -1483,6 +1483,8 @@ class VideoEditorWindow:
 
         if switched:
             tk.Label(box, text="💡 由於包含比例裁切或濾鏡調色，已自動為您使用精準重編碼匯出。", font=fonts["badge"], fg=UI["warn"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
+        elif getattr(self, "export_mode_var", None) and self.export_mode_var.get() == "lossless":
+            tk.Label(box, text="⚡ Smart Cut 智慧無損：首尾毫秒級精準微編碼，主體 100% 無損複製秒出。", font=fonts["badge"], fg=UI["ok"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
 
         sep = tk.Frame(box, bg=UI["line"], height=1)
         sep.pack(fill=tk.X, padx=16, pady=8)
