@@ -107,9 +107,10 @@ jobs:
       - name: Place FFmpeg next to the build script
         shell: pwsh
         run: |
-          Copy-Item ffmpeg-dl/build/ffmpeg-win-bin/* . -Exclude FFMPEG-VERSION
+          Get-ChildItem -Recurse ffmpeg-dl | Select-Object -ExpandProperty FullName
+          Copy-Item ffmpeg-dl/ffmpeg-win-bin/* . -Exclude FFMPEG-VERSION
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item ffmpeg-dl/build/AURA-REC-ffmpeg-win-source.tar.gz dist/
+          Copy-Item ffmpeg-dl/AURA-REC-ffmpeg-win-source.tar.gz dist/
           # 煙霧測試：確認編碼器與擷取濾鏡齊全，且能執行
           ./ffmpeg.exe -hide_banner -version
           $enc = ./ffmpeg.exe -hide_banner -encoders 2>&1 | Out-String
