@@ -2107,7 +2107,8 @@ class LiteRecorderApp:
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
         resolution = res_map.get(self.res_combo.current(), "1080p")
         quality_scale = {1: 0.7, 2: 1.35}.get(self.quality_combo.current(), 1.0)
-        video_k = max(280, int(capture_bitrate_k(resolution, machine_profile()) * quality_scale))
+        fps = {0: 30, 1: 60, 2: 120, 3: 15}.get(self.fps_combo.current(), 30)
+        video_k = max(500, int(capture_bitrate_k(resolution, machine_profile(), fps) * quality_scale))
         audio_count = (1 if self.audio_combo.current() > 0 else 0) + (1 if hasattr(self, "sys_audio_combo") and self.sys_audio_combo.current() > 0 else 0)
         audio_k = 96 * audio_count
         return video_k, audio_k

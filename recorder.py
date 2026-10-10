@@ -328,7 +328,7 @@ class ScreenRecorder:
                     region=region,
                 )
                 filter_parts.extend(ex_steps)
-            scale = scale_filter(resolution)
+            scale = scale_filter(resolution, fps)
             if scale:
                 filter_parts.append(f"[{base_label}]{scale}[scaled]")
                 base_label = "scaled"
@@ -474,7 +474,7 @@ class ScreenRecorder:
                         region=region,
                     )
                     filter_parts.extend(ex_steps)
-                scale = scale_filter(resolution)
+                scale = scale_filter(resolution, fps)
                 if scale:
                     filter_parts.append(f"[{base_label}]{scale}[scaled]")
                     base_label = "scaled"
@@ -534,7 +534,7 @@ class ScreenRecorder:
                     w = max(2, w - w % 2)
                     h = max(2, h - h % 2)
                     filters.append(f"crop@aura={w}:{h}:{x}:{y}")
-                scale = scale_filter(resolution)
+                scale = scale_filter(resolution, fps)
                 if scale:
                     filters.append(scale)
 
@@ -591,7 +591,7 @@ class ScreenRecorder:
         cmd.extend(["-fps_mode", "cfr", "-r", str(fps)])
 
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
-        bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
+        bitrate = max(500, int(capture_bitrate_k(resolution, profile, fps) * quality_scale))
         cmd.extend(video_encode_args(
             self.ffmpeg_bin, use_hardware_accel, bitrate, profile, quality=quality
         ))
