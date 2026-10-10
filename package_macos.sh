@@ -82,7 +82,7 @@ fi
 echo "[5/6] 產生 ZIP 封裝包..."
 ZIP_NAME="AURA-REC-macOS.zip"
 rm -f "$DIST_DIR/$ZIP_NAME"
-ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
+COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
 echo "      已輸出: $DIST_DIR/$ZIP_NAME"
 
 echo "[6/6] 製作 DMG 安裝映象檔 (含 Applications 捷徑)..."
