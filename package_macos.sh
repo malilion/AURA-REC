@@ -51,21 +51,8 @@ fi
 # 確保啟動器具備執行權限
 chmod +x "$MACOS_DIR/AURARec"
 
-echo "[2/6] 檢查 FFmpeg 工具支援..."
-mkdir -p "$RESOURCES_DIR/bin"
-# 若本機已有 ffmpeg，可拷貝或建立連結至 bundle 內供隨身使用
-FFMPEG_SYS="$(command -v ffmpeg || true)"
-[ -z "$FFMPEG_SYS" ] && [ -x "/opt/homebrew/bin/ffmpeg" ] && FFMPEG_SYS="/opt/homebrew/bin/ffmpeg"
-[ -z "$FFMPEG_SYS" ] && [ -x "/usr/local/bin/ffmpeg" ] && FFMPEG_SYS="/usr/local/bin/ffmpeg"
-
-if [ -n "$FFMPEG_SYS" ] && [ -x "$FFMPEG_SYS" ]; then
-    echo "      找到本機 FFmpeg: $FFMPEG_SYS"
-    # 若 Resources/bin/ffmpeg 尚未存在，複製一份進入 bundle 以確保可攜性
-    if [ ! -f "$RESOURCES_DIR/bin/ffmpeg" ]; then
-        cp -p "$FFMPEG_SYS" "$RESOURCES_DIR/bin/ffmpeg" 2>/dev/null || true
-    fi
-    chmod +x "$RESOURCES_DIR/bin/ffmpeg" 2>/dev/null || true
-fi
+echo "[2/6] FFmpeg 不隨附 (GPL 授權)，請使用者自行安裝 (brew install ffmpeg)..."
+rm -rf "$RESOURCES_DIR/bin"
 
 echo "[3/6] 清除 macOS 擴展屬性與快取..."
 find "$APP_BUNDLE" -name ".DS_Store" -delete 2>/dev/null || true
