@@ -92,6 +92,7 @@
       background: #00F0FF;
     }
 
+    html, body { overflow-x: hidden; }
     #ambient-canvas {
       position: absolute;
       top: -15%;
@@ -257,7 +258,7 @@
   <div id="act2" class="min-h-screen flex flex-col justify-between relative">
 
   <!-- ======================== 頂部導航狀態條 (Status & Nav Deck) ======================== -->
-  <header class="w-full z-40 px-6 py-3.5 border-b border-white/5 backdrop-blur-xl bg-obsidian-950/80 sticky top-0 flex items-center justify-between">
+  <header class="w-full z-40 px-4 sm:px-6 py-3.5 flex-wrap gap-y-2 border-b border-white/5 backdrop-blur-xl bg-obsidian-950/80 sticky top-0 flex items-center justify-between">
     <div class="flex items-center gap-4">
       <div class="flex items-center gap-2.5 group cursor-pointer" onclick="audioSynth.playChime()">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-aura-cyan via-aura-violet to-aura-rose p-[1px] shadow-lg shadow-aura-cyan/20">
@@ -280,7 +281,7 @@
     </div>
 
     <!-- 即時狀態指示器 (REC STATUS PILL) 與頂部工具 -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 flex-wrap">
       <div id="status-pill" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-obsidian-850 border border-white/10 shadow-inner">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-aura-emerald"></span>
         <span id="status-text" class="text-xs font-mono font-medium text-slate-200 uppercase tracking-wider">STANDBY</span>
@@ -319,7 +320,7 @@
     <!-- Recordly 風格控制工具列 (Ratio / Wallpaper / Padding / Polish) -->
     <div class="w-full flex items-center justify-between flex-wrap gap-2.5 mb-3 px-1">
       <!-- 畫幅比例切換 -->
-      <div class="flex items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
+      <div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
         <span class="text-slate-400 px-2 flex items-center gap-1.5"><i data-lucide="layout" class="w-3.5 h-3.5 text-aura-cyan"></i> 比例:</span>
         <button onclick="setStudioRatio('16:9')" id="ratio-btn-16-9" class="ratio-pill px-2.5 py-1 rounded-lg bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 font-bold transition-all">16:9 橫向</button>
         <button onclick="setStudioRatio('9:16')" id="ratio-btn-9-16" class="ratio-pill px-2.5 py-1 rounded-lg text-slate-300 hover:text-white transition-all">9:16 直式</button>
@@ -327,7 +328,7 @@
       </div>
 
       <!-- 桌布主題選取器 -->
-      <div class="flex items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
+      <div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
         <span class="text-slate-400 px-2 flex items-center gap-1.5"><i data-lucide="palette" class="w-3.5 h-3.5 text-aura-violet"></i> 桌布:</span>
         <button onclick="setStudioWallpaper('aurora')" id="wp-btn-aurora" class="wp-pill px-2.5 py-1 rounded-lg bg-white/15 text-white font-bold flex items-center gap-1.5 transition-all">
           <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-aura-cyan to-aura-emerald"></span> 極光
@@ -347,8 +348,8 @@
       </div>
 
       <!-- 留白與微動態 -->
-      <div class="flex items-center gap-2">
-        <div class="flex items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-obsidian-900/90 border border-white/10 backdrop-blur-xl text-xs font-mono shadow-lg">
           <span class="text-slate-400 px-1.5">留白:</span>
           <button onclick="setStudioPadding('tight')" id="pad-btn-tight" class="pad-pill px-2 py-1 rounded-lg text-slate-300 hover:text-white transition-all">緊湊</button>
           <button onclick="setStudioPadding('cozy')" id="pad-btn-cozy" class="pad-pill px-2 py-1 rounded-lg bg-aura-cyan/20 text-aura-cyan font-bold transition-all">標準</button>
@@ -528,7 +529,7 @@
 
       <!-- 控制島頂部資訊列 (Current Time / Duration / Range selection) -->
       <div class="flex items-center justify-between text-xs font-mono flex-wrap gap-2">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-obsidian-800 border border-white/5 text-slate-300">
             <span class="text-slate-500 font-sans">游標位置:</span>
             <span id="time-current" class="text-aura-cyan font-bold">00:00.00</span>
@@ -611,7 +612,7 @@
 
       <!-- ================= 底部導出與配置工具島 ================= -->
       <div class="flex items-center justify-between flex-wrap gap-3 pt-1 border-t border-white/5">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-obsidian-800 border border-white/5 text-xs text-slate-300">
             <i data-lucide="mic" class="w-3.5 h-3.5 text-aura-cyan"></i>
             <span class="font-sans">麥克風收音:</span>
@@ -1629,7 +1630,7 @@
 
       cont.innerHTML = customPresets.map(p => `
         <div class="p-3 rounded-xl bg-obsidian-900 border border-white/10 hover:border-aura-violet/40 transition-all flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 flex-wrap">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-aura-cyan via-aura-violet to-aura-rose p-[1px] shrink-0">
               <div class="w-full h-full bg-obsidian-950 rounded-[7px] flex items-center justify-center font-mono font-bold text-aura-cyan text-[10px]">
                 PRO
@@ -4161,7 +4162,122 @@
       "原始片段 (WebM)": { "en": "Raw Clip (WebM)", "ja": "元クリップ (WebM)", "zh-CN": "原始片段 (WebM)" },
       "導出精華截圖": { "en": "Export Snapshot", "ja": "スナップショット保存", "zh-CN": "导出精华截图" },
       "提取音訊 (WAV)": { "en": "Extract Audio (WAV)", "ja": "音声抽出 (WAV)", "zh-CN": "提取音频 (WAV)" },
-      "專業工作台快捷鍵清單": { "en": "Studio Keyboard Shortcuts", "ja": "ショートカットキー一覧", "zh-CN": "专业工作台快捷键清单" }
+      "專業工作台快捷鍵清單": { "en": "Studio Keyboard Shortcuts", "ja": "ショートカットキー一覧", "zh-CN": "专业工作台快捷键清单" },
+      "釋放滑鼠載入影片或專案範本": { "en": "Release to load a video or project template", "ja": "離すと動画またはテンプレートを読み込みます", "zh-CN": "释放滑鼠载入影片或专案范本" },
+      "支援 MP4、WebM、MOV 影片檔案，或直接拖入": { "en": "Supports MP4, WebM and MOV files, or drag them in", "ja": "MP4・WebM・MOV に対応。ドラッグ＆ドロップも可", "zh-CN": "支援 MP4、WebM、MOV 影片档案，或直接拖入" },
+      "專案風格範本檔立即套用": { "en": "Project style template files apply instantly", "ja": "スタイルテンプレートは即時適用されます", "zh-CN": "专案风格范本档立即套用" },
+      "專案範本已載入": { "en": "Project template loaded", "ja": "テンプレートを読み込みました", "zh-CN": "专案范本已载入" },
+      "霓虹": { "en": "Neon", "ja": "ネオン", "zh-CN": "霓虹" },
+      "留白:": { "en": "Margin:", "ja": "余白:", "zh-CN": "留白:" },
+      "寬鬆": { "en": "Loose", "ja": "ゆったり", "zh-CN": "宽松" },
+      "運鏡縮放": { "en": "Camera Zoom", "ja": "カメラズーム", "zh-CN": "运镜缩放" },
+      "波紋潤飾": { "en": "Ripple Polish", "ja": "波紋エフェクト", "zh-CN": "波纹润饰" },
+      "風格模板": { "en": "Style Templates", "ja": "スタイルテンプレート", "zh-CN": "风格模板" },
+      "100% 焦點": { "en": "100% Focus", "ja": "100% フォーカス", "zh-CN": "100% 焦点" },
+      "濾鏡:": { "en": "Filter:", "ja": "フィルター:", "zh-CN": "滤镜:" },
+      "原色": { "en": "Original", "ja": "オリジナル", "zh-CN": "原色" },
+      "黑白": { "en": "B&W", "ja": "モノクロ", "zh-CN": "黑白" },
+      "暖調": { "en": "Warm", "ja": "暖色", "zh-CN": "暖调" },
+      "倍速:": { "en": "Speed:", "ja": "再生速度:", "zh-CN": "倍速:" },
+      "劇院級螢幕錄製與剪輯工作站": { "en": "Cinema-grade screen recording & editing studio", "ja": "シネマ級の画面録画・編集スタジオ", "zh-CN": "剧院级萤幕录制与剪辑工作站" },
+      "零安裝依賴・純瀏覽器硬體加速運算・支援 4K/60FPS 錄製、Recordly 風格畫框桌布與無損非線性雙軌剪輯": { "en": "No install · hardware-accelerated in the browser · 4K/60FPS recording, framed wallpapers and lossless two-track editing", "ja": "インストール不要・ブラウザでハードウェア高速化・4K/60FPS録画、フレーム付き壁紙、ロスレス2トラック編集に対応", "zh-CN": "零安装依赖・纯浏览器硬体加速运算・支援 4K/60FPS 录制、Recordly 风格画框桌布与无损非线性双轨剪辑" },
+      "開始選取並錄製": { "en": "Pick Screen & Record", "ja": "画面を選んで録画", "zh-CN": "开始选取并录制" },
+      "匯入既有影片剪輯": { "en": "Import Video to Edit", "ja": "既存の動画を読み込んで編集", "zh-CN": "汇入既有影片剪辑" },
+      "再按一次、按 Esc，或點畫面取消": { "en": "Press again, press Esc, or click the screen to cancel", "ja": "もう一度押す、Esc、または画面クリックで取消", "zh-CN": "再按一次、按 Esc，或点画面取消" },
+      "游標位置:": { "en": "Playhead:", "ja": "再生位置:", "zh-CN": "游标位置:" },
+      "總長度:": { "en": "Total:", "ja": "全体の長さ:", "zh-CN": "总长度:" },
+      "選取長度:": { "en": "Selected:", "ja": "選択範囲:", "zh-CN": "选取长度:" },
+      "設為起點 [I]": { "en": "Set In [I]", "ja": "開始点に設定 [I]", "zh-CN": "设为起点 [I]" },
+      "設為終點 [O]": { "en": "Set Out [O]", "ja": "終了点に設定 [O]", "zh-CN": "设为终点 [O]" },
+      "切割 [S]": { "en": "Split [S]", "ja": "分割 [S]", "zh-CN": "切割 [S]" },
+      "播放 / 暫停": { "en": "Play / Pause", "ja": "再生 / 一時停止", "zh-CN": "播放 / 暂停" },
+      "標記起點 (Mark In)": { "en": "Mark In", "ja": "開始点をマーク", "zh-CN": "标记起点 (Mark In)" },
+      "標記終點 (Mark Out)": { "en": "Mark Out", "ja": "終了点をマーク", "zh-CN": "标记终点 (Mark Out)" },
+      "游標處切成兩段": { "en": "Split into two at the playhead", "ja": "再生位置で2つに分割", "zh-CN": "游标处切成两段" },
+      "倒退 1 秒 / 快進 1 秒": { "en": "Back 1s / Forward 1s", "ja": "1秒戻る / 1秒進む", "zh-CN": "倒退 1 秒 / 快进 1 秒" },
+      "靜音切換 (Mute)": { "en": "Toggle Mute", "ja": "ミュート切替", "zh-CN": "静音切换 (Mute)" },
+      "全螢幕模式切換": { "en": "Toggle Fullscreen", "ja": "全画面切替", "zh-CN": "全萤幕模式切换" },
+      "取消倒數": { "en": "Cancel Countdown", "ja": "カウントダウン取消", "zh-CN": "取消倒数" },
+      "專案存檔與預設集管理 (.auraproj)": { "en": "Project Files & Presets (.auraproj)", "ja": "プロジェクト保存とプリセット管理 (.auraproj)", "zh-CN": "专案存档与预设集管理 (.auraproj)" },
+      "儲存並分享品牌視覺規範 · 漸層背景、視窗陰影、圓角比例與標題一鍵套用": { "en": "Save and share your brand look · gradient, shadow, corner radius and title in one click", "ja": "ブランドの見た目を保存・共有 · グラデーション、影、角丸、タイトルをワンクリック適用", "zh-CN": "储存并分享品牌视觉规范 · 渐层背景、视窗阴影、圆角比例与标题一键套用" },
+      "匯出 .auraproj 檔案": { "en": "Export .auraproj File", "ja": ".auraproj を書き出し", "zh-CN": "汇出 .auraproj 档案" },
+      "載入 .auraproj 檔案": { "en": "Load .auraproj File", "ja": ".auraproj を読み込み", "zh-CN": "载入 .auraproj 档案" },
+      "另存為新預設集": { "en": "Save as New Preset", "ja": "新しいプリセットとして保存", "zh-CN": "另存为新预设集" },
+      "還原原廠預設": { "en": "Restore Defaults", "ja": "初期設定に戻す", "zh-CN": "还原原厂预设" },
+      "風格預設集庫 (Templates)": { "en": "Style Presets (Templates)", "ja": "スタイルプリセット", "zh-CN": "风格预设集库 (Templates)" },
+      "視窗與樣式微調 (Custom Look)": { "en": "Window & Style Tweaks", "ja": "ウィンドウとスタイルの調整", "zh-CN": "视窗与样式微调 (Custom Look)" },
+      "官方團隊經典範本 (Built-in Presets)": { "en": "Built-in Presets", "ja": "公式プリセット", "zh-CN": "官方团队经典范本 (Built-in Presets)" },
+      "本機自訂預設集庫 (Custom Presets)": { "en": "Custom Presets", "ja": "カスタムプリセット", "zh-CN": "本机自订预设集库 (Custom Presets)" },
+      "0 組預設": { "en": "0 presets", "ja": "プリセット 0 件", "zh-CN": "0 组预设" },
+      "macOS 視窗標題文字 (Title Bar Text)": { "en": "macOS Window Title Text", "ja": "macOS ウィンドウタイトル文字", "zh-CN": "macOS 视窗标题文字 (Title Bar Text)" },
+      "反映於工作台與 MP4 匯出": { "en": "Applied to the studio and MP4 export", "ja": "スタジオと MP4 書き出しに反映", "zh-CN": "反映于工作台与 MP4 汇出" },
+      "視窗圓角比例 (Border Radius)": { "en": "Corner Radius", "ja": "ウィンドウの角丸", "zh-CN": "视窗圆角比例 (Border Radius)" },
+      "緊緻 (8px)": { "en": "Tight (8px)", "ja": "小 (8px)", "zh-CN": "紧致 (8px)" },
+      "標準 (16px)": { "en": "Standard (16px)", "ja": "標準 (16px)", "zh-CN": "标准 (16px)" },
+      "圓潤 (24px)": { "en": "Round (24px)", "ja": "丸め (24px)", "zh-CN": "圆润 (24px)" },
+      "視窗陰影與環境光深度 (Shadow & Glow)": { "en": "Shadow & Glow Depth", "ja": "影とグローの強さ", "zh-CN": "视窗阴影与环境光深度 (Shadow & Glow)" },
+      "微光 (Subtle)": { "en": "Subtle", "ja": "控えめ", "zh-CN": "微光 (Subtle)" },
+      "劇院 (Studio)": { "en": "Studio", "ja": "スタジオ", "zh-CN": "剧院 (Studio)" },
+      "強烈 (Neon)": { "en": "Neon", "ja": "ネオン強", "zh-CN": "强烈 (Neon)" },
+      "漸層背景桌布": { "en": "Gradient Wallpaper", "ja": "グラデーション壁紙", "zh-CN": "渐层背景桌布" },
+      "工作階段自動保存：已啟用 (重新整理或重開頁面自動還原)": { "en": "Session autosave: on (restored after refresh or reopening)", "ja": "セッション自動保存: 有効 (再読込・再オープン時に復元)", "zh-CN": "工作阶段自动保存：已启用 (重新整理或重开页面自动还原)" },
+      "關閉": { "en": "Close", "ja": "閉じる", "zh-CN": "关闭" },
+      "✨ 純前端霓虹視窗外框 MP4 匯出": { "en": "✨ Client-side Neon Framed MP4 Export", "ja": "✨ ブラウザ内ネオンフレーム MP4 書き出し", "zh-CN": "✨ 纯前端霓虹视窗外框 MP4 汇出" },
+      "免安裝軟體 · 瀏覽器本機即時渲染 · 霓虹桌布光暈與 macOS 視窗外框": { "en": "No install · rendered locally in your browser · neon wallpaper glow and macOS window frame", "ja": "インストール不要 · ブラウザ内でレンダリング · ネオン壁紙と macOS ウィンドウ枠", "zh-CN": "免安装软体 · 浏览器本机即时渲染 · 霓虹桌布光晕与 macOS 视窗外框" },
+      "即時預覽畫面": { "en": "Live Preview", "ja": "ライブプレビュー", "zh-CN": "即时预览画面" },
+      "載入中...": { "en": "Loading...", "ja": "読み込み中...", "zh-CN": "载入中..." },
+      "💡 預覽畫面反映目前選取的畫幅比例、霓虹壁紙、環境光暈、標題列文字與留白間距。": { "en": "💡 The preview reflects the current aspect ratio, wallpaper, glow, title text and margin.", "ja": "💡 プレビューは現在の比率・壁紙・グロー・タイトル・余白を反映します。", "zh-CN": "💡 预览画面反映目前选取的画幅比例、霓虹壁纸、环境光晕、标题列文字与留白间距。" },
+      "輸出比例 (Aspect Ratio)": { "en": "Aspect Ratio", "ja": "出力比率", "zh-CN": "输出比例 (Aspect Ratio)" },
+      "解析度": { "en": "Resolution", "ja": "解像度", "zh-CN": "解析度" },
+      "1080p FHD (精細高畫質)": { "en": "1080p FHD (high quality)", "ja": "1080p FHD (高画質)", "zh-CN": "1080p FHD (精细高画质)" },
+      "720p HD (極速較小檔案)": { "en": "720p HD (fast, smaller file)", "ja": "720p HD (高速・小サイズ)", "zh-CN": "720p HD (极速较小档案)" },
+      "幀率 (FPS)": { "en": "Frame Rate (FPS)", "ja": "フレームレート (FPS)", "zh-CN": "帧率 (FPS)" },
+      "30 FPS (平穩標準)": { "en": "30 FPS (standard)", "ja": "30 FPS (標準)", "zh-CN": "30 FPS (平稳标准)" },
+      "60 FPS (極致流暢運鏡)": { "en": "60 FPS (ultra smooth)", "ja": "60 FPS (超なめらか)", "zh-CN": "60 FPS (极致流畅运镜)" },
+      "霓虹桌布主題": { "en": "Neon Wallpaper Theme", "ja": "ネオン壁紙テーマ", "zh-CN": "霓虹桌布主题" },
+      "macOS 視窗外框與標題列": { "en": "macOS Window Frame & Title Bar", "ja": "macOS ウィンドウ枠とタイトルバー", "zh-CN": "macOS 视窗外框与标题列" },
+      "霓虹擴散環境光暈與立體陰影": { "en": "Neon Glow & 3D Shadow", "ja": "ネオングローと立体的な影", "zh-CN": "霓虹扩散环境光晕与立体阴影" },
+      "視窗邊界留白": { "en": "Window Margin", "ja": "ウィンドウ余白", "zh-CN": "视窗边界留白" },
+      "導出範圍": { "en": "Export Range", "ja": "書き出し範囲", "zh-CN": "导出范围" },
+      "選取範圍 (": { "en": "Selection (", "ja": "選択範囲 (", "zh-CN": "选取范围 (" },
+      "整段影片 (Full)": { "en": "Full Video", "ja": "動画全体", "zh-CN": "整段影片 (Full)" },
+      "正在渲染合成視窗與編碼...": { "en": "Rendering and encoding...", "ja": "レンダリングとエンコード中...", "zh-CN": "正在渲染合成视窗与编码..." },
+      "影格 0 / 0 · 準備中": { "en": "Frame 0 / 0 · Preparing", "ja": "フレーム 0 / 0 · 準備中", "zh-CN": "影格 0 / 0 · 准备中" },
+      "取消導出": { "en": "Cancel Export", "ja": "書き出しを取消", "zh-CN": "取消导出" },
+      "自動偵測硬體加速：WebCodecs + mp4-muxer": { "en": "Auto-detected hardware acceleration: WebCodecs + mp4-muxer", "ja": "ハードウェア高速化を自動検出: WebCodecs + mp4-muxer", "zh-CN": "自动侦测硬体加速：WebCodecs + mp4-muxer" },
+      "取消": { "en": "Cancel", "ja": "キャンセル", "zh-CN": "取消" },
+      "開始渲染導出 MP4": { "en": "Start Rendering MP4", "ja": "MP4 のレンダリング開始", "zh-CN": "开始渲染导出 MP4" }
+    };
+
+    const WEB_I18N_ATTRS = {
+      "介面語言 (Language / 言語)": { "en": "Language", "ja": "言語", "zh-CN": "介面语言 (Language / 言语)" },
+      "專案存檔與風格預設集 (.auraproj)": { "en": "Project files & style presets (.auraproj)", "ja": "プロジェクト保存とスタイルプリセット (.auraproj)", "zh-CN": "专案存档与风格预设集 (.auraproj)" },
+      "鍵盤快捷鍵 (Hotkeys)": { "en": "Keyboard shortcuts", "ja": "キーボードショートカット", "zh-CN": "键盘快捷键 (Hotkeys)" },
+      "全螢幕模式": { "en": "Fullscreen", "ja": "全画面", "zh-CN": "全萤幕模式" },
+      "模擬智慧推軌縮放": { "en": "Simulated smart camera zoom", "ja": "スマートズームを再現", "zh-CN": "模拟智慧推轨缩放" },
+      "點擊時顯示 Recordly 物理光圈波紋": { "en": "Show a ripple on click", "ja": "クリック時に波紋を表示", "zh-CN": "点击时显示 Recordly 物理光圈波纹" },
+      "關閉": { "en": "Close", "ja": "閉じる", "zh-CN": "关闭" },
+      "最小化": { "en": "Minimize", "ja": "最小化", "zh-CN": "最小化" },
+      "全螢幕": { "en": "Fullscreen", "ja": "全画面", "zh-CN": "全萤幕" },
+      "點擊自訂視窗標題列文字": { "en": "Click to edit the window title text", "ja": "クリックしてタイトル文字を編集", "zh-CN": "点击自订视窗标题列文字" },
+      "選取模式 (指標)": { "en": "Select mode (pointer)", "ja": "選択モード (ポインター)", "zh-CN": "选取模式 (指标)" },
+      "畫筆標註 (自由塗鴉)": { "en": "Pen annotation (freehand)", "ja": "ペン注釈 (手書き)", "zh-CN": "画笔标注 (自由涂鸦)" },
+      "矩形標註框": { "en": "Rectangle annotation", "ja": "矩形注釈", "zh-CN": "矩形标注框" },
+      "🔍 聚光燈聚焦模式 (Spotlight Focus)": { "en": "🔍 Spotlight focus mode", "ja": "🔍 スポットライトモード", "zh-CN": "🔍 聚光灯聚焦模式 (Spotlight Focus)" },
+      "⌨️ 按鍵投影 HUD (Keystroke Cast)": { "en": "⌨️ Keystroke HUD", "ja": "⌨️ キー入力表示 HUD", "zh-CN": "⌨️ 按键投影 HUD (Keystroke Cast)" },
+      "清空標註 (Clear)": { "en": "Clear annotations", "ja": "注釈をクリア", "zh-CN": "清空标注 (Clear)" },
+      "拖曳調整位置，或雙擊切換角落": { "en": "Drag to move, or double-click to switch corners", "ja": "ドラッグで移動、ダブルクリックで角を切替", "zh-CN": "拖曳调整位置，或双击切换角落" },
+      "標記起點 (按鍵 I)": { "en": "Mark In (key I)", "ja": "開始点をマーク (I キー)", "zh-CN": "标记起点 (按键 I)" },
+      "標記終點 (按鍵 O)": { "en": "Mark Out (key O)", "ja": "終了点をマーク (O キー)", "zh-CN": "标记终点 (按键 O)" },
+      "在播放頭切成兩段，各自存檔 (按鍵 S)": { "en": "Split at the playhead into two clips (key S)", "ja": "再生位置で2つに分割 (S キー)", "zh-CN": "在播放头切成两段，各自存档 (按键 S)" },
+      "播放 / 暫停 (空白鍵)": { "en": "Play / Pause (Space)", "ja": "再生 / 一時停止 (スペース)", "zh-CN": "播放 / 暂停 (空白键)" },
+      "切割點": { "en": "Split point", "ja": "分割点", "zh-CN": "切割点" },
+      "起點 (In-Point)": { "en": "In point", "ja": "開始点", "zh-CN": "起点 (In-Point)" },
+      "終點 (Out-Point)": { "en": "Out point", "ja": "終了点", "zh-CN": "终点 (Out-Point)" },
+      "畫中畫背景虛化 / 智慧去背": { "en": "PiP background blur / cutout", "ja": "PiP 背景ぼかし / 切り抜き", "zh-CN": "画中画背景虚化 / 智慧去背" },
+      "不帶外框壁紙之原始畫面片段": { "en": "Raw clip without frame or wallpaper", "ja": "枠・壁紙なしの元クリップ", "zh-CN": "不带外框壁纸之原始画面片段" },
+      "重設為原廠預設狀態": { "en": "Reset to defaults", "ja": "初期状態にリセット", "zh-CN": "重设为原厂预设状态" },
+      "例如：AURA REC — 4K 60FPS": { "en": "e.g. AURA REC — 4K 60FPS", "ja": "例: AURA REC — 4K 60FPS", "zh-CN": "例如：AURA REC — 4K 60FPS" }
     };
 
     function setWebLanguage(lang) {
@@ -4188,6 +4304,17 @@
           node.nodeValue = orig.replace(trimmed, WEB_I18N_DICT[trimmed][targetLang]);
         }
       }
+
+      document.querySelectorAll('[title],[placeholder]').forEach((el) => {
+        ['title', 'placeholder'].forEach((attr) => {
+          if (!el.hasAttribute(attr)) return;
+          const key = '_i18nOrig_' + attr;
+          if (el[key] === undefined) el[key] = el.getAttribute(attr);
+          const orig = el[key];
+          const tr = WEB_I18N_ATTRS[orig];
+          el.setAttribute(attr, targetLang !== 'zh-TW' && tr && tr[targetLang] ? tr[targetLang] : orig);
+        });
+      });
     }
 
     // 初始化載入使用者先前的工作階段設定
