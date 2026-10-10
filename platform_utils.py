@@ -77,7 +77,7 @@ class HiddenRecordHotkeys:
         class EventHotKeyID(ctypes.Structure):
             _fields_ = [("signature", c_uint32), ("id", c_uint32)]
 
-        names = {1: "f9", 2: "f8", 3: "esc"}
+        names = {1: "f9", 2: "f8", 3: "esc", 4: "f6", 5: "f7"}
         proc_type = CFUNCTYPE(c_int32, c_void_p, c_void_p, c_void_p)
         carbon.GetApplicationEventTarget.restype = c_void_p
         carbon.InstallEventHandler.restype = c_int32
@@ -119,7 +119,7 @@ class HiddenRecordHotkeys:
         ) != 0:
             return False
         refs = []
-        for key_code, ident in ((101, 1), (100, 2), (53, 3)):
+        for key_code, ident in ((101, 1), (100, 2), (53, 3), (97, 4), (98, 5)):
             hot = c_void_p()
             status = carbon.RegisterEventHotKey(
                 key_code, 0, EventHotKeyID(0x41555241, ident),
