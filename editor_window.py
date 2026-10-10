@@ -15,6 +15,8 @@ VideoEditorWindow - Recordly / Screen Studio 風格專業影片剪輯工作站
 
 import os
 import re
+import shutil
+import tempfile
 import threading
 import time
 from datetime import datetime
