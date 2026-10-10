@@ -2340,15 +2340,22 @@
         return;
       }
       try {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            displaySurface: 'monitor',
-            frameRate: { ideal: 60, max: 60 },
-            width: { ideal: 3840 },
-            height: { ideal: 2160 }
-          },
-          audio: true
-        });
+        const displayVideo = {
+          displaySurface: 'monitor',
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 3840 },
+          height: { ideal: 2160 }
+        };
+        let displayStream;
+        try {
+          displayStream = await navigator.mediaDevices.getDisplayMedia({ video: displayVideo, audio: true });
+        } catch (primaryErr) {
+          // 使用者取消／拒絕權限就不要再問第二次；其他錯誤（如不支援系統音訊）降級為純畫面
+          if (primaryErr && (primaryErr.name === 'NotAllowedError' || primaryErr.name === 'AbortError')) throw primaryErr;
+          console.warn('System audio capture unsupported, falling back to video only:', primaryErr);
+          displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          alert('此瀏覽器不支援系統內部聲音錄製，已自動切換為純畫面錄影（仍可勾選麥克風）。');
+        }
 
         let finalStream = displayStream;
         const wantMic = document.getElementById('chk-mic').checked;
