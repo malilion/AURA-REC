@@ -2316,10 +2316,26 @@
     // ==========================================
     // 7. 錄製工作流 (WebRTC Capture)
     // ==========================================
+    let captureStarting = false;
+    let countdownCancel = null;
+
+    function cancelCountdown() {
+      if (!countdownTimer) return false;
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      countdownOverlay.classList.add('hidden');
+      if (countdownCancel) { const c = countdownCancel; countdownCancel = null; c(); }
+      return true;
+    }
+
     async function startCaptureWorkflow() {
+      // 倒數或選取畫面期間不得再次呼叫 getDisplayMedia
+      if (captureStarting || countdownTimer) return;
+      captureStarting = true;
       audioSynth.playClick();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         alert('請用 Chrome 或 Edge 雙擊 AURA-REC.html。目前這個瀏覽器不支援螢幕錄製。');
+        captureStarting = false;
         return;
       }
       try {
@@ -2370,29 +2386,43 @@
           if (isRecording) stopRecording();
         };
 
+        captureStarting = false;
         runCountdown(() => {
           beginMediaRecorder(mediaStream);
+        }, () => {
+          // Esc 取消倒數：釋放擷取串流並回到待機畫面
+          if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+          if (micStream) micStream.getTracks().forEach(t => t.stop());
+          displayStream.getTracks().forEach(t => t.stop());
+          mediaStream = null;
+          micStream = null;
+          stageVideo.srcObject = null;
+          standbyOverlay.classList.remove('hidden');
         });
 
       } catch (err) {
+        captureStarting = false;
         console.error('Error starting capture:', err);
         alert('無法啟動錄影：' + err.message);
       }
     }
 
-    function runCountdown(callback) {
+    function runCountdown(callback, onCancel) {
+      countdownCancel = onCancel || null;
       countdownOverlay.classList.remove('hidden');
       let count = 3;
       countdownNumber.innerText = count;
       audioSynth.playBeep(440, 0.1);
 
-      const timer = setInterval(() => {
+      countdownTimer = setInterval(() => {
         count--;
         if (count > 0) {
           countdownNumber.innerText = count;
           audioSynth.playBeep(440, 0.1);
         } else {
-          clearInterval(timer);
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          countdownCancel = null;
           countdownOverlay.classList.add('hidden');
           audioSynth.playBeep(880, 0.2);
           callback();
@@ -2486,6 +2516,27 @@
         setupVideoAudioVisualizer();
         resizeAnnotationCanvas();
       };
+
+      stageVideo.onloadedmetadata = () => {
+        // MediaRecorder 產生的 WebM 沒有 duration 標頭 → duration === Infinity。
+        // 把 currentTime 拉到極大值強迫瀏覽器掃描完整檔案解析出實際長度，再回到 0。
+        if (stageVideo.duration === Infinity) {
+          let settled = false;
+          const settle = () => {
+            if (settled || !isFinite(stageVideo.duration)) return;
+            settled = true;
+            stageVideo.removeEventListener('durationchange', settle);
+            stageVideo.removeEventListener('timeupdate', settle);
+            stageVideo.currentTime = 0;
+            initTimeline();
+          };
+          stageVideo.addEventListener('durationchange', settle);
+          stageVideo.addEventListener('timeupdate', settle);
+          stageVideo.currentTime = 1e9;
+        } else {
+          initTimeline();
+        }
+      };
     }
 
     function importLocalVideo(event) {
@@ -2517,27 +2568,6 @@
       const curPercent = (stageVideo.currentTime / videoDuration) * 100;
 
       handleIn.style.left = `${inPercent}%`;
-
-      stageVideo.onloadedmetadata = () => {
-        // MediaRecorder 產生的 WebM 沒有 duration 標頭 → duration === Infinity。
-        // 把 currentTime 拉到極大值強迫瀏覽器掃描完整檔案解析出實際長度，再回到 0。
-        if (stageVideo.duration === Infinity) {
-          let settled = false;
-          const settle = () => {
-            if (settled || !isFinite(stageVideo.duration)) return;
-            settled = true;
-            stageVideo.removeEventListener('durationchange', settle);
-            stageVideo.removeEventListener('timeupdate', settle);
-            stageVideo.currentTime = 0;
-            initTimeline();
-          };
-          stageVideo.addEventListener('durationchange', settle);
-          stageVideo.addEventListener('timeupdate', settle);
-          stageVideo.currentTime = 1e9;
-        } else {
-          initTimeline();
-        }
-      };
       handleOut.style.left = `calc(${outPercent}% - 12px)`;
       selectionRange.style.left = `${inPercent}%`;
       selectionRange.style.width = `${outPercent - inPercent}%`;
@@ -3029,10 +3059,43 @@
         return;
       }
       audioSynth.playChime();
-      const a = document.createElement('a');
-      a.href = activeVideoUrl;
-      a.download = `AURA_Audio_${Date.now()}.webm`;
-      a.click();
+      const saveAs = (href, name) => {
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = name;
+        a.click();
+      };
+      // 解碼音軌並編成 16-bit PCM WAV，檔名與實際格式一致；解碼失敗時退回原 WebM 並以 .webm 命名
+      activeVideoBlob.arrayBuffer().then((buf) => {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        return ctx.decodeAudioData(buf).finally(() => { if (ctx.close) ctx.close(); });
+      }).then((audioBuf) => {
+        const ch = audioBuf.numberOfChannels, len = audioBuf.length, rate = audioBuf.sampleRate;
+        const dataBytes = len * ch * 2;
+        const out = new DataView(new ArrayBuffer(44 + dataBytes));
+        const wr = (o, str) => { for (let i = 0; i < str.length; i++) out.setUint8(o + i, str.charCodeAt(i)); };
+        wr(0, 'RIFF'); out.setUint32(4, 36 + dataBytes, true); wr(8, 'WAVE'); wr(12, 'fmt ');
+        out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+        out.setUint32(24, rate, true); out.setUint32(28, rate * ch * 2, true);
+        out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true); wr(36, 'data'); out.setUint32(40, dataBytes, true);
+        const chans = [];
+        for (let c = 0; c < ch; c++) chans.push(audioBuf.getChannelData(c));
+        let off = 44;
+        for (let i = 0; i < len; i++) {
+          for (let c = 0; c < ch; c++) {
+            const v = Math.max(-1, Math.min(1, chans[c][i]));
+            out.setInt16(off, v < 0 ? v * 0x8000 : v * 0x7FFF, true);
+            off += 2;
+          }
+        }
+        const url = URL.createObjectURL(new Blob([out], { type: 'audio/wav' }));
+        saveAs(url, `AURA_Audio_${Date.now()}.wav`);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }).catch((err) => {
+        console.warn('WAV decode failed, exporting original WebM container:', err);
+        saveAs(activeVideoUrl, `AURA_Audio_${Date.now()}.webm`);
+      });
     }
 
     // ==========================================
@@ -3960,9 +4023,14 @@
       displayKeystrokeHUD(e);
 
       switch(e.code) {
+        case 'Escape':
+          if (cancelCountdown()) e.preventDefault();
+          break;
         case 'Space':
           e.preventDefault();
-          if (isRecording) {
+          if (countdownTimer || captureStarting) {
+            // 倒數中 / 等待選取畫面中：忽略，避免重複呼叫 getDisplayMedia
+          } else if (isRecording) {
             stopRecording();
           } else if (activeVideoBlob) {
             togglePlayPause();
