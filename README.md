@@ -68,8 +68,8 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
 
 ### 桌面版
 
-1. 到 [Releases](https://github.com/malilion/Record/releases/latest) 下載：
-   - **macOS**：`AURA-REC-macOS.dmg`（拖進「應用程式」）或 `.zip`
+1. 到 [Releases](https://github.com/malilion/Record/releases/latest) 下載（已內含 Python 與 Tk，**不需另外安裝 Python**）：
+   - **macOS**（Apple Silicon，macOS 11 以上）：`AURA-REC-macOS.dmg`（拖進「應用程式」）或 `.zip`
    - **Windows**：`AURA-REC-Setup.exe`（安裝程式）、`AURA-REC-Windows-x64.zip` 或單檔 `AURA-REC.exe`
 2. 安裝 **FFmpeg**（因授權原因不隨附；程式找不到時會顯示指引）：
    - macOS：`brew install ffmpeg`

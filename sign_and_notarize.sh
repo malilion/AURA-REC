@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-APP_BUNDLE="AURA REC.app"
+APP_BUNDLE="${APP_BUNDLE:-AURA REC.app}"
 DIST_DIR="$SCRIPT_DIR/dist"
 ENTITLEMENTS="$SCRIPT_DIR/entitlements.plist"
 DMG_PATH="$DIST_DIR/AURA-REC-macOS.dmg"
@@ -235,7 +235,7 @@ find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | w
 done
 
 # 簽名主執行檔 AURARec
-MAIN_EXEC="$APP_BUNDLE/Contents/MacOS/AURARec"
+MAIN_EXEC="$APP_BUNDLE/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || echo AURARec)"
 if [ -f "$MAIN_EXEC" ]; then
     echo "      簽名主啟動器: AURARec..."
     codesign --force --options runtime --timestamp \

@@ -50,6 +50,10 @@ cd tools/tailwind && npm install && npm run build
 - 雙擊 `build_windows_exe.bat`，產生 `dist\AURA-REC.exe`，或直接雙擊 `ScreenRecorder.bat` 啟動。
 - 桌面程式「說明」選單內建「系統聲音錄製指南…」（macOS BlackHole / Windows 立體聲混音圖文步驟）與「FFmpeg 與硬體加速檢視…」。
 
+### macOS 內嵌 Python
+
+`package_macos.sh` 預設用 PyInstaller 產生自帶 Python 與 Tk 8.6 的獨立 `.app`（輸出在 `dist/bundle/`，再封成 zip / dmg），使用者不需安裝 Python。需要一個 Tk 8.6+ 的 Python（python.org 或 conda 版；系統與 Xcode 內附的 Python 是 Tk 8.5 不行），可用 `PYTHON_BIN=/path/to/python3 ./package_macos.sh` 指定。設 `AURA_PACKAGE_MODE=launcher` 則回到需自備 Python 的輕量啟動器版。目前只產出 arm64（Apple Silicon）。
+
 ### 發行流程
 
 推送 `v*` tag 後，CI（`build_desktop.yml`）會在 macOS 與 Windows 上建置並發佈 GitHub Release，附 `SHA256SUMS.txt`。發行包不隨附 FFmpeg（GPL）。
