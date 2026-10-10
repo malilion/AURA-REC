@@ -200,6 +200,15 @@ class VideoEditorWindow:
         self.audio_waveform = []
         self._waveform_loading = False
 
+        # 隱私模糊與局部馬賽克 (Blur & Mosaic Masks)
+        self.blur_masks = []
+        self._mask_mode = None
+        self._mask_drag_start = None
+        self._mask_drag_curr = None
+        self._mask_apply_scope = tk.StringVar(value="full")
+        self._mask_counter = 1
+        self._mask_del_targets = {}
+
         self._build_ui()
         self._bind_shortcuts()
 
@@ -314,7 +323,8 @@ class VideoEditorWindow:
         )
         self.preview_canvas.pack(fill=tk.BOTH, expand=True)
         self.preview_canvas.bind("<Button-1>", self._on_canvas_click)
-        self.preview_canvas.bind("<B1-Motion>", self._on_canvas_click)
+        self.preview_canvas.bind("<B1-Motion>", self._on_canvas_drag)
+        self.preview_canvas.bind("<ButtonRelease-1>", self._on_canvas_release)
 
         # (B) 數位碼錶與選取範圍資訊
         time_row = tk.Frame(left_col, bg=UI["bg"])
@@ -512,7 +522,91 @@ class VideoEditorWindow:
             command=self._on_zoom_mode_or_level_changed,
         ).pack(anchor="w", padx=10, pady=(2, 6))
 
-        # 卡片 3：【剪輯範圍數值 (Trim Points)】
+        # 卡片 3：【隱私模糊與馬賽克 (Privacy Mask)】
+        mask_card = self._inspector_card(right_col, "隱私遮罩 (Blur & Mosaic)")
+
+        # 模式按鈕列
+        mask_btn_row = tk.Frame(mask_card, bg=UI["card"])
+        mask_btn_row.pack(fill=tk.X, padx=10, pady=(2, 4))
+
+        self.btn_mask_blur = tk.Button(
+            mask_btn_row,
+            text="＋ 模糊 (Blur)",
+            font=self.fonts["badge"],
+            bg=UI["field"],
+            fg=UI["text"],
+            activebackground=UI["hover"],
+            activeforeground=UI["white"],
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            command=lambda: self._toggle_mask_mode("blur"),
+        )
+        self.btn_mask_blur.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2), ipady=3)
+
+        self.btn_mask_mosaic = tk.Button(
+            mask_btn_row,
+            text="＋ 馬賽克 (Mosaic)",
+            font=self.fonts["badge"],
+            bg=UI["field"],
+            fg=UI["text"],
+            activebackground=UI["hover"],
+            activeforeground=UI["white"],
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            command=lambda: self._toggle_mask_mode("mosaic"),
+        )
+        self.btn_mask_mosaic.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0), ipady=3)
+
+        # 提示標籤
+        self.lbl_mask_hint = tk.Label(
+            mask_card,
+            text="點選上方按鈕後，在預覽畫面上拖曳框選",
+            font=self.fonts["badge"],
+            fg=UI["muted"],
+            bg=UI["card"],
+            anchor="w",
+            wraplength=280,
+            justify=tk.LEFT,
+        )
+        self.lbl_mask_hint.pack(fill=tk.X, padx=10, pady=(0, 4))
+
+        # 套用時段設定
+        scope_row = tk.Frame(mask_card, bg=UI["card"])
+        scope_row.pack(fill=tk.X, padx=10, pady=(0, 4))
+        tk.Label(scope_row, text="套用:", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).pack(side=tk.LEFT, padx=(0, 4))
+        AuraRadio(scope_row, text="全片", variable=self._mask_apply_scope, value="full").pack(side=tk.LEFT, padx=(0, 6))
+        AuraRadio(scope_row, text="僅選取區段", variable=self._mask_apply_scope, value="selection").pack(side=tk.LEFT)
+
+        # 遮罩計數與清空列
+        cnt_row = tk.Frame(mask_card, bg=UI["card"])
+        cnt_row.pack(fill=tk.X, padx=10, pady=(2, 4))
+        self.lbl_mask_count = tk.Label(
+            cnt_row, text="已建立 0 個遮罩", font=self.fonts["badge"], fg=UI["white"], bg=UI["card"]
+        )
+        self.lbl_mask_count.pack(side=tk.LEFT)
+        self.btn_clear_masks = tk.Button(
+            cnt_row,
+            text="全部清空",
+            font=self.fonts["badge"],
+            bg=UI["field"],
+            fg=UI["muted"],
+            activebackground=UI["hover"],
+            activeforeground=UI["red"],
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            state=tk.DISABLED,
+            command=self._clear_all_masks,
+        )
+        self.btn_clear_masks.pack(side=tk.RIGHT)
+
+        # 遮罩列表容器
+        self.mask_list_frame = tk.Frame(mask_card, bg=UI["card"])
+        self.mask_list_frame.pack(fill=tk.X, padx=10, pady=(0, 6))
+
+        # 卡片 4：【剪輯範圍數值 (Trim Points)】
         trim_card = self._inspector_card(right_col, "精準剪輯範圍")
         time_edit_frame = tk.Frame(trim_card, bg=UI["card"])
         time_edit_frame.pack(fill=tk.X, padx=10, pady=(4, 8))
@@ -770,6 +864,11 @@ class VideoEditorWindow:
         self._scrub_cache.clear()
         self.filmstrip_thumbs = []
         self.audio_waveform = []
+        self.blur_masks = []
+        self._mask_mode = None
+        self._mask_drag_start = None
+        self._mask_drag_curr = None
+        self._update_mask_ui()
         self._redraw_filmstrip()
         self._request_preview(0.0)
         self._load_filmstrip()
@@ -1296,6 +1395,138 @@ class VideoEditorWindow:
         except Exception as e:
             print("Preview render error:", e)
 
+    def _get_rendered_video_rect(self):
+        """計算目前影片在 preview_canvas 上的實際渲染位置與長寬 (扣除黑邊 letterbox)"""
+        cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+        cw = max(1, cfg["preview_w"])
+        ch = max(1, cfg["preview_h"])
+        if not self.video_info:
+            return 0, 0, cw, ch
+        vw = max(1, self.video_info.get("width", 1920))
+        vh = max(1, self.video_info.get("height", 1080))
+        scale = min(cw / vw, ch / vh)
+        rw = max(1, int(vw * scale))
+        rh = max(1, int(vh * scale))
+        ox = (cw - rw) // 2
+        oy = (ch - rh) // 2
+        return ox, oy, rw, rh
+
+    def _canvas_to_norm_rect(self, x1, y1, x2, y2):
+        """將 Canvas 像素座標轉換為相對於影片本體的標準化座標 (0.0 ~ 1.0)"""
+        ox, oy, rw, rh = self._get_rendered_video_rect()
+        bx1 = min(x1, x2)
+        bx2 = max(x1, x2)
+        by1 = min(y1, y2)
+        by2 = max(y1, y2)
+
+        nx1 = max(0.0, min(1.0, (bx1 - ox) / float(rw)))
+        ny1 = max(0.0, min(1.0, (by1 - oy) / float(rh)))
+        nx2 = max(0.0, min(1.0, (bx2 - ox) / float(rw)))
+        ny2 = max(0.0, min(1.0, (by2 - oy) / float(rh)))
+
+        nw = max(0.01, nx2 - nx1)
+        nh = max(0.01, ny2 - ny1)
+        return (round(nx1, 4), round(ny1, 4), round(nw, 4), round(nh, 4))
+
+    def _norm_to_canvas_rect(self, norm_rect):
+        """將標準化座標 (0.0 ~ 1.0) 轉換回目前 Canvas 像素座標"""
+        ox, oy, rw, rh = self._get_rendered_video_rect()
+        nx, ny, nw, nh = norm_rect
+        cx1 = int(ox + nx * rw)
+        cy1 = int(oy + ny * rh)
+        cx2 = int(ox + (nx + nw) * rw)
+        cy2 = int(oy + (ny + nh) * rh)
+        return cx1, cy1, cx2, cy2
+
+    def _toggle_mask_mode(self, mode):
+        if getattr(self, "_mask_mode", None) == mode:
+            self._mask_mode = None
+        else:
+            self._mask_mode = mode
+        self._mask_drag_start = None
+        self._mask_drag_curr = None
+        self._update_mask_ui()
+        self._redraw_preview_canvas()
+
+    def _remove_mask(self, mask_id):
+        self.blur_masks = [m for m in self.blur_masks if m.get("id") != mask_id]
+        self._update_mask_ui()
+        self._redraw_preview_canvas()
+
+    def _clear_all_masks(self):
+        self.blur_masks.clear()
+        self._mask_mode = None
+        self._mask_drag_start = None
+        self._mask_drag_curr = None
+        self._update_mask_ui()
+        self._redraw_preview_canvas()
+
+    def _update_mask_ui(self):
+        mode = getattr(self, "_mask_mode", None)
+        if hasattr(self, "btn_mask_blur") and hasattr(self, "btn_mask_mosaic"):
+            if mode == "blur":
+                self.btn_mask_blur.config(bg="#00f0ff", fg=UI["ink"], text="✓ 框選模糊中…")
+                self.btn_mask_mosaic.config(bg=UI["field"], fg=UI["text"], text="＋ 馬賽克 (Mosaic)")
+                self.lbl_mask_hint.config(text="🎯 請在預覽畫面上按住滑鼠拖曳，框選高斯模糊區域", fg="#00f0ff")
+            elif mode == "mosaic":
+                self.btn_mask_blur.config(bg=UI["field"], fg=UI["text"], text="＋ 模糊 (Blur)")
+                self.btn_mask_mosaic.config(bg="#f59e0b", fg=UI["ink"], text="✓ 框選馬賽克中…")
+                self.lbl_mask_hint.config(text="🎯 請在預覽畫面上按住滑鼠拖曳，框選局部馬賽克區域", fg="#f59e0b")
+            else:
+                self.btn_mask_blur.config(bg=UI["field"], fg=UI["text"], text="＋ 模糊 (Blur)")
+                self.btn_mask_mosaic.config(bg=UI["field"], fg=UI["text"], text="＋ 馬賽克 (Mosaic)")
+                self.lbl_mask_hint.config(text="點選上方按鈕後，在預覽畫面上拖曳框選", fg=UI["muted"])
+
+        count = len(getattr(self, "blur_masks", []))
+        if hasattr(self, "lbl_mask_count"):
+            self.lbl_mask_count.config(text=f"已建立 {count} 個遮罩")
+        if hasattr(self, "btn_clear_masks"):
+            self.btn_clear_masks.config(
+                state=tk.NORMAL if count > 0 else tk.DISABLED,
+                fg=UI["red"] if count > 0 else UI["muted"],
+            )
+
+        if hasattr(self, "mask_list_frame"):
+            for w in self.mask_list_frame.winfo_children():
+                w.destroy()
+
+            if count == 0:
+                tk.Label(
+                    self.mask_list_frame, text="(目前尚無遮罩)",
+                    font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]
+                ).pack(anchor="w", pady=(1, 2))
+            else:
+                for idx, m in enumerate(self.blur_masks):
+                    row = tk.Frame(self.mask_list_frame, bg=UI["field"])
+                    row.pack(fill=tk.X, pady=1)
+
+                    m_id = m.get("id")
+                    m_type = m.get("type", "blur")
+                    nx, ny, nw, nh = m.get("norm_rect", (0, 0, 0, 0))
+                    color = "#00f0ff" if m_type == "blur" else "#f59e0b"
+                    icon_text = "🔒 模糊" if m_type == "blur" else "🔲 馬賽克"
+                    pos_text = f"#{idx+1} {icon_text} ({int(nw*100)}%×{int(nh*100)}%)"
+
+                    tk.Label(
+                        row, text=pos_text, font=self.fonts["badge"],
+                        fg=color, bg=UI["field"]
+                    ).pack(side=tk.LEFT, padx=(4, 2), pady=2)
+
+                    time_text = "區間" if m.get("time_range") else "全片"
+                    tk.Label(
+                        row, text=f"[{time_text}]", font=self.fonts["badge"],
+                        fg=UI["muted"], bg=UI["field"]
+                    ).pack(side=tk.LEFT, padx=2, pady=2)
+
+                    del_btn = tk.Button(
+                        row, text="✕", font=("Helvetica", 9, "bold"),
+                        bg=UI["field"], fg="#ff4466",
+                        activebackground=UI["hover"], activeforeground="#ff4466",
+                        relief=tk.FLAT, bd=0, cursor="hand2",
+                        command=lambda mid=m_id: self._remove_mask(mid),
+                    )
+                    del_btn.pack(side=tk.RIGHT, padx=4, pady=1)
+
     def _redraw_preview_canvas(self):
         self.preview_canvas.delete("all")
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
@@ -1308,8 +1539,84 @@ class VideoEditorWindow:
                 cw // 2, ch // 2, text="等待載入影片…", fill=UI["muted"], font=self.fonts["body"]
             )
 
-        # 若有啟用 Auto Zoom 且未開啟「預覽即時特寫」，在畫面上繪製目標焦點環 (Crosshair Reticle)
-        if self._is_zoom_active() and not self.preview_zoom_var.get():
+        # 繪製已建立之隱私遮罩
+        self._mask_del_targets = {}
+        for idx, m in enumerate(getattr(self, "blur_masks", [])):
+            cx1, cy1, cx2, cy2 = self._norm_to_canvas_rect(m["norm_rect"])
+            m_type = m.get("type", "blur")
+            is_blur = m_type == "blur"
+            color = "#00f0ff" if is_blur else "#f59e0b"
+            tag_name = f"🔒 模糊 #{idx+1}" if is_blur else f"🔲 馬賽克 #{idx+1}"
+
+            # 磨砂半透明填充與高亮邊框
+            self.preview_canvas.create_rectangle(
+                cx1, cy1, cx2, cy2, fill=color, stipple="gray50", outline=color, width=2
+            )
+
+            # 四角標線
+            csz = min(8, max(3, (cx2 - cx1) // 4), max(3, (cy2 - cy1) // 4))
+            self.preview_canvas.create_line(cx1, cy1, cx1 + csz, cy1, fill=UI["white"], width=2)
+            self.preview_canvas.create_line(cx1, cy1, cx1, cy1 + csz, fill=UI["white"], width=2)
+            self.preview_canvas.create_line(cx2, cy2, cx2 - csz, cy2, fill=UI["white"], width=2)
+            self.preview_canvas.create_line(cx2, cy2, cx2, cy2 - csz, fill=UI["white"], width=2)
+
+            # 頂部標籤膠囊
+            badge_h = 16
+            badge_y1 = max(0, cy1 - badge_h)
+            badge_y2 = cy1
+            badge_w = 64
+            self.preview_canvas.create_rectangle(
+                cx1, badge_y1, min(cw, cx1 + badge_w), badge_y2,
+                fill="#07090e", outline=color, width=1
+            )
+            self.preview_canvas.create_text(
+                cx1 + badge_w // 2, (badge_y1 + badge_y2) // 2,
+                text=tag_name, fill=color, font=self.fonts["badge"]
+            )
+
+            # 刪除按鈕 [✕]
+            del_w = 16
+            del_x1 = max(cx1 + badge_w + 2, cx2 - del_w)
+            del_x2 = cx2
+            del_y1 = badge_y1
+            del_y2 = badge_y2
+            self.preview_canvas.create_rectangle(
+                del_x1, del_y1, del_x2, del_y2,
+                fill="#161b26", outline="#ff4466", width=1
+            )
+            self.preview_canvas.create_text(
+                (del_x1 + del_x2) // 2, (del_y1 + del_y2) // 2,
+                text="✕", fill="#ff4466", font=("Helvetica", 9, "bold")
+            )
+            self._mask_del_targets[m["id"]] = (del_x1 - 2, del_y1 - 2, del_x2 + 2, del_y2 + 2)
+
+        # 繪製正在拖曳框選中的 Rubberband 預覽矩形
+        if (
+            getattr(self, "_mask_drag_start", None)
+            and getattr(self, "_mask_drag_curr", None)
+            and getattr(self, "_mask_mode", None) in ("blur", "mosaic")
+        ):
+            x1, y1 = self._mask_drag_start
+            x2, y2 = self._mask_drag_curr
+            bx1, bx2 = min(x1, x2), max(x1, x2)
+            by1, by2 = min(y1, y2), max(y1, y2)
+            color = "#00f0ff" if self._mask_mode == "blur" else "#f59e0b"
+            lbl = "🔒 模糊" if self._mask_mode == "blur" else "🔲 馬賽克"
+
+            self.preview_canvas.create_rectangle(
+                bx1, by1, bx2, by2, fill=color, stipple="gray25", outline=color, width=2, dash=(4, 2)
+            )
+            dim_text = f"{lbl} ({bx2 - bx1}×{by2 - by1})"
+            dim_w = 100
+            self.preview_canvas.create_rectangle(
+                bx1, max(0, by1 - 18), bx1 + dim_w, by1, fill="#07090e", outline=color, width=1
+            )
+            self.preview_canvas.create_text(
+                bx1 + dim_w // 2, max(0, by1 - 9), text=dim_text, fill=color, font=self.fonts["badge"]
+            )
+
+        # 若有啟用 Auto Zoom 且非遮罩模式，繪製焦點環
+        if self._is_zoom_active() and not self.preview_zoom_var.get() and getattr(self, "_mask_mode", None) is None:
             self._draw_focus_reticle(cw, ch)
 
     def _draw_focus_reticle(self, cw, ch):
@@ -1338,6 +1645,59 @@ class VideoEditorWindow:
         )
 
     def _on_canvas_click(self, event):
+        # 1. 檢查是否點擊遮罩的刪除按鈕
+        if hasattr(self, "_mask_del_targets"):
+            for m_id, (dx1, dy1, dx2, dy2) in list(self._mask_del_targets.items()):
+                if dx1 <= event.x <= dx2 and dy1 <= event.y <= dy2:
+                    self._remove_mask(m_id)
+                    return
+
+        # 2. 若處於遮罩模式，啟動框選
+        if getattr(self, "_mask_mode", None) in ("blur", "mosaic"):
+            self._mask_drag_start = (event.x, event.y)
+            self._mask_drag_curr = (event.x, event.y)
+            self._redraw_preview_canvas()
+            return
+
+        # 3. 預設模式：更新焦點
+        self._update_zoom_focus_from_event(event)
+
+    def _on_canvas_drag(self, event):
+        if getattr(self, "_mask_mode", None) in ("blur", "mosaic") and self._mask_drag_start:
+            self._mask_drag_curr = (event.x, event.y)
+            self._redraw_preview_canvas()
+            return
+
+        if getattr(self, "_mask_mode", None) is None:
+            self._update_zoom_focus_from_event(event)
+
+    def _on_canvas_release(self, event):
+        if getattr(self, "_mask_mode", None) in ("blur", "mosaic") and self._mask_drag_start:
+            x1, y1 = self._mask_drag_start
+            x2, y2 = event.x, event.y
+            bw = abs(x2 - x1)
+            bh = abs(y2 - y1)
+            if bw >= 8 and bh >= 8:
+                norm_rect = self._canvas_to_norm_rect(x1, y1, x2, y2)
+                t_range = (self.start_sec, self.end_sec) if self._mask_apply_scope.get() == "selection" else None
+                m_type = self._mask_mode
+                new_mask = {
+                    "id": getattr(self, "_mask_counter", 1),
+                    "type": m_type,
+                    "norm_rect": norm_rect,
+                    "time_range": t_range,
+                    "strength": 20 if m_type == "blur" else 16,
+                }
+                self._mask_counter = getattr(self, "_mask_counter", 1) + 1
+                self.blur_masks.append(new_mask)
+                self._mask_mode = None
+                self._update_mask_ui()
+
+            self._mask_drag_start = None
+            self._mask_drag_curr = None
+            self._redraw_preview_canvas()
+
+    def _update_zoom_focus_from_event(self, event):
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
         cw = max(1, cfg["preview_w"])
         ch = max(1, cfg["preview_h"])
@@ -1599,6 +1959,7 @@ class VideoEditorWindow:
                 scale_res = "720p"
 
             zoom_cfg = self._get_zoom_config()
+            has_masks = bool(self.blur_masks)
             picture_change = (
                 rat != "original"
                 or abs(spd - 1.0) > 0.001
@@ -1606,6 +1967,7 @@ class VideoEditorWindow:
                 or abs(vol - 1.0) > 0.001
                 or scale_res != "original"
                 or zoom_cfg.get("enabled", False)
+                or has_masks
             )
             export_mode = mode
             switched = export_mode == "lossless" and picture_change
@@ -1623,12 +1985,14 @@ class VideoEditorWindow:
                         volume=vol,
                         target_resolution=scale_res,
                         zoom_config=zoom_cfg,
+                        blur_masks=self.blur_masks if has_masks else None,
                     )
                 elif export_mode == "gif":
                     ok, msg = self.editor.export_gif(
                         self.current_file, out_path, self.start_sec, self.end_sec,
                         aspect_ratio=rat, anchor=anchor,
                         zoom_config=zoom_cfg,
+                        blur_masks=self.blur_masks if has_masks else None,
                     )
                 elif export_mode == "audio":
                     ok, msg = self.editor.extract_audio(
@@ -1681,7 +2045,8 @@ class VideoEditorWindow:
         tk.Label(box, text=f"大小：{sz_text}   ·   路徑：{p.parent}", font=fonts["body"], fg=UI["muted"], bg=UI["card"], wraplength=460, justify=tk.LEFT).pack(anchor="w", padx=16, pady=(0, 6))
 
         if switched:
-            tk.Label(box, text="💡 由於包含比例裁切或濾鏡調色，已自動為您使用精準重編碼匯出。", font=fonts["badge"], fg=UI["warn"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
+            reason = "包含隱私模糊遮罩" if bool(getattr(self, "blur_masks", None)) else "包含比例裁切或濾鏡調色"
+            tk.Label(box, text=f"💡 由於{reason}，已自動為您使用精準重編碼匯出。", font=fonts["badge"], fg=UI["warn"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
         elif getattr(self, "export_mode_var", None) and self.export_mode_var.get() == "lossless":
             tk.Label(box, text="⚡ Smart Cut 智慧無損：首尾毫秒級精準微編碼，主體 100% 無損複製秒出。", font=fonts["badge"], fg=UI["ok"], bg=UI["card"]).pack(anchor="w", padx=16, pady=(0, 6))
 
