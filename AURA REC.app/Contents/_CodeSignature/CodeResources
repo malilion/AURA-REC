@@ -6,15 +6,15 @@
 	<dict>
 		<key>Resources/AURA-REC.html</key>
 		<data>
-		hYvswDNpgGL226PNVa3xlqyUlNk=
+		GE8b+jEdR/6YTOE/YPz6fvTs354=
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		8kW2Plbqi79Yw+sQgK07l5ctYCg=
+		yor8F3ZBGzECQ6i9uyOXYUmNug4=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
-		gDH0oh9nKj1+Ud4nz4AI8SjpsRY=
+		9xTYskVQeSHCoTcCa+PyDpvyMVA=
 		</data>
 		<key>Resources/aura_widgets.py</key>
 		<data>
@@ -30,7 +30,7 @@
 		</data>
 		<key>Resources/editor_window.py</key>
 		<data>
-		ScUGtW+n0L1su2QQ5W/vp3BELN0=
+		ZOve6MTaeAFMd2jf+qD+BBNsars=
 		</data>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
 		<data>
@@ -47,6 +47,10 @@
 		<key>Resources/fonts/Syne.ttf</key>
 		<data>
 		BQo+P2t7ID56BfNOuf0ZdU5mFMA=
+		</data>
+		<key>Resources/i18n.py</key>
+		<data>
+		7r+5aVFt+4P0gaYgdRfd8tPLCA4=
 		</data>
 		<key>Resources/icon.icns</key>
 		<data>
@@ -82,7 +86,7 @@
 		</data>
 		<key>Resources/window_exclusion_watermark.py</key>
 		<data>
-		dK8sgwcjnY4oqNjW/JTRHd2ZTu8=
+		Z5VktwR289a21LydbvJmgZsZ+sE=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -91,21 +95,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			ss/neVRKvB5RzL0bbOYrbxiXXb7pc9QLuinoDAatHek=
+			ptXioUqHAfsj3aaz7lQknhEMIl4CfbsD9th2WomObHs=
 			</data>
 		</dict>
 		<key>Resources/README.md</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			ymqDGfqIi84MjLy32vvMg38nVg8FDXXbhaKfD93Y4go=
+			B9QXzZPuivIO/D4R7D5/mvvD2Vo9FiG0ANCiy5IZ+kI=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			7X2LdxU4bY/OdkAYeOML4cnytZ8x73xye0+eKA+nYUc=
+			u0MU+h+7AUSSEPRN1iK7ddk8vB0k1GBcuxCJAp95J0U=
 			</data>
 		</dict>
 		<key>Resources/aura_widgets.py</key>
@@ -133,7 +137,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			LsjEhoZUb6NfG75CqOgjwaC2yB6ZsyDEVuhy2bOdHhk=
+			cxkdUQD6m5TtZJFdMXuQXTcRjmuLcILyiGFmvQkrivM=
 			</data>
 		</dict>
 		<key>Resources/fonts/JetBrainsMono-Bold.ttf</key>
@@ -162,6 +166,13 @@
 			<key>hash2</key>
 			<data>
 			zlrHcUKmXKsiSKGi67dAsdTZwgtSSIh30/9mTRNWEEo=
+			</data>
+		</dict>
+		<key>Resources/i18n.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			P6p2T6ehIjIIBOZ738NJFCxlX9N7t1Rr/BDop4o2JLw=
 			</data>
 		</dict>
 		<key>Resources/icon.icns</key>
@@ -224,7 +235,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			BbpW5TmHj8aPJuZseE0T9R/nnUZ+08zV7yl8xn/djw0=
+			87dO1nfeje1mlnw8HMqV1R8UyxM0/HifWHtq7HZVxfk=
 			</data>
 		</dict>
 	</dict>

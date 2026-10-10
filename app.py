@@ -38,6 +38,16 @@ from window_exclusion_watermark import (
     WindowExclusionWatermarkDialog,
     set_window_excluded_from_capture,
 )
+from i18n import (
+    SUPPORTED_LANGUAGES,
+    get_language,
+    get_language_badge,
+    next_language,
+    set_language,
+    tr,
+    translate_menu,
+    translate_widget_tree,
+)
 from region_picker import (
     bar_origin,
     box_to_points,
@@ -350,6 +360,7 @@ class LiteRecorderApp:
         }
         self.window_exclusion_var = tk.BooleanVar(value=bool(self.exclusion_config.get("enabled", False)))
         self.watermark_enabled_var = tk.BooleanVar(value=bool(self.watermark_config.get("enabled", False)))
+        self.language = set_language(self._saved.get("language", "zh-TW"))
         self._camera_bubble_win = None
         self._input_overlay_mgr = None
         self._annotation_overlay = None
@@ -372,6 +383,7 @@ class LiteRecorderApp:
         # 載入硬體設備與最近錄影
         self._refresh_devices()
         self.refresh_recent_list()
+        self._apply_language(self.language, save=False)
 
         # 註冊關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -413,6 +425,35 @@ class LiteRecorderApp:
     def _quiet_button(self, parent, text, command, fg=None):
         style = "Danger.TButton" if fg == UI["red"] else "Link.TButton"
         return AuraButton(parent, text=text, command=command, style=style)
+
+    def _cycle_language(self):
+        """點擊頂部語系按鈕時循環切換 繁中 -> EN -> 日本語 -> 简中"""
+        new_lang = next_language(self.language)
+        self._apply_language(new_lang, save=True)
+
+    def _set_app_language(self, lang_code):
+        """指定切換至特定語系"""
+        new_lang = set_language(lang_code)
+        self._apply_language(new_lang, save=True)
+
+    def _apply_language(self, lang_code=None, save=True):
+        """即時熱切換整個主介面與選單之多語系文字，無須重啟"""
+        self.language = set_language(lang_code or self.language)
+        if hasattr(self, "lang_btn"):
+            badge = get_language_badge(self.language)
+            self.lang_btn._i18n_orig_text = badge
+            self.lang_btn.config(text=badge)
+        if hasattr(self, "menubar"):
+            translate_menu(self.menubar, self.language)
+        translate_widget_tree(self.root, self.language)
+        self._update_protection_summary()
+        if hasattr(self, "lbl_protection_summary"):
+            translate_widget_tree(self.protection_card, self.language)
+        if not self.recorder.is_recording and not self.countdown_active and hasattr(self, "timer_hint"):
+            self.timer_hint.config(text=tr(self._idle_hint(), self.language))
+        if save:
+            self._saved["language"] = self.language
+            save_settings({"language": self.language})
 
     def _show_shortcuts(self):
         messagebox.showinfo(
@@ -461,6 +502,14 @@ class LiteRecorderApp:
         file_menu.add_command(label="結束", command=self._on_close)
         menubar.add_cascade(label="檔案", menu=file_menu)
 
+        lang_menu = tk.Menu(menubar, tearoff=0)
+        for code, lbl in SUPPORTED_LANGUAGES:
+            lang_menu.add_command(
+                label=f"{lbl} ({code})",
+                command=lambda c=code: self._set_app_language(c),
+            )
+        menubar.add_cascade(label="語言 (Language)", menu=lang_menu)
+
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="快捷鍵說明", command=self._show_shortcuts)
         help_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
@@ -499,6 +548,8 @@ class LiteRecorderApp:
         self.status_badge.pack(side=tk.RIGHT)
         self.shot_btn = self._quiet_button(header_frame, "截圖", self.take_screenshot)
         self.shot_btn.pack(side=tk.RIGHT, padx=(0, 4))
+        self.lang_btn = self._quiet_button(header_frame, get_language_badge(self.language), self._cycle_language)
+        self.lang_btn.pack(side=tk.RIGHT, padx=(0, 4))
 
         self.timer_card = self._card(self.main_container)
         self.timer_card.pack(fill=tk.X, pady=(0, 10))
@@ -2601,14 +2652,14 @@ class LiteRecorderApp:
         cam_idx = m_idx.group(1) if m_idx else "0"
 
         shape_choice = self.pip_shape_combo.get() if hasattr(self, "pip_shape_combo") else "圓形"
-        shape = "circle" if "圓形" in shape_choice or "circle" in shape_choice.lower() else "rect"
+        shape = "circle" if any(k in shape_choice.lower() for k in ("圓形", "圆形", "円形", "circle")) else "rect"
 
         pos_choice = self.pip_pos_combo.get() if hasattr(self, "pip_pos_combo") else "右下角"
         pos_map = {
-            "右下角": "bottom-right",
-            "左下角": "bottom-left",
-            "右上角": "top-right",
-            "左上角": "top-left",
+            "右下角": "bottom-right", "Bottom-Right": "bottom-right", "右下": "bottom-right",
+            "左下角": "bottom-left", "Bottom-Left": "bottom-left", "左下": "bottom-left",
+            "右上角": "top-right", "Top-Right": "top-right", "右上": "top-right",
+            "左上角": "top-left", "Top-Left": "top-left", "左上": "top-left",
         }
         pos = pos_map.get(pos_choice, "bottom-right")
 
@@ -2617,30 +2668,30 @@ class LiteRecorderApp:
         size = int(m_sz.group(1)) if m_sz else 260
 
         border_choice = self.pip_border_combo.get() if hasattr(self, "pip_border_combo") else "霓虹藍"
-        if "無" in border_choice:
+        if any(k in border_choice.lower() for k in ("無", "无", "no border", "なし")):
             border_rgb = None
-        elif "白" in border_choice:
+        elif any(k in border_choice.lower() for k in ("白", "white", "ホワイト")):
             border_rgb = (255, 255, 255)
         else:
             border_rgb = (0, 240, 255)
 
         bg_choice = self.pip_bg_mode_combo.get() if hasattr(self, "pip_bg_mode_combo") else "原始"
         bg_mode = "original"
-        if any(k in bg_choice.lower() for k in ("blur", "虛化", "景深")):
+        if any(k in bg_choice.lower() for k in ("blur", "虛化", "虚化", "景深", "ぼかし")):
             bg_mode = "blur"
-        elif any(k in bg_choice.lower() for k in ("transparent", "透空", "去背透空")):
+        elif any(k in bg_choice.lower() for k in ("transparent", "透空", "去背透空", "透過", "切り抜き")):
             bg_mode = "transparent"
-        elif any(k in bg_choice.lower() for k in ("green", "綠", "chroma")):
+        elif any(k in bg_choice.lower() for k in ("green", "綠", "绿", "chroma", "グリーン")):
             bg_mode = "chromakey"
-        elif any(k in bg_choice.lower() for k in ("blue", "藍")):
+        elif any(k in bg_choice.lower() for k in ("blue", "藍", "蓝", "ブルー")):
             bg_mode = "bluekey"
-        elif any(k in bg_choice.lower() for k in ("aurora", "極光")):
+        elif any(k in bg_choice.lower() for k in ("aurora", "極光", "极光", "オーロラ")):
             bg_mode = "aurora"
 
         st_choice = self.pip_bg_strength_combo.get() if hasattr(self, "pip_bg_strength_combo") else "標準"
-        if any(k in st_choice.lower() for k in ("強", "strong", "high")):
+        if any(k in st_choice.lower() for k in ("強", "强", "strong", "high")):
             bg_strength = "strong"
-        elif any(k in st_choice.lower() for k in ("輕", "subtle", "low", "weak")):
+        elif any(k in st_choice.lower() for k in ("輕", "轻", "弱", "subtle", "low", "weak")):
             bg_strength = "subtle"
         else:
             bg_strength = "medium"
@@ -2917,6 +2968,7 @@ class LiteRecorderApp:
         btn_row = tk.Frame(card, bg=UI["card"])
         btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
         AuraButton(btn_row, text="完成", style="Primary.TButton", command=win.destroy).pack(fill=tk.X)
+        translate_widget_tree(win, self.language)
 
     def _show_diagnostics(self):
         """開啟系統環境與 FFmpeg 硬體加速診斷對話框"""
@@ -2983,16 +3035,17 @@ class LiteRecorderApp:
 
         def do_copy():
             copy_text_to_clipboard(report_text)
-            copy_btn.config(text="已複製！")
-            win.after(2000, lambda: copy_btn.config(text="複製診斷報告"))
+            copy_btn.config(text=tr("已複製！", self.language))
+            win.after(2000, lambda: copy_btn.config(text=tr("複製診斷報告", self.language)))
 
         copy_btn = self._quiet_button(btn_row, "複製診斷報告", do_copy)
         copy_btn.pack(side=tk.LEFT)
         AuraButton(btn_row, text="關閉", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        translate_widget_tree(win, self.language)
 
     def _check_for_updates(self):
         """主動檢查軟體更新"""
-        self.timer_hint.config(text="正在連線至 GitHub 檢查最新版本…")
+        self.timer_hint.config(text=tr("正在連線至 GitHub 檢查最新版本…", self.language))
 
         def on_done(res):
             if not self.recorder.is_recording:
@@ -3049,13 +3102,14 @@ class LiteRecorderApp:
         self._quiet_button(btn_row, "快捷鍵說明", self._show_shortcuts).pack(side=tk.LEFT)
         self._quiet_button(btn_row, "檢查更新…", lambda: (win.destroy(), self._check_for_updates())).pack(side=tk.LEFT, padx=(8, 0))
         AuraButton(btn_row, text="確定", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT)
+        translate_widget_tree(win, self.language)
 
     def _show_preferences(self):
         """開啟偏好設定視窗"""
         win = tk.Toplevel(self.root)
         win.title("偏好設定 — AURA REC")
-        win.geometry("560x540")
-        win.minsize(520, 500)
+        win.geometry("560x580")
+        win.minsize(520, 540)
         win.configure(bg=UI["bg"])
         win.transient(self.root)
 
@@ -3075,6 +3129,28 @@ class LiteRecorderApp:
         form = tk.Frame(card, bg=UI["card"])
         form.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
 
+        # 介面語言
+        lang_row = tk.Frame(form, bg=UI["card"])
+        lang_row.pack(fill=tk.X, pady=(2, 8))
+        tk.Label(lang_row, text="介面語言 (Language)", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(side=tk.LEFT)
+        lang_display_list = [f"{lbl} ({code})" for code, lbl in SUPPORTED_LANGUAGES]
+        lang_map = dict(SUPPORTED_LANGUAGES)
+        curr_lang_display = f"{lang_map.get(self.language, '繁體中文')} ({self.language})"
+        pref_lang_var = tk.StringVar(value=curr_lang_display)
+        lang_combo = ttk.Combobox(lang_row, textvariable=pref_lang_var, values=lang_display_list, state="readonly", width=22)
+        lang_combo._i18n_skip = True
+        lang_combo.pack(side=tk.RIGHT)
+
+        def on_lang_combo_change(_e=None):
+            val = pref_lang_var.get()
+            for code, _lbl in SUPPORTED_LANGUAGES:
+                if f"({code})" in val:
+                    self._set_app_language(code)
+                    translate_widget_tree(win, self.language)
+                    break
+
+        lang_combo.bind("<<ComboboxSelected>>", on_lang_combo_change)
+
         # 儲存目錄
         tk.Label(form, text="儲存目錄", font=self.fonts["bold"], fg=UI["white"], bg=UI["card"]).pack(anchor="w", pady=(4, 2))
         dir_row = tk.Frame(form, bg=UI["card"])
@@ -3087,7 +3163,7 @@ class LiteRecorderApp:
         lbl_dir.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         def pick_dir():
-            chosen = filedialog.askdirectory(initialdir=str(self.recorder.output_dir), title="選擇儲存目錄")
+            chosen = filedialog.askdirectory(initialdir=str(self.recorder.output_dir), title=tr("選擇儲存目錄", self.language))
             if chosen:
                 self.recorder.output_dir = Path(chosen)
                 save_settings({"output_dir": str(self.recorder.output_dir)})
@@ -3137,6 +3213,7 @@ class LiteRecorderApp:
         btn_row.pack(fill=tk.X, padx=16, pady=(8, 12))
         AuraButton(btn_row, text="儲存設定", style="Primary.TButton", command=save_and_close).pack(side=tk.RIGHT)
         self._quiet_button(btn_row, "關閉", win.destroy).pack(side=tk.LEFT)
+        translate_widget_tree(win, self.language)
 
     def refresh_recent_list(self):
         """重新整理最近錄影檔案列表"""
@@ -3155,20 +3232,22 @@ class LiteRecorderApp:
 
         if hasattr(self, "lbl_recent_title"):
             total_count = len(found)
-            self.lbl_recent_title.config(
-                text=f"最近的錄影 (共 {total_count} 個檔案)" if total_count > 0 else "最近的錄影"
-            )
+            raw_title = f"最近的錄影 (共 {total_count} 個檔案)" if total_count > 0 else "最近的錄影"
+            self.lbl_recent_title._i18n_orig_text = raw_title
+            self.lbl_recent_title.config(text=tr(raw_title, getattr(self, "language", "zh-TW")))
 
         self._recent_generation += 1
         pending = []
         if not files:
-            tk.Label(
+            empty_lbl = tk.Label(
                 self.recent_list_frame,
                 text="這個資料夾還沒有錄影",
                 font=self.fonts["body"],
                 fg=UI["muted"],
                 bg=UI["card"],
-            ).pack(pady=16)
+            )
+            empty_lbl.pack(pady=16)
+            translate_widget_tree(self.recent_list_frame, getattr(self, "language", "zh-TW"))
             self.root.after_idle(self._sync_recent_scroll)
             return
 
@@ -3258,6 +3337,7 @@ class LiteRecorderApp:
 
             if cache_key and not duration:
                 pending.append((p, cache_key, meta))
+        translate_widget_tree(self.recent_list_frame, getattr(self, "language", "zh-TW"))
         self.root.after_idle(self._sync_recent_scroll)
         if pending:
             self._queue_durations(pending, self._recent_generation)
@@ -3286,6 +3366,7 @@ class LiteRecorderApp:
         menu.add_separator()
         menu.add_command(label="重新命名…", command=lambda f=p: self._rename_recording(f))
         menu.add_command(label="刪除檔案", command=lambda f=p: self._delete_recording(f))
+        translate_menu(menu, getattr(self, "language", "zh-TW"))
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:

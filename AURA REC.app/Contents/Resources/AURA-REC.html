@@ -286,6 +286,16 @@
         <span id="status-timer" class="text-xs font-mono font-bold text-aura-cyan pl-1 border-l border-white/10 hidden">00:00:00</span>
       </div>
 
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-obsidian-850 border border-white/10 text-xs font-mono text-slate-300" title="介面語言 (Language / 言語)">
+        <span>🌐</span>
+        <select id="web-lang-select" onchange="setWebLanguage(this.value)" class="bg-transparent text-xs font-mono text-aura-cyan focus:outline-none cursor-pointer">
+          <option value="zh-TW" class="bg-obsidian-900 text-white">繁體中文</option>
+          <option value="en" class="bg-obsidian-900 text-white">English</option>
+          <option value="ja" class="bg-obsidian-900 text-white">日本語</option>
+          <option value="zh-CN" class="bg-obsidian-900 text-white">简体中文</option>
+        </select>
+      </div>
+
       <button onclick="openProjectPresetsModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-obsidian-850 border border-white/10 hover:border-aura-cyan/40 text-xs font-mono text-slate-300 hover:text-white transition-colors" title="專案存檔與風格預設集 (.auraproj)">
         <i data-lucide="folder-cog" class="w-4 h-4 text-aura-cyan"></i>
         <span class="hidden sm:inline">專案預設集</span>
@@ -611,6 +621,12 @@
             <i data-lucide="video" class="w-3.5 h-3.5 text-aura-violet"></i>
             <span class="font-sans">視訊視訊鏡頭:</span>
             <input type="checkbox" id="chk-camera" class="rounded bg-obsidian-900 border-white/20 text-aura-violet focus:ring-0 cursor-pointer" onchange="toggleCameraPip(event)">
+            <select id="pip-bg-mode" onchange="setPipBgMode(this.value)" class="bg-obsidian-900/90 border border-white/10 rounded-lg px-1.5 py-0.5 text-[11px] font-mono text-aura-violet focus:outline-none cursor-pointer" title="畫中畫背景虛化 / 智慧去背">
+              <option value="none">原始背景</option>
+              <option value="blur">景深虛化 (Blur)</option>
+              <option value="cutout">人像去背 (Cutout)</option>
+              <option value="aurora">極光虛擬背景</option>
+            </select>
           </div>
 
           <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-obsidian-800 border border-white/5 text-xs text-slate-300">
@@ -3970,8 +3986,120 @@
       }
     }
 
+    // ==========================================
+    // 14. 畫中畫 (PiP) 智慧背景虛化 / 去背 & 多語系國際化 (i18n)
+    // ==========================================
+    let activePipBgMode = 'none';
+
+    function setPipBgMode(mode) {
+      activePipBgMode = mode || 'none';
+      if (!pipContainer || !pipVideo) return;
+      pipContainer.style.backdropFilter = '';
+      pipContainer.style.background = '';
+      pipVideo.style.filter = '';
+      pipVideo.style.webkitMaskImage = '';
+      pipVideo.style.maskImage = '';
+
+      if (activePipBgMode === 'blur') {
+        // 邊緣景深羽化 + 中心清晰人像
+        pipContainer.style.backdropFilter = 'blur(12px)';
+        pipContainer.style.background = 'rgba(10, 18, 28, 0.35)';
+        pipVideo.style.webkitMaskImage = 'radial-gradient(ellipse 62% 72% at 50% 46%, rgba(0,0,0,1) 52%, rgba(0,0,0,0.45) 82%, rgba(0,0,0,0.15) 100%)';
+        pipVideo.style.maskImage = 'radial-gradient(ellipse 62% 72% at 50% 46%, rgba(0,0,0,1) 52%, rgba(0,0,0,0.45) 82%, rgba(0,0,0,0.15) 100%)';
+      } else if (activePipBgMode === 'cutout') {
+        // 純人像智慧去背 (背景透明懸浮)
+        pipContainer.style.background = 'transparent';
+        pipContainer.style.borderColor = 'transparent';
+        pipContainer.style.boxShadow = 'none';
+        pipVideo.style.webkitMaskImage = 'radial-gradient(ellipse 52% 68% at 50% 45%, rgba(0,0,0,1) 58%, rgba(0,0,0,0) 88%)';
+        pipVideo.style.maskImage = 'radial-gradient(ellipse 52% 68% at 50% 45%, rgba(0,0,0,1) 58%, rgba(0,0,0,0) 88%)';
+      } else if (activePipBgMode === 'aurora') {
+        // 極光虛擬背景替換
+        pipContainer.style.background = 'linear-gradient(135deg, #00f0ff 0%, #7c3aed 55%, #f43f5e 100%)';
+        pipVideo.style.webkitMaskImage = 'radial-gradient(ellipse 54% 70% at 50% 46%, rgba(0,0,0,1) 56%, rgba(0,0,0,0.08) 92%)';
+        pipVideo.style.maskImage = 'radial-gradient(ellipse 54% 70% at 50% 46%, rgba(0,0,0,1) 56%, rgba(0,0,0,0.08) 92%)';
+      } else {
+        pipContainer.style.borderColor = 'rgba(0, 240, 255, 0.75)';
+      }
+      try { localStorage.setItem('aura_pip_bg_mode', activePipBgMode); } catch (_) {}
+    }
+
+    const WEB_I18N_DICT = {
+      "專案預設集": { "en": "Presets", "ja": "プリセット", "zh-CN": "项目预设集" },
+      "比例:": { "en": "Ratio:", "ja": "比率:", "zh-CN": "比例:" },
+      "16:9 橫向": { "en": "16:9 Wide", "ja": "16:9 横型", "zh-CN": "16:9 横向" },
+      "9:16 直式": { "en": "9:16 Vertical", "ja": "9:16 縦型", "zh-CN": "9:16 竖屏" },
+      "1:1 方形": { "en": "1:1 Square", "ja": "1:1 正方形", "zh-CN": "1:1 方形" },
+      "桌布:": { "en": "Theme:", "ja": "背景:", "zh-CN": "壁纸:" },
+      "極光": { "en": "Aurora", "ja": "オーロラ", "zh-CN": "极光" },
+      "薄暮": { "en": "Sunset", "ja": "サンセット", "zh-CN": "薄暮" },
+      "深海": { "en": "Ocean", "ja": "オーシャン", "zh-CN": "深海" },
+      "黑曜": { "en": "Obsidian", "ja": "オブシディアン", "zh-CN": "黑曜" },
+      "賽博": { "en": "Cyber", "ja": "サイバー", "zh-CN": "赛博" },
+      "邊距:": { "en": "Padding:", "ja": "余白:", "zh-CN": "边距:" },
+      "緊湊": { "en": "Compact", "ja": "小", "zh-CN": "紧凑" },
+      "標準": { "en": "Medium", "ja": "中", "zh-CN": "标准" },
+      "寬敞": { "en": "Wide", "ja": "大", "zh-CN": "宽敞" },
+      "外框標題": { "en": "Window Title", "ja": "ウィンドウ枠", "zh-CN": "外框标题" },
+      "點擊波紋": { "en": "Click Ripple", "ja": "クリック波紋", "zh-CN": "点击波纹" },
+      "啟動螢幕錄製": { "en": "Start Screen Recording", "ja": "画面録画を開始", "zh-CN": "启动屏幕录制" },
+      "匯入本機影片": { "en": "Import Local Video", "ja": "ローカル動画を読込", "zh-CN": "导入本地视频" },
+      "開始錄製": { "en": "Start Recording", "ja": "録画開始", "zh-CN": "开始录制" },
+      "停止錄製": { "en": "Stop Recording", "ja": "録画停止", "zh-CN": "停止录制" },
+      "播放": { "en": "Play", "ja": "再生", "zh-CN": "播放" },
+      "暫停": { "en": "Pause", "ja": "一時停止", "zh-CN": "暂停" },
+      "麥克風收音:": { "en": "Mic Audio:", "ja": "マイク録音:", "zh-CN": "麦克风收音:" },
+      "視訊視訊鏡頭:": { "en": "Camera PiP:", "ja": "カメラ PiP:", "zh-CN": "摄像头画中画:" },
+      "原始背景": { "en": "Original BG", "ja": "元の背景", "zh-CN": "原始背景" },
+      "景深虛化 (Blur)": { "en": "Portrait Blur", "ja": "背景ぼかし", "zh-CN": "景深虚化 (Blur)" },
+      "人像去背 (Cutout)": { "en": "Person Cutout", "ja": "人物切り抜き", "zh-CN": "人像抠图 (Cutout)" },
+      "極光虛擬背景": { "en": "Aurora Virtual BG", "ja": "オーロラ背景", "zh-CN": "极光虚拟背景" },
+      "合成提示音效:": { "en": "UI Sound FX:", "ja": "効果音:", "zh-CN": "合成提示音效:" },
+      "✨ 匯出霓虹外框 (MP4)": { "en": "✨ Export Framed MP4", "ja": "✨ フレーム付 MP4 書き出し", "zh-CN": "✨ 导出霓虹外框 (MP4)" },
+      "原始片段 (WebM)": { "en": "Raw Clip (WebM)", "ja": "元クリップ (WebM)", "zh-CN": "原始片段 (WebM)" },
+      "導出精華截圖": { "en": "Export Snapshot", "ja": "スナップショット保存", "zh-CN": "导出精华截图" },
+      "提取音訊 (WAV)": { "en": "Extract Audio (WAV)", "ja": "音声抽出 (WAV)", "zh-CN": "提取音频 (WAV)" },
+      "專業工作台快捷鍵清單": { "en": "Studio Keyboard Shortcuts", "ja": "ショートカットキー一覧", "zh-CN": "专业工作台快捷键清单" }
+    };
+
+    function setWebLanguage(lang) {
+      const targetLang = ['zh-TW', 'en', 'ja', 'zh-CN'].includes(lang) ? lang : 'zh-TW';
+      const sel = document.getElementById('web-lang-select');
+      if (sel && sel.value !== targetLang) sel.value = targetLang;
+      try { localStorage.setItem('aura_web_lang', targetLang); } catch (_) {}
+
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (!node.parentElement) continue;
+        const tag = node.parentElement.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE') continue;
+        if (node._i18nOrig === undefined) {
+          node._i18nOrig = node.nodeValue;
+        }
+        const orig = node._i18nOrig;
+        const trimmed = orig.trim();
+        if (!trimmed) continue;
+        if (targetLang === 'zh-TW') {
+          node.nodeValue = orig;
+        } else if (WEB_I18N_DICT[trimmed] && WEB_I18N_DICT[trimmed][targetLang]) {
+          node.nodeValue = orig.replace(trimmed, WEB_I18N_DICT[trimmed][targetLang]);
+        }
+      }
+    }
+
     // 初始化載入使用者先前的工作階段設定
     restoreSessionFromLocalStorage();
+    try {
+      const savedPipBg = localStorage.getItem('aura_pip_bg_mode');
+      if (savedPipBg) {
+        const pipSel = document.getElementById('pip-bg-mode');
+        if (pipSel) pipSel.value = savedPipBg;
+        setPipBgMode(savedPipBg);
+      }
+      const savedLang = localStorage.getItem('aura_web_lang');
+      if (savedLang) setWebLanguage(savedLang);
+    } catch (_) {}
   </script>
 
   <script>
