@@ -51,3 +51,5 @@ settings.json
 *.mobileprovision
 .env
 .env.*
+
+node_modules/
