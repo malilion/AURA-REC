@@ -143,7 +143,7 @@
 
 ### 安裝 FFmpeg
 
-桌面程式需要 FFmpeg（`AURA REC.app` 打包時若本機已安裝 FFmpeg 會自動內嵌一份至 `Contents/Resources/bin/ffmpeg`）。
+桌面程式需要 FFmpeg。因 FFmpeg 的 GPL 授權，macOS 與 Windows 發行包都**不隨附** FFmpeg，請先自行安裝（程式會自動偵測 PATH 與常見安裝位置，找不到時會顯示安裝指引）。
 
 - **macOS**：
   ```bash
