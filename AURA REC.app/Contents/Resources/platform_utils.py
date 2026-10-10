@@ -341,9 +341,10 @@ def create_placeholder_ppm(width=288, height=162, bg_rgb=(18, 18, 23), border_rg
     return header + bytes(pixels)
 
 
-def capture_device_preview_ppm(ffmpeg_bin, dev_name, width=288, height=162, timeout=4.0):
+def capture_device_preview_ppm(ffmpeg_bin, dev_name, width=288, height=162, timeout=4.0, bg_mode="original", bg_strength="medium"):
     """
     擷取指定螢幕或攝影機設備的即時單幀縮圖，回傳 PPM bytes (直接相容 tk.PhotoImage)。
+    支援攝影機即時虛擬背景與景深虛化預覽。
     macOS 優先使用 screencapture (極速 ~0.15s)，若失敗則回退 FFmpeg avfoundation。
     Windows 支援 gdigrab 與 dshow。Linux 支援 x11grab。
     失敗時回傳深色佔位 PPM 圖片。
@@ -409,6 +410,30 @@ def capture_device_preview_ppm(ffmpeg_bin, dev_name, width=288, height=162, time
             else:
                 cam_idx = "0"
             try:
+                if bg_mode and bg_mode != "original":
+                    try:
+                        pip_steps = build_pip_filter_steps(
+                            cam_input_label="0:v",
+                            pip_size=min(width, height),
+                            pip_shape="circle" if width == height else "rect",
+                            bg_mode=bg_mode,
+                            bg_strength=bg_strength,
+                            border_rgb=(0, 240, 255),
+                            fps=30,
+                        )
+                        ff_cmd = [
+                            ffmpeg_bin, "-y", "-f", "avfoundation", "-framerate", "30",
+                            "-i", f"{cam_idx}:none", "-vframes", "1",
+                            "-filter_complex", ";".join(pip_steps),
+                            "-map", "[cam]",
+                            "-f", "image2", "-vcodec", "ppm", "-"
+                        ]
+                        p = subprocess.run(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+                        if p.returncode == 0 and p.stdout:
+                            return p.stdout
+                    except Exception:
+                        pass
+
                 ff_cmd = [
                     ffmpeg_bin, "-y", "-f", "avfoundation", "-framerate", "30",
                     "-i", f"{cam_idx}:none", "-vframes", "1",
@@ -1229,6 +1254,187 @@ def recommended_capture(profile=None):
     if profile == "balanced":
         return {"resolution": "1080p", "fps": 30, "res_index": 2, "fps_index": 0, "label": "平衡 1080p / 30 FPS"}
     return {"resolution": "1080p", "fps": 30, "res_index": 2, "fps_index": 0, "label": "1080p / 30 FPS"}
+
+
+def build_pip_filter_steps(
+    cam_input_label="1:v",
+    pip_size=260,
+    pip_shape="circle",
+    bg_mode="original",
+    bg_strength="medium",
+    border_rgb=(0, 240, 255),
+    fps=30,
+):
+    """
+    產生畫中畫 (PiP 人臉相機) 的 FFmpeg filter_complex 濾鏡步驟清單。
+    支援模式：
+    - original: 原始相機鏡頭
+    - blur: 人像背景虛化 (景深柔焦 Bokeh，支援輕微 12px / 標準 24px / 強烈 40px)
+    - transparent: 純人像去背透空 (柔和羽化提取人像輪廓，背景全透明融入桌面)
+    - chromakey / greenkey: 綠幕扣像去背 (透明扣除綠色背景)
+    - bluekey: 藍幕扣像去背 (透明扣除藍色背景)
+    - aurora: 極光深色虛擬漸層背板 (深邃極光紫藍漸層替換雜亂背景)
+    形狀支援：
+    - circle: 正圓形相機
+    - rect: 16:9 圓角矩形相機
+    邊框支援：
+    - border_rgb: (r, g, b) 或 None (無外框)
+    回傳：
+    - steps: list[str]，輸出標籤為 [cam]
+    """
+    try:
+        pip_size = int(pip_size or 260)
+    except (TypeError, ValueError):
+        pip_size = 260
+    pip_size = max(64, pip_size)
+
+    pip_shape = "circle" if "circle" in str(pip_shape or "circle").lower() or "圓" in str(pip_shape or "") else "rect"
+
+    if isinstance(border_rgb, str):
+        s = border_rgb.lstrip("#")
+        if len(s) == 6:
+            try:
+                border_rgb = (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+            except Exception:
+                border_rgb = None
+        else:
+            border_rgb = None
+    elif isinstance(border_rgb, (list, tuple)) and len(border_rgb) == 3:
+        try:
+            border_rgb = (int(border_rgb[0]), int(border_rgb[1]), int(border_rgb[2]))
+        except Exception:
+            border_rgb = None
+    else:
+        border_rgb = None
+
+    if pip_shape == "circle":
+        cw = pip_size
+        ch = pip_size
+    else:
+        cw = int(pip_size * 16 / 9)
+        cw -= cw % 2
+        ch = pip_size
+        ch -= ch % 2
+
+    steps = [
+        f"[{cam_input_label}]scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch}[cam_raw]"
+    ]
+
+    # 解析強度
+    s_low = str(bg_strength or "medium").lower()
+    if any(k in s_low for k in ("強", "strong", "high")):
+        strength = "strong"
+    elif any(k in s_low for k in ("輕", "subtle", "low", "weak")):
+        strength = "subtle"
+    else:
+        strength = "medium"
+
+    # 解析背景模式
+    m_low = str(bg_mode or "original").lower()
+    if any(k in m_low for k in ("blur", "虛化", "景深", "bokeh")):
+        mode = "blur"
+    elif any(k in m_low for k in ("trans", "透空", "去背透空", "cutout")):
+        mode = "transparent"
+    elif any(k in m_low for k in ("green", "綠", "chroma")):
+        mode = "chromakey"
+    elif any(k in m_low for k in ("blue", "藍")):
+        mode = "bluekey"
+    elif any(k in m_low for k in ("aurora", "極光")):
+        mode = "aurora"
+    else:
+        mode = "original"
+
+    # 人像中心與橢圓半徑
+    cx = cw // 2
+    cy = int(ch * 0.48)
+    if pip_shape == "circle":
+        rx = int(cw * 0.40)
+        ry = int(ch * 0.45)
+    else:
+        rx = int(cw * 0.28)
+        ry = int(ch * 0.45)
+
+    if mode == "blur":
+        blur_rad = {"subtle": 12, "medium": 24, "strong": 40}.get(strength, 24)
+        steps.append(f"[cam_raw]format=yuv420p,split=3[cam_fg][cam_bg][cam_msk]")
+        steps.append(f"[cam_bg]boxblur={blur_rad}:2[cam_blurred]")
+        steps.append(
+            f"[cam_msk]format=yuv420p,geq=lum='clip(255*(1-(hypot((X-{cx})/{rx},(Y-{cy})/{ry})-0.65)/0.35),0,255)'[cam_mask]"
+        )
+        steps.append(f"[cam_blurred][cam_fg][cam_mask]maskedmerge[cam_proc]")
+        proc_label = "cam_proc"
+
+    elif mode == "transparent":
+        f_scale = {"subtle": 0.9, "medium": 1.0, "strong": 1.15}.get(strength, 1.0)
+        eff_rx = max(10, int(rx * f_scale))
+        eff_ry = max(10, int(ry * f_scale))
+        steps.append(
+            f"[cam_raw]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+            f"a='clip(255*(1-(hypot((X-{cx})/{eff_rx},(Y-{cy})/{eff_ry})-0.65)/0.35),0,255)'[cam_proc]"
+        )
+        proc_label = "cam_proc"
+
+    elif mode == "chromakey":
+        sim, blend = {
+            "subtle": (0.25, 0.08),
+            "medium": (0.32, 0.12),
+            "strong": (0.40, 0.16),
+        }.get(strength, (0.32, 0.12))
+        steps.append(f"[cam_raw]format=rgba,colorkey=0x00FF00:{sim}:{blend}[cam_proc]")
+        proc_label = "cam_proc"
+
+    elif mode == "bluekey":
+        sim, blend = {
+            "subtle": (0.25, 0.08),
+            "medium": (0.32, 0.12),
+            "strong": (0.40, 0.16),
+        }.get(strength, (0.32, 0.12))
+        steps.append(f"[cam_raw]format=rgba,colorkey=0x0000FF:{sim}:{blend}[cam_proc]")
+        proc_label = "cam_proc"
+
+    elif mode == "aurora":
+        steps.append(f"gradients=s={cw}x{ch}:c0=0x2b1055:c1=0x0b1f3a:r={fps}[aurora_bg]")
+        steps.append(
+            f"[cam_raw]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+            f"a='clip(255*(1-(hypot((X-{cx})/{rx},(Y-{cy})/{ry})-0.65)/0.35),0,255)'[cam_fg_cut]"
+        )
+        steps.append(f"[aurora_bg][cam_fg_cut]overlay=format=auto:shortest=1[cam_proc]")
+        proc_label = "cam_proc"
+
+    else:  # original
+        proc_label = "cam_raw"
+
+    # 形狀與外框處理
+    if pip_shape == "circle":
+        r = pip_size // 2
+        b = 4 if border_rgb else 0
+        r_in = r - b
+        if border_rgb:
+            br, bg, bb = border_rgb
+            steps.append(
+                f"[{proc_label}]format=rgba,"
+                f"geq=r='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {br}, r(X,Y))':"
+                f"g='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bg}, g(X,Y))':"
+                f"b='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), {bb}, b(X,Y))':"
+                f"a='if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), 0, if(gt((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r_in*r_in}), 255, alpha(X,Y)))'[cam]"
+            )
+        else:
+            steps.append(
+                f"[{proc_label}]format=rgba,"
+                f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='if(lte((X-{r})*(X-{r})+(Y-{r})*(Y-{r}), {r*r}), alpha(X,Y), 0)'[cam]"
+            )
+    else:  # rect
+        if border_rgb:
+            br, bg, bb = border_rgb
+            hex_color = f"0x{br:02X}{bg:02X}{bb:02X}"
+            steps.append(
+                f"[{proc_label}]format=rgba,drawbox=x=0:y=0:w=iw:h=ih:color={hex_color}@1:t=4[cam]"
+            )
+        else:
+            steps.append(f"[{proc_label}]format=rgba[cam]")
+
+    return steps
 
 
 _VT_FLAGS = {}

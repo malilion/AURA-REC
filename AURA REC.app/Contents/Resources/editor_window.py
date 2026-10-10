@@ -30,6 +30,8 @@ from platform_utils import (
     copy_file,
     open_file_or_dir,
     apply_widget_style,
+    load_settings,
+    save_settings,
 )
 from aura_widgets import AuraButton, AuraCheck, AuraRadio, AuraScale
 from video_editor import (
@@ -44,6 +46,10 @@ from speech_to_text import (
     SpeechToTextEngine,
     SubtitleDialog,
     sec_to_short_time,
+)
+from window_exclusion_watermark import (
+    WindowExclusionWatermarkDialog,
+    render_watermark_png,
 )
 
 
@@ -225,6 +231,22 @@ class VideoEditorWindow:
         self.export_srt_var = tk.BooleanVar(value=True)
         self._subtitle_dialog = None
 
+        # 智慧浮水印版權保護 (Watermark Protection)
+        saved_settings = load_settings()
+        saved_wm = saved_settings.get("watermark_config")
+        self.watermark_config = dict(saved_wm) if isinstance(saved_wm, dict) else {
+            "enabled": False,
+            "mode": "none",
+            "position": "bottom-right",
+            "style": "aurora",
+            "opacity": "medium",
+            "text": "© 極光錄影 Aura · 請勿外流",
+            "logo_path": "",
+            "margin": 24,
+        }
+        self.watermark_enabled_var = tk.BooleanVar(value=bool(self.watermark_config.get("enabled", False)))
+        self._preview_wm_photo = None
+
         self._build_ui()
         self._bind_shortcuts()
 
@@ -275,6 +297,7 @@ class VideoEditorWindow:
 
         self._tool_button(top_actions, "開啟影片…", self.select_video_file).pack(side=tk.LEFT, padx=(0, 8))
         self._tool_button(top_actions, "💬 智慧字幕…", self._open_subtitle_manager).pack(side=tk.LEFT, padx=(0, 8))
+        self._tool_button(top_actions, "💧 浮水印保護…", self._open_watermark_dialog).pack(side=tk.LEFT, padx=(0, 8))
         self.btn_play_seg = AuraButton(
             top_actions, text="播放 [Space]", style="Play.TButton", command=self.preview_play_selection
         )
@@ -726,7 +749,13 @@ class VideoEditorWindow:
 
         AuraCheck(export_card, text="靜音輸出", variable=self.mute_var).pack(anchor="w", padx=10, pady=(2, 2))
         AuraCheck(export_card, text="封裝軟字幕軌至 MP4/MOV", variable=self.soft_subtitles_var).pack(anchor="w", padx=10, pady=(0, 2))
-        AuraCheck(export_card, text="同時匯出同名 .srt 字幕檔", variable=self.export_srt_var).pack(anchor="w", padx=10, pady=(0, 6))
+        AuraCheck(export_card, text="同時匯出同名 .srt 字幕檔", variable=self.export_srt_var).pack(anchor="w", padx=10, pady=(0, 2))
+        AuraCheck(
+            export_card,
+            text="匯出時燒錄防盜浮水印",
+            variable=self.watermark_enabled_var,
+            command=self._on_editor_watermark_toggle,
+        ).pack(anchor="w", padx=10, pady=(0, 6))
 
         # 側邊欄底部大按鈕
         self.btn_export_side = AuraButton(
@@ -1858,6 +1887,79 @@ class VideoEditorWindow:
                     scx, scy, text=stext, fill=fcol, font=("Helvetica", max(10, fsize - 2), "bold")
                 )
 
+        # 繪製即時浮水印預覽 (Live Watermark Overlay)
+        wm_cfg = self._get_editor_watermark_config()
+        if wm_cfg.get("enabled") and wm_cfg.get("mode") not in (None, "", "none", "off"):
+            try:
+                ox, oy, rw, rh = self._get_rendered_video_rect()
+                disp_text = str(wm_cfg.get("text") or "© 極光錄影 Aura")
+                if wm_cfg.get("mode") == "timestamp":
+                    disp_text = f"{disp_text} · {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                png_path = render_watermark_png(
+                    text=disp_text,
+                    style=wm_cfg.get("style", "aurora"),
+                    opacity=wm_cfg.get("opacity", "medium"),
+                    font_size=14,
+                    tiled=(wm_cfg.get("mode") == "tiled"),
+                    tile_w=max(120, rw),
+                    tile_h=max(80, rh),
+                )
+                self._preview_wm_photo = tk.PhotoImage(file=png_path)
+                if wm_cfg.get("mode") in ("tiled", "floating"):
+                    self.preview_canvas.create_image(
+                        ox + rw // 2, oy + rh // 2, image=self._preview_wm_photo
+                    )
+                else:
+                    pos = wm_cfg.get("position", "bottom-right")
+                    pos_xy = {
+                        "bottom-right": (ox + rw - 10, oy + rh - 10, "se"),
+                        "bottom-left": (ox + 10, oy + rh - 10, "sw"),
+                        "top-right": (ox + rw - 10, oy + 10, "ne"),
+                        "top-left": (ox + 10, oy + 10, "nw"),
+                        "center": (ox + rw // 2, oy + rh // 2, "center"),
+                    }
+                    wx, wy, wanc = pos_xy.get(pos, (ox + rw - 10, oy + rh - 10, "se"))
+                    self.preview_canvas.create_image(wx, wy, image=self._preview_wm_photo, anchor=wanc)
+            except Exception:
+                pass
+
+    def _on_editor_watermark_toggle(self):
+        wm_on = bool(self.watermark_enabled_var.get())
+        self.watermark_config["enabled"] = wm_on
+        if wm_on and self.watermark_config.get("mode") in (None, "", "none", "off"):
+            self.watermark_config["mode"] = "corner"
+        self._redraw_preview_canvas()
+
+    def _get_editor_watermark_config(self):
+        cfg = dict(getattr(self, "watermark_config", None) or {})
+        if hasattr(self, "watermark_enabled_var"):
+            wm_on = bool(self.watermark_enabled_var.get())
+            cfg["enabled"] = wm_on
+            if wm_on and cfg.get("mode") in (None, "", "none", "off"):
+                cfg["mode"] = "corner"
+        return cfg
+
+    def _open_watermark_dialog(self):
+        saved = load_settings()
+        excl_cfg = saved.get("exclusion_config") or {}
+
+        def on_saved(new_excl, new_wm):
+            self.watermark_config = dict(new_wm)
+            self.watermark_enabled_var.set(bool(new_wm.get("enabled", False)))
+            save_settings({
+                "exclusion_config": new_excl,
+                "watermark_config": new_wm,
+            })
+            self._redraw_preview_canvas()
+
+        WindowExclusionWatermarkDialog(
+            self.window,
+            initial_exclusion=excl_cfg,
+            initial_watermark=self._get_editor_watermark_config(),
+            screen_index=0,
+            on_save=on_saved,
+        )
+
     def _draw_focus_reticle(self, cw, ch):
         fx = getattr(self, "zoom_focus_x", 0.5)
         fy = getattr(self, "zoom_focus_y", 0.5)
@@ -2199,6 +2301,8 @@ class VideoEditorWindow:
 
             zoom_cfg = self._get_zoom_config()
             has_masks = bool(self.blur_masks)
+            wm_cfg = self._get_editor_watermark_config()
+            has_watermark = bool(wm_cfg.get("enabled") and wm_cfg.get("mode") not in (None, "", "none", "off"))
             picture_change = (
                 rat != "original"
                 or abs(spd - 1.0) > 0.001
@@ -2207,6 +2311,7 @@ class VideoEditorWindow:
                 or scale_res != "original"
                 or zoom_cfg.get("enabled", False)
                 or has_masks
+                or has_watermark
             )
             export_mode = mode
             switched = export_mode == "lossless" and picture_change
@@ -2254,6 +2359,7 @@ class VideoEditorWindow:
                         subtitles_srt_path=sub_srt_tmp,
                         soft_subtitles=self.soft_subtitles_var.get(),
                         export_srt_file=self.export_srt_var.get(),
+                        watermark_config=wm_cfg if has_watermark else None,
                     )
                 elif export_mode == "gif":
                     ok, msg = self.editor.export_gif(

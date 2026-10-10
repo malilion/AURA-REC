@@ -30,6 +30,7 @@ from platform_utils import (
     audio_bitrate,
     encode_threads,
 )
+from window_exclusion_watermark import build_watermark_filter_steps
 
 
 def parse_aspect_choice(text):
@@ -869,9 +870,10 @@ class VideoEditor:
         subtitles_srt_path=None,
         soft_subtitles=True,
         export_srt_file=False,
+        watermark_config=None,
     ):
         """
-        高級精準幀剪輯 (支援自動縮放運鏡、隱私遮罩模糊/馬賽克、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
+        高級精準幀剪輯 (支援自動縮放運鏡、隱私遮罩模糊/馬賽克、智慧浮水印保護、倍速、比例裁切、色彩增強、音量調整、尺寸縮放、硬體加速)
         """
         input_file = str(input_file)
         output_file = str(output_file)
@@ -895,6 +897,7 @@ class VideoEditor:
         profile = machine_profile()
         vf_list = []
         has_blur_masks = bool(blur_masks and len(blur_masks) > 0)
+        wm_enabled = bool(watermark_config and watermark_config.get("enabled") and str(watermark_config.get("mode", "none")).lower() not in ("none", "off", ""))
 
         # 1. 智慧運鏡與自動縮放 (Auto Zoom & Pan)
         if zoom_config and zoom_config.get("enabled"):
@@ -929,33 +932,43 @@ class VideoEditor:
         if aspect_ratio == "9:16" and anchor == "fit":
             canvas_w, canvas_h = vertical_canvas_size(profile)
             graph = vertical_fit_graph(canvas_w, canvas_h)
+            v_target = "pre_wm" if wm_enabled else "outv"
             if has_blur_masks:
                 mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
                 if vf_list:
                     pre_chain = ",".join(vf_list)
-                    graph = f"{mask_graph};[{mask_out}]{pre_chain}[pre];[pre]{graph}[outv]"
+                    graph = f"{mask_graph};[{mask_out}]{pre_chain}[pre];[pre]{graph}[{v_target}]"
                 else:
-                    graph = f"{mask_graph};[{mask_out}]{graph}[outv]"
+                    graph = f"{mask_graph};[{mask_out}]{graph}[{v_target}]"
             else:
                 if vf_list:
                     pre_chain = ",".join(vf_list)
-                    graph = f"[0:v]{pre_chain}[pre];[pre]{graph}[outv]"
+                    graph = f"[0:v]{pre_chain}[pre];[pre]{graph}[{v_target}]"
                 else:
-                    graph = f"[0:v]{graph}[outv]"
+                    graph = f"[0:v]{graph}[{v_target}]"
+            if wm_enabled:
+                wm_steps, _ = build_watermark_filter_steps(base_label=v_target, watermark_config=watermark_config, out_label="outv")
+                graph = graph + ";" + ";".join(wm_steps)
             cmd.extend(["-filter_complex", graph, "-map", "[outv]"])
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
             if crop:
                 vf_list.append(crop)
-            if has_blur_masks:
+            if has_blur_masks or wm_enabled:
+                parts = []
+                curr_lbl = "0:v"
+                if has_blur_masks:
+                    out_m = "masked" if (vf_list or wm_enabled) else "outv"
+                    mask_graph, curr_lbl = build_blur_mask_graph(blur_masks, base_label=curr_lbl, width=v_w, height=v_h, out_label=out_m)
+                    parts.append(mask_graph)
                 if vf_list:
-                    mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="masked")
-                    vf_chain = ",".join(vf_list)
-                    graph = f"{mask_graph};[{mask_out}]{vf_chain}[outv]"
-                    cmd.extend(["-filter_complex", graph, "-map", "[outv]"])
-                else:
-                    mask_graph, mask_out = build_blur_mask_graph(blur_masks, base_label="0:v", width=v_w, height=v_h, out_label="outv")
-                    cmd.extend(["-filter_complex", mask_graph, "-map", "[outv]"])
+                    out_vf = "vf_out" if wm_enabled else "outv"
+                    parts.append(f"[{curr_lbl}]{','.join(vf_list)}[{out_vf}]")
+                    curr_lbl = out_vf
+                if wm_enabled:
+                    wm_steps, curr_lbl = build_watermark_filter_steps(base_label=curr_lbl, watermark_config=watermark_config, out_label="outv")
+                    parts.extend(wm_steps)
+                cmd.extend(["-filter_complex", ";".join(parts), "-map", "[outv]"])
             else:
                 if vf_list:
                     cmd.extend(["-vf", ",".join(vf_list)])

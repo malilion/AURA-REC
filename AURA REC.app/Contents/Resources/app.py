@@ -33,6 +33,11 @@ from aura_widgets import AuraButton, AuraCheck
 from input_overlay import InputOverlayManager
 from auto_updater import AutoUpdater
 from screen_annotation import ScreenAnnotationOverlay
+from window_exclusion_watermark import (
+    PrivacyShieldOverlayManager,
+    WindowExclusionWatermarkDialog,
+    set_window_excluded_from_capture,
+)
 from region_picker import (
     bar_origin,
     box_to_points,
@@ -129,7 +134,7 @@ def format_media_duration(seconds):
 class FloatingCameraBubble:
     """錄影時出現在桌面角落的可拖曳即時相機小圓圈 (Loom / Recordly 風格)"""
 
-    def __init__(self, parent_root, ffmpeg_bin, camera_dev, size=260, shape="circle", border_color="#00f0ff", position="bottom-right"):
+    def __init__(self, parent_root, ffmpeg_bin, camera_dev, size=260, shape="circle", border_color="#00f0ff", position="bottom-right", bg_mode="original", bg_strength="medium"):
         self.root = parent_root
         self.ffmpeg_bin = ffmpeg_bin
         self.camera_dev = camera_dev
@@ -137,6 +142,8 @@ class FloatingCameraBubble:
         self.shape = shape
         self.border_color = border_color
         self.position = position
+        self.bg_mode = bg_mode
+        self.bg_strength = bg_strength
         self.is_alive = True
         self._photo = None
         self._drag_data = {"x": 0, "y": 0}
@@ -181,7 +188,15 @@ class FloatingCameraBubble:
         self.canvas.bind("<Button-1>", self._start_drag)
         self.canvas.bind("<B1-Motion>", self._do_drag)
 
-        badge_text = "● 相機鏡頭" if shape == "circle" else "● 鏡頭畫面"
+        mode_names = {
+            "blur": "背景虛化",
+            "transparent": "去背透空",
+            "chromakey": "綠幕去背",
+            "bluekey": "藍幕去背",
+            "aurora": "極光背景",
+        }
+        self.mode_suffix = f" · {mode_names[bg_mode]}" if bg_mode in mode_names else ""
+        badge_text = ("● 相機鏡頭" if shape == "circle" else "● 鏡頭畫面") + self.mode_suffix
         self.canvas.create_text(
             size // 2, size // 2 - 12,
             text=badge_text,
@@ -219,7 +234,8 @@ class FloatingCameraBubble:
         def worker():
             try:
                 ppm = capture_device_preview_ppm(
-                    self.ffmpeg_bin, self.camera_dev, width=self.size, height=self.size
+                    self.ffmpeg_bin, self.camera_dev, width=self.size, height=self.size,
+                    bg_mode=self.bg_mode, bg_strength=self.bg_strength
                 )
             except Exception:
                 ppm = None
@@ -237,7 +253,7 @@ class FloatingCameraBubble:
                         )
                         self.canvas.create_text(
                             self.size // 2, self.size - 13,
-                            text="● LIVE PIP 鏡頭", fill="#10b981",
+                            text=f"● LIVE PIP{self.mode_suffix}", fill="#10b981",
                             font=("SF Pro Text", 9, "bold") if IS_MAC else ("Segoe UI", 8, "bold")
                         )
                         close_btn = self.canvas.create_text(
@@ -305,12 +321,39 @@ class LiteRecorderApp:
         self.pip_pos_var = tk.StringVar(value=str(self._saved.get("pip_pos", "右下角")))
         self.pip_size_var = tk.StringVar(value=str(self._saved.get("pip_size", "中 (260px)")))
         self.pip_border_var = tk.StringVar(value=str(self._saved.get("pip_border", "極光霓虹藍 (#00f0ff)")))
+        self.pip_bg_mode_var = tk.StringVar(value=str(self._saved.get("pip_bg_mode", "原始鏡頭 (Original)")))
+        self.pip_bg_strength_var = tk.StringVar(value=str(self._saved.get("pip_bg_strength", "標準 (Medium)")))
         self.click_ripple_var = tk.BooleanVar(value=self._flag("click_ripple", True))
         self.keystroke_hud_var = tk.BooleanVar(value=self._flag("keystroke_hud", True))
         self.check_updates_var = tk.BooleanVar(value=self._flag("check_updates_on_startup", True))
+        saved_excl = self._saved.get("exclusion_config")
+        self.exclusion_config = dict(saved_excl) if isinstance(saved_excl, dict) else {
+            "enabled": False,
+            "exclude_self_window": True,
+            "auto_sensitive": True,
+            "desktop_shield": False,
+            "mask_mode": "blur",
+            "custom_keywords": "",
+            "excluded_window_ids": [],
+            "excluded_owners": [],
+        }
+        saved_wm = self._saved.get("watermark_config")
+        self.watermark_config = dict(saved_wm) if isinstance(saved_wm, dict) else {
+            "enabled": False,
+            "mode": "none",
+            "position": "bottom-right",
+            "style": "aurora",
+            "opacity": "medium",
+            "text": "© 極光錄影 Aura · 請勿外流",
+            "logo_path": "",
+            "margin": 24,
+        }
+        self.window_exclusion_var = tk.BooleanVar(value=bool(self.exclusion_config.get("enabled", False)))
+        self.watermark_enabled_var = tk.BooleanVar(value=bool(self.watermark_config.get("enabled", False)))
         self._camera_bubble_win = None
         self._input_overlay_mgr = None
         self._annotation_overlay = None
+        self._privacy_shield_mgr = None
 
         self.video_devices = []
         self.audio_devices = []
@@ -398,6 +441,7 @@ class LiteRecorderApp:
         file_menu.add_command(label="收成小條", command=self._collapse_to_mini)
         file_menu.add_command(label="截圖", command=self.take_screenshot, accelerator="F7")
         file_menu.add_command(label="選擇視窗…", command=self._pick_window)
+        file_menu.add_command(label="視窗排除與浮水印保護…", command=self._open_exclusion_watermark_dialog)
         file_menu.add_command(label="剪輯影片…", command=self.open_editor)
         file_menu.add_command(label="播放最新錄影", command=self.play_last_recording)
         file_menu.add_command(
@@ -682,8 +726,71 @@ class LiteRecorderApp:
             command=self._save_capture_settings,
         ).grid(row=2, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=2)
 
-        for combo in (self.pip_camera_combo, self.pip_shape_combo, self.pip_pos_combo, self.pip_size_combo, self.pip_border_combo):
+        # Row 3: 背景去背模式、去背/虛化強度
+        tk.Label(pip_grid, text="背景", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=3, column=0, sticky="w", padx=(0, 6), pady=2)
+        self.pip_bg_mode_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_bg_mode_var)
+        self.pip_bg_mode_combo["values"] = [
+            "原始鏡頭 (Original)",
+            "人像背景虛化 (Portrait Blur)",
+            "純人像去背透空 (Transparent)",
+            "綠幕扣像 (Green Screen)",
+            "藍幕扣像 (Blue Screen)",
+            "極光深色背景 (Aurora BG)",
+        ]
+        self.pip_bg_mode_combo.grid(row=3, column=1, sticky="ew", pady=2)
+
+        tk.Label(pip_grid, text="強度", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"]).grid(row=3, column=2, sticky="w", padx=(8, 6), pady=2)
+        self.pip_bg_strength_combo = ttk.Combobox(pip_grid, style="App.TCombobox", state="readonly", textvariable=self.pip_bg_strength_var)
+        self.pip_bg_strength_combo["values"] = ["標準 (Medium)", "輕微 (Subtle)", "強烈 (Strong)"]
+        self.pip_bg_strength_combo.grid(row=3, column=3, sticky="ew", pady=2)
+
+        for combo in (
+            self.pip_camera_combo,
+            self.pip_shape_combo,
+            self.pip_pos_combo,
+            self.pip_size_combo,
+            self.pip_border_combo,
+            self.pip_bg_mode_combo,
+            self.pip_bg_strength_combo,
+        ):
             combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
+
+        # 視窗排除與浮水印保護卡片
+        self.protection_card = tk.Frame(settings_card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
+        self.protection_card.pack(fill=tk.X, padx=14, pady=(0, 10))
+
+        prot_header = tk.Frame(self.protection_card, bg=UI["card"])
+        prot_header.pack(fill=tk.X, padx=10, pady=(6, 4))
+
+        AuraCheck(
+            prot_header,
+            text="視窗隱私排除",
+            variable=self.window_exclusion_var,
+            command=self._on_protection_toggle,
+        ).pack(side=tk.LEFT)
+
+        AuraCheck(
+            prot_header,
+            text="智慧防盜浮水印",
+            variable=self.watermark_enabled_var,
+            command=self._on_protection_toggle,
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
+        self.protection_settings_btn = self._quiet_button(
+            prot_header, "🛡️ 保護與浮水印設定", self._open_exclusion_watermark_dialog
+        )
+        self.protection_settings_btn.pack(side=tk.RIGHT)
+
+        self.lbl_protection_summary = tk.Label(
+            self.protection_card,
+            text="",
+            font=self.fonts["badge"],
+            fg=UI["muted"],
+            bg=UI["card"],
+            anchor="w",
+        )
+        self.lbl_protection_summary.pack(fill=tk.X, padx=10, pady=(0, 6))
+        self._update_protection_summary()
 
         # 即時畫面縮圖卡片
         self.preview_card = tk.Frame(settings_card, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1)
@@ -1347,10 +1454,14 @@ class LiteRecorderApp:
             "pip_pos": self.pip_pos_var.get() if hasattr(self, "pip_pos_var") else "",
             "pip_size": self.pip_size_var.get() if hasattr(self, "pip_size_var") else "",
             "pip_border": self.pip_border_var.get() if hasattr(self, "pip_border_var") else "",
+            "pip_bg_mode": self.pip_bg_mode_var.get() if hasattr(self, "pip_bg_mode_var") else "",
+            "pip_bg_strength": self.pip_bg_strength_var.get() if hasattr(self, "pip_bg_strength_var") else "",
             "click_ripple": bool(self.click_ripple_var.get()) if hasattr(self, "click_ripple_var") else True,
             "keystroke_hud": bool(self.keystroke_hud_var.get()) if hasattr(self, "keystroke_hud_var") else True,
             "multitrack": bool(self.multitrack_var.get()) if hasattr(self, "multitrack_var") else True,
             "check_updates_on_startup": bool(self.check_updates_var.get()) if hasattr(self, "check_updates_var") else True,
+            "exclusion_config": self._get_exclusion_config(),
+            "watermark_config": self._get_watermark_config(),
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -1361,8 +1472,111 @@ class LiteRecorderApp:
             payload["sys_audio_device"] = sys_audio
         save_settings(payload)
         self._saved.update(payload)
+        self._update_protection_summary()
         if not self.recorder.is_recording and not self.countdown_active:
             self.timer_hint.config(text=self._idle_hint())
+
+    def _on_protection_toggle(self):
+        if hasattr(self, "window_exclusion_var"):
+            self.exclusion_config["enabled"] = bool(self.window_exclusion_var.get())
+        if hasattr(self, "watermark_enabled_var"):
+            wm_on = bool(self.watermark_enabled_var.get())
+            self.watermark_config["enabled"] = wm_on
+            if wm_on and self.watermark_config.get("mode") in (None, "", "none", "off"):
+                self.watermark_config["mode"] = "corner"
+        self._save_capture_settings()
+
+    def _get_exclusion_config(self):
+        cfg = dict(self.exclusion_config or {})
+        if hasattr(self, "window_exclusion_var"):
+            cfg["enabled"] = bool(self.window_exclusion_var.get())
+        return cfg
+
+    def _get_watermark_config(self):
+        cfg = dict(self.watermark_config or {})
+        if hasattr(self, "watermark_enabled_var"):
+            wm_on = bool(self.watermark_enabled_var.get())
+            cfg["enabled"] = wm_on
+            if wm_on and cfg.get("mode") in (None, "", "none", "off"):
+                cfg["mode"] = "corner"
+        return cfg
+
+    def _update_protection_summary(self):
+        if not hasattr(self, "lbl_protection_summary"):
+            return
+        excl = self._get_exclusion_config()
+        wm = self._get_watermark_config()
+        parts = []
+        if excl.get("enabled"):
+            mask_names = {"blur": "景深模糊", "mosaic": "馬賽克", "shield": "隱私黑盒"}
+            m_lbl = mask_names.get(excl.get("mask_mode", "blur"), "模糊")
+            n_win = len(excl.get("excluded_window_ids") or [])
+            sens_str = "+自動敏感偵測" if excl.get("auto_sensitive") else ""
+            parts.append(f"🔒 排除已開啟 ({m_lbl}{sens_str}{f'·指定{n_win}視窗' if n_win else ''})")
+        else:
+            parts.append("🔒 視窗排除: 僅自身穿透隱藏")
+
+        if wm.get("enabled") and wm.get("mode") not in (None, "", "none", "off"):
+            mode_names = {
+                "corner": "角落簽名",
+                "timestamp": "時間戳記",
+                "floating": "動態巡航防盜",
+                "tiled": "滿版防盜網格",
+                "image": "Logo 圖片",
+            }
+            wm_lbl = mode_names.get(wm.get("mode"), "角落簽名")
+            txt = str(wm.get("text") or "")[:14]
+            parts.append(f"💧 浮水印: {wm_lbl} ({txt})")
+        else:
+            parts.append("💧 浮水印: 未啟用")
+        self.lbl_protection_summary.config(
+            text="  ·  ".join(parts),
+            fg=UI["blue"] if (excl.get("enabled") or wm.get("enabled")) else UI["muted"],
+        )
+
+    def _open_exclusion_watermark_dialog(self):
+        if self.recorder.is_recording or self.countdown_active:
+            messagebox.showinfo("保護與浮水印設定", "請先停止目前錄影，再調整視窗排除與浮水印設定。")
+            return
+
+        def on_saved(new_excl, new_wm):
+            self.exclusion_config = dict(new_excl)
+            self.watermark_config = dict(new_wm)
+            self.window_exclusion_var.set(bool(new_excl.get("enabled", False)))
+            self.watermark_enabled_var.set(bool(new_wm.get("enabled", False)))
+            self._save_capture_settings()
+
+        WindowExclusionWatermarkDialog(
+            self.root,
+            initial_exclusion=self._get_exclusion_config(),
+            initial_watermark=self._get_watermark_config(),
+            screen_index=self._capture_screen_index(),
+            on_save=on_saved,
+        )
+
+    def _start_privacy_shields(self, exclusion_config):
+        self._stop_privacy_shields()
+        if not exclusion_config or not exclusion_config.get("enabled"):
+            return
+        if not exclusion_config.get("desktop_shield"):
+            return
+        try:
+            self._privacy_shield_mgr = PrivacyShieldOverlayManager(
+                self.root,
+                exclusion_config=exclusion_config,
+                screen_index=self._capture_screen_index(),
+            )
+            self._privacy_shield_mgr.start()
+        except Exception as e:
+            print(f"啟動隱私保護盾牌異常: {e}")
+
+    def _stop_privacy_shields(self):
+        if self._privacy_shield_mgr is not None:
+            try:
+                self._privacy_shield_mgr.stop()
+            except Exception:
+                pass
+            self._privacy_shield_mgr = None
 
     def _segment_seconds(self):
         return {1: 300, 2: 600, 3: 1800}.get(self.segment_combo.current())
@@ -1544,6 +1758,12 @@ class LiteRecorderApp:
                 outside = self._mini_origin_outside(region)
                 if outside:
                     parked_at = outside
+
+        excl_cfg = self._get_exclusion_config()
+        wm_cfg = self._get_watermark_config()
+        if excl_cfg.get("exclude_self_window", True):
+            set_window_excluded_from_capture(self.root, exclude=True)
+
         self._play_alert("start")
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
@@ -1562,9 +1782,12 @@ class LiteRecorderApp:
             follow=follow,
             prefix=self._saved.get("filename_prefix"),
             pip_config=self._get_pip_config(),
+            exclusion_config=excl_cfg,
+            watermark_config=wm_cfg,
         )
 
         if not ok:
+            set_window_excluded_from_capture(self.root, exclude=False)
             self._restore_conceal()
             if hidden_for_record:
                 self.root.deiconify()
@@ -1573,6 +1796,9 @@ class LiteRecorderApp:
             messagebox.showerror("錄影啟動失敗", msg)
             self._update_ui_state(recording=False)
             return
+
+        if excl_cfg.get("enabled") and excl_cfg.get("desktop_shield"):
+            self._start_privacy_shields(excl_cfg)
 
         if self.pip_enabled_var.get() and self.pip_floating_var.get():
             self._show_camera_bubble()
@@ -1594,6 +1820,8 @@ class LiteRecorderApp:
             self._pending_mini = False
         else:
             self._pending_mini = self.auto_mini_var.get()
+        if excl_cfg.get("exclude_self_window", True):
+            set_window_excluded_from_capture(self.root, exclude=True)
         self._update_ui_state(recording=True)
         self.timer_hint.config(text="正在確認錄影有順利開始…")
         self.root.after(800, self._confirm_recording_started)
@@ -1639,6 +1867,8 @@ class LiteRecorderApp:
         self._stopping = False
         release_awake()
         self._play_alert("stop")
+        self._stop_privacy_shields()
+        set_window_excluded_from_capture(self.root, exclude=False)
         self._restore_conceal()
         self._stop_input_overlay()
         self._close_annotation_overlay()
@@ -1702,12 +1932,16 @@ class LiteRecorderApp:
             combo.config(state=state)
         for combo_name in (
             "pip_camera_combo", "pip_shape_combo", "pip_pos_combo",
-            "pip_size_combo", "pip_border_combo",
+            "pip_size_combo", "pip_border_combo", "pip_bg_mode_combo",
+            "pip_bg_strength_combo",
         ):
             cb = getattr(self, combo_name, None)
             if cb is not None:
                 cb.config(state=state)
-        for button_name in ("reselect_btn", "window_btn", "video_preview_btn", "video_identify_btn"):
+        for button_name in (
+            "reselect_btn", "window_btn", "video_preview_btn",
+            "video_identify_btn", "protection_settings_btn",
+        ):
             button = getattr(self, button_name, None)
             if button is not None:
                 button.config(state=tk.DISABLED if locked else tk.NORMAL)
@@ -2390,6 +2624,27 @@ class LiteRecorderApp:
         else:
             border_rgb = (0, 240, 255)
 
+        bg_choice = self.pip_bg_mode_combo.get() if hasattr(self, "pip_bg_mode_combo") else "原始"
+        bg_mode = "original"
+        if any(k in bg_choice.lower() for k in ("blur", "虛化", "景深")):
+            bg_mode = "blur"
+        elif any(k in bg_choice.lower() for k in ("transparent", "透空", "去背透空")):
+            bg_mode = "transparent"
+        elif any(k in bg_choice.lower() for k in ("green", "綠", "chroma")):
+            bg_mode = "chromakey"
+        elif any(k in bg_choice.lower() for k in ("blue", "藍")):
+            bg_mode = "bluekey"
+        elif any(k in bg_choice.lower() for k in ("aurora", "極光")):
+            bg_mode = "aurora"
+
+        st_choice = self.pip_bg_strength_combo.get() if hasattr(self, "pip_bg_strength_combo") else "標準"
+        if any(k in st_choice.lower() for k in ("強", "strong", "high")):
+            bg_strength = "strong"
+        elif any(k in st_choice.lower() for k in ("輕", "subtle", "low", "weak")):
+            bg_strength = "subtle"
+        else:
+            bg_strength = "medium"
+
         return {
             "enabled": True,
             "camera_idx": cam_idx,
@@ -2399,6 +2654,8 @@ class LiteRecorderApp:
             "border_color": border_rgb,
             "margin": 32,
             "camera_text": cam_text,
+            "bg_mode": bg_mode,
+            "bg_strength": bg_strength,
         }
 
     def _test_camera_bubble(self):
@@ -2409,6 +2666,8 @@ class LiteRecorderApp:
         shape = cfg.get("shape", "circle")
         pos = cfg.get("position", "bottom-right")
         border = "#00f0ff" if cfg.get("border_color") == (0, 240, 255) else ("#ffffff" if cfg.get("border_color") else "#27272a")
+        bg_mode = cfg.get("bg_mode", "original")
+        bg_strength = cfg.get("bg_strength", "medium")
 
         self._close_camera_bubble()
         self._camera_bubble_win = FloatingCameraBubble(
@@ -2419,6 +2678,8 @@ class LiteRecorderApp:
             shape=shape,
             border_color=border,
             position=pos,
+            bg_mode=bg_mode,
+            bg_strength=bg_strength,
         )
 
     def _show_camera_bubble(self):
@@ -2431,6 +2692,8 @@ class LiteRecorderApp:
         shape = cfg.get("shape", "circle")
         pos = cfg.get("position", "bottom-right")
         border = "#00f0ff" if cfg.get("border_color") == (0, 240, 255) else ("#ffffff" if cfg.get("border_color") else "#27272a")
+        bg_mode = cfg.get("bg_mode", "original")
+        bg_strength = cfg.get("bg_strength", "medium")
 
         self._close_camera_bubble()
         self._camera_bubble_win = FloatingCameraBubble(
@@ -2441,6 +2704,8 @@ class LiteRecorderApp:
             shape=shape,
             border_color=border,
             position=pos,
+            bg_mode=bg_mode,
+            bg_strength=bg_strength,
         )
 
     def _close_camera_bubble(self):
