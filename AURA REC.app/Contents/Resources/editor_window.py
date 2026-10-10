@@ -187,6 +187,14 @@ class VideoEditorWindow:
         self._preview_thread = None
         self._preview_pending = None
         self._playing_process = None
+        self._scrub_cache = {}
+
+        # 膠卷時間軸即時刷屏與拖曳握把 (Scrubbing / Skimming & In/Out Handles)
+        self._skimmer_x = None
+        self._skimmer_time = None
+        self._hover_target = None
+        self._drag_target = None
+        self.filmstrip_thumbs = []
 
         self._build_ui()
         self._bind_shortcuts()
@@ -318,24 +326,24 @@ class VideoEditorWindow:
         )
         self.lbl_selected_len.pack(side=tk.RIGHT)
 
-        # (C) 故事板膠卷縮圖預覽列 (Filmstrip)
+        # (C) 故事板膠卷縮圖預覽列與即時刷屏時間軸 (Filmstrip Timeline & Scrubber)
         self.filmstrip_frame = tk.Frame(left_col, bg=UI["card"], highlightbackground=UI["edge"], highlightthickness=1, height=76)
         self.filmstrip_frame.pack(fill=tk.X, pady=(0, 4))
         self.filmstrip_frame.pack_propagate(False)
 
-        self.filmstrip_labels = []
-        self.filmstrip_images = []
-        for _ in range(5):
-            lbl = tk.Label(
-                self.filmstrip_frame,
-                text="‧‧‧",
-                font=self.fonts["badge"],
-                fg=UI["muted"],
-                bg=UI["card"],
-                cursor="hand2",
-            )
-            lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
-            self.filmstrip_labels.append(lbl)
+        self.filmstrip_canvas = tk.Canvas(
+            self.filmstrip_frame,
+            bg=UI["card"],
+            highlightthickness=0,
+            cursor="crosshair",
+        )
+        self.filmstrip_canvas.pack(fill=tk.BOTH, expand=True)
+        self.filmstrip_canvas.bind("<Configure>", lambda _e: self._redraw_filmstrip())
+        self.filmstrip_canvas.bind("<Motion>", self._on_filmstrip_motion)
+        self.filmstrip_canvas.bind("<Leave>", self._on_filmstrip_leave)
+        self.filmstrip_canvas.bind("<Button-1>", self._on_filmstrip_press)
+        self.filmstrip_canvas.bind("<B1-Motion>", self._on_filmstrip_drag)
+        self.filmstrip_canvas.bind("<ButtonRelease-1>", self._on_filmstrip_release)
 
         # (D) 時間軸滑桿 (Aura Timeline Scale)
         self.time_slider = AuraScale(
@@ -726,6 +734,9 @@ class VideoEditorWindow:
         self.ent_end.insert(0, sec_to_time_str(self.total_duration))
 
         self._update_selection_length_label()
+        self._scrub_cache.clear()
+        self.filmstrip_thumbs = []
+        self._redraw_filmstrip()
         self._request_preview(0.0)
         self._load_filmstrip()
 
@@ -737,6 +748,7 @@ class VideoEditorWindow:
             text=f"{sec_to_time_str(sec)} / {sec_to_time_str(self.total_duration)}"
         )
         self._request_preview(sec)
+        self._redraw_filmstrip()
 
     def _load_filmstrip(self):
         if not self.current_file or self.total_duration <= 0:
@@ -745,27 +757,26 @@ class VideoEditorWindow:
         duration = self.total_duration
 
         def work():
-            fractions = [0.05, 0.25, 0.50, 0.75, 0.95]
+            # 取 8 個跨全片的關鍵影格作為膠卷故事板縮圖
+            fractions = [0.03, 0.16, 0.30, 0.44, 0.58, 0.72, 0.86, 0.97]
             thumbs = []
             for frac in fractions:
                 t = duration * frac
-                ppm = self.editor.get_frame_ppm(video_path, t, width=128, height=72)
-                thumbs.append((t, ppm))
+                ppm = self.editor.get_frame_ppm(video_path, t, width=160, height=72)
+                if ppm:
+                    thumbs.append((t, ppm))
 
             def apply():
                 if self.current_file != video_path:
                     return
-                self.filmstrip_images = []
-                for i, (t, ppm) in enumerate(thumbs):
-                    if i < len(self.filmstrip_labels) and ppm:
-                        try:
-                            img = tk.PhotoImage(data=ppm)
-                            self.filmstrip_images.append(img)
-                            lbl = self.filmstrip_labels[i]
-                            lbl.config(image=img, text="", width=0, height=0)
-                            lbl.bind("<Button-1>", lambda _e, target=t: self._jump_to_time(target))
-                        except Exception:
-                            pass
+                self.filmstrip_thumbs = []
+                for t, ppm in thumbs:
+                    try:
+                        img = tk.PhotoImage(data=ppm)
+                        self.filmstrip_thumbs.append((t, img))
+                    except Exception:
+                        pass
+                self._redraw_filmstrip()
 
             try:
                 self.window.after(0, apply)
@@ -774,6 +785,248 @@ class VideoEditorWindow:
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _get_filmstrip_dimensions(self):
+        canvas = getattr(self, "filmstrip_canvas", None)
+        if canvas is None:
+            return 800, 76
+        W = canvas.winfo_width()
+        H = canvas.winfo_height()
+        if W <= 1:
+            try:
+                c_w = int(canvas.cget("width"))
+                if c_w > 1:
+                    W = c_w
+                elif hasattr(self, "filmstrip_frame"):
+                    W = self.filmstrip_frame.winfo_width()
+            except Exception:
+                W = 800
+            if W <= 1:
+                W = 800
+        if H <= 1:
+            try:
+                c_h = int(canvas.cget("height"))
+                if c_h > 1:
+                    H = c_h
+                elif hasattr(self, "filmstrip_frame"):
+                    H = self.filmstrip_frame.winfo_height()
+            except Exception:
+                H = 76
+            if H <= 1:
+                H = 76
+        return max(30, W), max(20, H)
+
+    def _redraw_filmstrip(self):
+        canvas = getattr(self, "filmstrip_canvas", None)
+        if canvas is None:
+            return
+        try:
+            if not canvas.winfo_exists():
+                return
+        except (tk.TclError, AttributeError):
+            return
+
+        W, H = self._get_filmstrip_dimensions()
+        canvas.delete("all")
+
+        # 1. 繪製縮圖列背景 (Storyboard Thumbnails)
+        if self.filmstrip_thumbs:
+            n = len(self.filmstrip_thumbs)
+            step_w = W / float(n)
+            for i, (_t, img) in enumerate(self.filmstrip_thumbs):
+                cx = int(i * step_w + step_w / 2)
+                cy = H // 2
+                canvas.create_image(cx, cy, image=img)
+                if i > 0:
+                    canvas.create_line(int(i * step_w), 0, int(i * step_w), H, fill="#1E2330", width=1)
+        else:
+            # 尚未載入完成時的精緻膠卷軌道佔位
+            canvas.create_rectangle(0, 0, W, H, fill="#0A0C10", outline="")
+            for tx in range(0, W, 40):
+                canvas.create_rectangle(tx + 4, 3, tx + 14, 9, fill="#1E2330", outline="")
+                canvas.create_rectangle(tx + 4, H - 9, tx + 14, H - 3, fill="#1E2330", outline="")
+            canvas.create_text(
+                W // 2, H // 2,
+                text="🎞 載入膠卷預覽中…",
+                fill=UI["muted"],
+                font=self.fonts["badge"],
+            )
+
+        # 2. 裁切選取區遮罩 (Dimmed Scrim outside Selection)
+        dur = max(self.total_duration, 0.001)
+        in_x = int(max(0.0, min(1.0, self.start_sec / dur)) * W)
+        out_x = int(max(0.0, min(1.0, self.end_sec / dur)) * W)
+
+        # 未選取區暗色遮罩
+        if in_x > 0:
+            canvas.create_rectangle(0, 0, in_x, H, fill="#000000", stipple="gray50", outline="")
+        if out_x < W:
+            canvas.create_rectangle(out_x, 0, W, H, fill="#000000", stipple="gray50", outline="")
+
+        # 選取區高亮上下邊界發光線
+        if out_x > in_x:
+            canvas.create_line(in_x, 1, out_x, 1, fill=UI["ok"], width=2)
+            canvas.create_line(in_x, H - 1, out_x, H - 1, fill=UI["ok"], width=2)
+
+        tab_h = 36
+        tab_y1 = (H - tab_h) // 2
+        tab_y2 = tab_y1 + tab_h
+
+        # 3. 起點握把 (In Handle) - 翠綠色
+        is_hover_in = (self._hover_target == "in_handle" or self._drag_target == "in_handle")
+        in_color = "#66FFAA" if is_hover_in else UI["ok"]
+        canvas.create_line(in_x, 0, in_x, H, fill=in_color, width=3 if is_hover_in else 2)
+
+        # In 握把徽章 (Grip Tab) - 靠選取區內側
+        tab_in_x1 = max(0, in_x - 3)
+        tab_in_x2 = min(W, in_x + 13)
+        canvas.create_rectangle(tab_in_x1, tab_y1, tab_in_x2, tab_y2, fill=in_color, outline=UI["ink"], width=1)
+        canvas.create_text((tab_in_x1 + tab_in_x2) // 2, H // 2, text="[", fill=UI["ink"], font=("Helvetica", 11, "bold"))
+
+        # 4. 終點握把 (Out Handle) - 珊瑚粉/寶石紅
+        is_hover_out = (self._hover_target == "out_handle" or self._drag_target == "out_handle")
+        out_color = "#FF6688" if is_hover_out else UI["red"]
+        canvas.create_line(out_x, 0, out_x, H, fill=out_color, width=3 if is_hover_out else 2)
+
+        # Out 握把徽章 (Grip Tab) - 靠選取區內側
+        tab_out_x1 = max(0, out_x - 13)
+        tab_out_x2 = min(W, out_x + 3)
+        canvas.create_rectangle(tab_out_x1, tab_y1, tab_out_x2, tab_y2, fill=out_color, outline=UI["ink"], width=1)
+        canvas.create_text((tab_out_x1 + tab_out_x2) // 2, H // 2, text="]", fill=UI["white"], font=("Helvetica", 11, "bold"))
+
+        # 5. 當前播放指針 (Playhead Indicator)
+        cur_x = int(max(0.0, min(1.0, self.current_time / dur)) * W)
+        canvas.create_line(cur_x, 0, cur_x, H, fill=UI["blue"], width=2)
+        # 播放指針頭 (Diamond Head)
+        canvas.create_polygon(
+            cur_x - 5, 0,
+            cur_x + 5, 0,
+            cur_x, 8,
+            fill=UI["blue"], outline="",
+        )
+
+        # 6. 即時 Hover 刷屏指針與懸浮時間膠囊 (Skimmer Needle & Time Bubble)
+        if self._skimmer_x is not None and self._drag_target is None and self._hover_target == "track":
+            sx = self._skimmer_x
+            canvas.create_line(sx, 0, sx, H, fill=UI["warn"], width=1.5, dash=(3, 2))
+
+            # 懸浮時間藥丸
+            t_str = sec_to_time_str(getattr(self, "_skimmer_time", 0.0))
+            badge_w = 64
+            badge_h = 18
+            bx1 = max(4, min(W - badge_w - 4, sx - badge_w // 2))
+            bx2 = bx1 + badge_w
+            by1 = 2
+            by2 = by1 + badge_h
+
+            canvas.create_rectangle(bx1, by1, bx2, by2, fill="#060709", outline=UI["warn"], width=1)
+            canvas.create_text((bx1 + bx2) // 2, (by1 + by2) // 2, text=t_str, fill=UI["warn"], font=("Helvetica", 9, "bold"))
+
+    def _on_filmstrip_motion(self, event):
+        if self._drag_target is not None:
+            return
+
+        W, H = self._get_filmstrip_dimensions()
+        dur = max(self.total_duration, 0.001)
+        in_x = int(max(0.0, min(1.0, self.start_sec / dur)) * W)
+        out_x = int(max(0.0, min(1.0, self.end_sec / dur)) * W)
+
+        dist_in = abs(event.x - in_x)
+        dist_out = abs(event.x - out_x)
+
+        # 偵測是否位於握把上方 (容差 ±12px)
+        if dist_in <= 12 and dist_in <= dist_out:
+            if self._hover_target != "in_handle":
+                self._hover_target = "in_handle"
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self._skimmer_x = None
+                self._redraw_filmstrip()
+            return
+        elif dist_out <= 12:
+            if self._hover_target != "out_handle":
+                self._hover_target = "out_handle"
+                self.filmstrip_canvas.config(cursor="sb_h_double_arrow" if IS_MAC else "ew-resize")
+                self._skimmer_x = None
+                self._redraw_filmstrip()
+            return
+
+        # 軌道刷屏 (Skimming)
+        need_redraw = (self._hover_target != "track") or (self._skimmer_x != event.x)
+        self._hover_target = "track"
+        self.filmstrip_canvas.config(cursor="crosshair")
+        self._skimmer_x = event.x
+        hover_sec = max(0.0, min(self.total_duration, (event.x / float(W)) * self.total_duration))
+        self._skimmer_time = hover_sec
+        if need_redraw:
+            self._redraw_filmstrip()
+
+        # 即時刷屏影格預覽 (Live Hover Scrubbing)
+        self._request_preview(hover_sec)
+
+    def _on_filmstrip_leave(self, _event):
+        if self._drag_target is None:
+            self._skimmer_x = None
+            self._skimmer_time = None
+            self._hover_target = None
+            self.filmstrip_canvas.config(cursor="crosshair")
+            self._redraw_filmstrip()
+            self._request_preview(self.current_time)
+
+    def _on_filmstrip_press(self, event):
+        if self._playing_process and self._playing_process.poll() is None:
+            self._playing_process.terminate()
+            self._playing_process = None
+
+        W, H = self._get_filmstrip_dimensions()
+        dur = max(self.total_duration, 0.001)
+        in_x = int(max(0.0, min(1.0, self.start_sec / dur)) * W)
+        out_x = int(max(0.0, min(1.0, self.end_sec / dur)) * W)
+
+        dist_in = abs(event.x - in_x)
+        dist_out = abs(event.x - out_x)
+
+        if dist_in <= 12 and dist_in <= dist_out:
+            self._drag_target = "in_handle"
+        elif dist_out <= 12:
+            self._drag_target = "out_handle"
+        else:
+            self._drag_target = "playhead"
+            click_time = max(0.0, min(self.total_duration, (event.x / float(W)) * self.total_duration))
+            self._jump_to_time(click_time)
+        self._redraw_filmstrip()
+
+    def _on_filmstrip_drag(self, event):
+        if not self._drag_target:
+            return
+
+        W, H = self._get_filmstrip_dimensions()
+        dur = max(self.total_duration, 0.001)
+        drag_time = max(0.0, min(self.total_duration, (event.x / float(W)) * dur))
+
+        if self._drag_target == "in_handle":
+            new_in = max(0.0, min(self.end_sec - 0.1, drag_time))
+            self.start_sec = new_in
+            self.ent_start.delete(0, tk.END)
+            self.ent_start.insert(0, sec_to_time_str(new_in))
+            self.time_slider.set_range(self.start_sec, self.end_sec)
+            self._update_selection_length_label()
+            self._request_preview(new_in)
+            self._redraw_filmstrip()
+        elif self._drag_target == "out_handle":
+            new_out = min(self.total_duration, max(self.start_sec + 0.1, drag_time))
+            self.end_sec = new_out
+            self.ent_end.delete(0, tk.END)
+            self.ent_end.insert(0, sec_to_time_str(new_out))
+            self.time_slider.set_range(self.start_sec, self.end_sec)
+            self._update_selection_length_label()
+            self._request_preview(new_out)
+            self._redraw_filmstrip()
+        elif self._drag_target == "playhead":
+            self._jump_to_time(drag_time)
+
+    def _on_filmstrip_release(self, _event):
+        self._drag_target = None
+        self._redraw_filmstrip()
+
     def _on_slider_move(self, val):
         sec = float(val)
         self.current_time = sec
@@ -781,6 +1034,7 @@ class VideoEditorWindow:
             text=f"{sec_to_time_str(sec)} / {sec_to_time_str(self.total_duration)}"
         )
         self._request_preview(sec)
+        self._redraw_filmstrip()
 
     def _nudge_time(self, delta):
         new_time = max(0.0, min(self.total_duration, self.current_time + delta))
@@ -790,6 +1044,7 @@ class VideoEditorWindow:
             text=f"{sec_to_time_str(new_time)} / {sec_to_time_str(self.total_duration)}"
         )
         self._request_preview(new_time)
+        self._redraw_filmstrip()
 
     def _preview_filter(self):
         cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
@@ -817,14 +1072,23 @@ class VideoEditorWindow:
                 break
             target_sec, crop = pending
 
-            cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
-            ppm_data = self.editor.get_frame_ppm(
-                self.current_file, target_sec, width=cfg["preview_w"], height=cfg["preview_h"], video_filter=crop,
-            )
+            cache_key = (self.current_file, round(target_sec, 1), crop)
+            if hasattr(self, "_scrub_cache") and cache_key in self._scrub_cache:
+                ppm_data = self._scrub_cache[cache_key]
+            else:
+                cfg = RATIO_CONFIGS.get(self.current_ratio, RATIO_CONFIGS["original"])
+                ppm_data = self.editor.get_frame_ppm(
+                    self.current_file, target_sec, width=cfg["preview_w"], height=cfg["preview_h"], video_filter=crop,
+                )
+                if ppm_data and hasattr(self, "_scrub_cache"):
+                    if len(self._scrub_cache) > 80:
+                        self._scrub_cache.pop(next(iter(self._scrub_cache)))
+                    self._scrub_cache[cache_key] = ppm_data
+
             if ppm_data:
                 self.window.after(0, lambda data=ppm_data: self._update_preview_image(data))
 
-            time.sleep(0.12)
+            time.sleep(0.04)
 
     def _update_preview_image(self, ppm_data):
         try:
@@ -988,6 +1252,7 @@ class VideoEditorWindow:
         self.ent_start.insert(0, sec_to_time_str(self.start_sec))
         self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
+        self._redraw_filmstrip()
 
     def set_out_point(self):
         self.end_sec = self.current_time
@@ -1000,6 +1265,7 @@ class VideoEditorWindow:
         self.ent_end.insert(0, sec_to_time_str(self.end_sec))
         self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
+        self._redraw_filmstrip()
 
     def _update_times_from_entries(self):
         s = time_str_to_sec(self.ent_start.get())
@@ -1019,6 +1285,7 @@ class VideoEditorWindow:
         self.ent_end.insert(0, sec_to_time_str(self.end_sec))
         self.time_slider.set_range(self.start_sec, self.end_sec)
         self._update_selection_length_label()
+        self._redraw_filmstrip()
 
     def _update_selection_length_label(self):
         sel_dur = max(0.0, self.end_sec - self.start_sec)
