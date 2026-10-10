@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com/3.4.17 https://unpkg.com/lucide@1.55.0/dist/umd/lucide.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AURA REC // 原生桌面專業錄影工作站 (macOS & Windows)</title>
-  <meta name="description" content="AURA REC 專業桌面錄影工作站。Apple Silicon & NVIDIA 硬體加速、系統聲音內錄、動態視窗追蹤、全域快捷鍵與無損離線剪輯。支援 macOS 與 Windows 10/11。">
+  <meta name="description" content="AURA REC 專業桌面錄影工作站。Apple Silicon & NVIDIA 硬體加速、系統聲音內錄、動態視窗追蹤、快捷鍵與無損剪輯。支援 macOS 與 Windows 10/11。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,800;1,400&family=Syne:wght@500;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -654,7 +654,7 @@
         </h1>
         <p class="hero-sub" id="hero-sub">
           把畫面與聲音，精準留下來。<br>
-          原生桌面工作站 · 晶片硬體加速 · 獨立多音軌內錄 · F6 螢幕塗鴉聚光燈 · AI 離線智慧字幕 · PiP 人像去背 · 視窗隱私排除與防盜浮水印。<br>
+          原生桌面工作站 · 晶片硬體加速 · 獨立多音軌內錄 · F6 螢幕塗鴉聚光燈 · AI 離線智慧字幕 · PiP 人像去背 · 視窗隱私排除與可視浮水印。<br>
           支援繁中 / EN / 日本語 / 簡中即時切換，零掉幀、不發燙、0.5 秒極速無損直出 MP4。
         </p>
         <div class="flex items-center justify-center gap-3 mt-8 flex-wrap">
@@ -685,7 +685,7 @@
         幾分鐘內，製作出<em>電影級產品展示</em>。
       </h2>
       <p class="scene-body" style="text-align:center; max-width:62ch; margin:0 auto 2.5rem;">
-        融合智慧推軌自動縮放、F6 即時塗鴉聚光燈、AI 離線語音字幕、PiP 人像景深虛化/去背、視窗隱私排除與防盜動態浮水印的全方位錄影剪輯工作站。
+        融合智慧推軌自動縮放、F6 即時塗鴉聚光燈、AI 離線語音字幕、PiP 人像景深虛化/去背、視窗隱私排除與動態可視浮水印的全方位錄影剪輯工作站。
       </p>
 
       <!-- 互動控制島 -->
@@ -772,12 +772,12 @@
                   </div>
                   <div>
                     <div class="text-xs font-mono font-bold text-white">Recordly Presentation Engine</div>
-                    <div class="text-[10px] font-mono text-slate-400">Zero Framedrop · 100% Offline · Smart Cut 0.5s</div>
+                    <div class="text-[10px] font-mono text-slate-400">Zero Framedrop · Local Processing · Smart Cut 0.5s</div>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-aura-emerald/15 text-aura-emerald border border-aura-emerald/30">● 60/120 FPS 流暢</span>
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-aura-violet/15 text-aura-violet border border-aura-violet/30">🛡️ 視窗排除與防盜浮水印</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-aura-violet/15 text-aura-violet border border-aura-violet/30">🛡️ 視窗排除與可視浮水印</span>
                 </div>
               </div>
 
@@ -837,9 +837,9 @@
                 </div>
               </div>
 
-              <!-- 角落防盜浮水印簽章預覽 -->
+              <!-- 角落可視浮水印簽章預覽 -->
               <div class="absolute top-14 right-5 px-2.5 py-1 rounded-full bg-obsidian-900/75 border border-aura-cyan/30 text-[9px] font-mono text-aura-cyan/80 pointer-events-none">
-                © 極光錄影 Aura · 防盜動態浮水印
+                © 極光錄影 Aura · 動態可視浮水印
               </div>
 
               <!-- 虛擬游標與波紋層 -->
@@ -877,14 +877,14 @@
           <span class="reveal-line"><span><em>限制、卡頓與崩潰</em>。</span></span>
         </h2>
         <p class="scene-body">
-          瀏覽器錄影受限於 Web 沙盒與權限：在 Mac 上<b>永遠錄不到系統聲音</b>、軟體編碼極耗 CPU 導致掉幀發燙、長錄影記憶體爆掉、更無法支援全域快捷鍵與作業系統級視窗排除。<br><br>
+          瀏覽器錄影受限於 Web 沙盒與權限：在 Mac 上<b>永遠錄不到系統聲音</b>、軟體編碼極耗 CPU 導致掉幀發燙、長錄影記憶體爆掉、更無法支援作業系統級視窗排除。<br><br>
           <b style="color:#F8FAFC;font-weight:600;">AURA REC 桌面工作站</b> 深入作業系統底層，提供真正專業、穩定、不卡頓的原生錄影與後製剪輯體驗。
         </p>
         <ul class="pain-list">
           <li><b>晶片級硬體加速。</b>支援 Apple Silicon (VideoToolbox) 與 Windows Direct3D 11 WGC / NVENC / QSV / AMF 原生編碼，4K 60/120FPS 依然極致輕巧省電。</li>
           <li><b>系統聲音 + 麥克風獨立多音軌。</b>完美擷取電腦內部播放音效與麥克風人聲並寫入獨立音軌，後製調整音量互不干擾。</li>
-          <li><b>全域快捷鍵、F6 塗鴉聚光燈與視窗追蹤。</b>隨時按 F8 暫停、F9 停止、F7 截圖、F6 全螢幕塗鴉與聚光燈；視窗拖移自動即時跟隨裁切。</li>
-          <li><b>OS 硬體級隱私排除與防盜浮水印。</b>錄影控制條硬體穿透隱形，自動模糊 LINE / 1Password 等敏感視窗，並支援 Lissajous 動態防盜浮水印。</li>
+          <li><b>快捷鍵、F6 塗鴉聚光燈與視窗追蹤。</b>視窗取得焦點時按 F8 暫停、F9 停止、F7 截圖、F6 全螢幕塗鴉與聚光燈；視窗拖移自動即時跟隨裁切。</li>
+          <li><b>OS 層級隱私排除與可視浮水印（盡力而為）。</b>錄影控制條硬體穿透隱形，自動模糊 LINE / 1Password 等敏感視窗，並支援 Lissajous 動態可視浮水印。</li>
         </ul>
       </div>
     </section>
@@ -952,9 +952,9 @@
         <div class="cap-card" data-cap>
           <div class="halo" style="background:#A855F7;"></div>
           <div class="ic" style="background:rgba(168,85,247,0.12); color:#A855F7;"><i data-lucide="stamp" class="w-6 h-6"></i></div>
-          <div class="num">／ 07 ANTI-PIRACY WATERMARK</div>
-          <h3>智慧防盜動態浮水印引擎</h3>
-          <p>零外部相依性高解析度抗鋸齒浮水印渲染器，支援角落品牌簽名、錄影時間戳記、沿 Lissajous 曲線平滑移動之「動態巡航防盜浮水印」、滿版斜紋防盜網格與自訂 PNG Logo。</p>
+          <div class="num">／ 07 VISIBLE WATERMARK</div>
+          <h3>智慧動態浮水印引擎</h3>
+          <p>零外部相依性高解析度抗鋸齒浮水印渲染器，支援角落品牌簽名、錄影時間戳記、沿 Lissajous 曲線平滑移動之「動態巡航浮水印」、滿版斜紋網格與自訂 PNG Logo。</p>
         </div>
 
         <!-- 08 -->
@@ -993,7 +993,7 @@
         <article class="step-card" data-step>
           <div class="k">02 設定</div>
           <h3>選螢幕、多音軌與保護</h3>
-          <p>選擇整個螢幕、自訂框選或指定視窗。可開啟獨立多音軌、PiP 人像景深虛化/去背，以及視窗隱私排除與防盜浮水印保護。</p>
+          <p>選擇整個螢幕、自訂框選或指定視窗。可開啟獨立多音軌、PiP 人像景深虛化/去背，以及視窗隱私排除與可視浮水印保護。</p>
         </article>
         <article class="step-card" data-step>
           <div class="k">03 錄製</div>
@@ -1026,7 +1026,7 @@
         裝進桌面，<em>開箱即用</em>。
       </h2>
       <p class="scene-body" style="text-align:center; max-width:58ch; margin:0 auto 3rem;">
-        專為 macOS 與 Windows 原生環境打造。享受硬體加速錄製、獨立多音軌、F6 塗鴉聚光燈、AI 智慧字幕、PiP 人像去背、視窗排除與防盜浮水印——
+        專為 macOS 與 Windows 原生環境打造。享受硬體加速錄製、獨立多音軌、F6 塗鴉聚光燈、AI 智慧字幕、PiP 人像去背、視窗排除與可視浮水印——
       </p>
 
       <div class="dl-grid">
@@ -1066,7 +1066,7 @@
           <ul class="dl-steps">
             <li>Direct3D 11 WGC (60/120 FPS) · NVENC / Intel QSV / AMD AMF 硬體加速</li>
             <li>F6 螢幕塗鴉聚光燈 · PiP 人像去背/虛化 · WDA_EXCLUDEFROMCAPTURE 視窗排除</li>
-            <li>AI 離線語音字幕軌 · 防盜動態浮水印 · 繁中/EN/日/簡中 4 語系即時切換</li>
+            <li>AI 離線語音字幕軌 · 動態可視浮水印 · 繁中/EN/日/簡中 4 語系即時切換</li>
           </ul>
           <a class="dl-btn magnetic-btn" href="download/AURA-REC-Windows-x64.zip" download="AURA-REC-Windows-x64.zip" data-dl-win style="background:linear-gradient(100deg,#8A2BE2,#FF2A6D);">
             <i data-lucide="download" class="w-4 h-4"></i>
@@ -1079,14 +1079,14 @@
         <span class="dl-req"><i data-lucide="zap" class="w-3.5 h-3.5"></i> 晶片加速 <b>VideoToolbox / WGC / NVENC</b></span>
         <span class="dl-req"><i data-lucide="volume-2" class="w-3.5 h-3.5"></i> 音訊內錄 <b>系統聲 + 麥克風獨立多音軌</b></span>
         <span class="dl-req"><i data-lucide="subtitles" class="w-3.5 h-3.5"></i> 智慧剪輯 <b>AI 離線字幕 + 0.5s 無損裁切</b></span>
-        <span class="dl-req"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 隱私防盜 <b>視窗排除 + 動態浮水印 + 4 語系</b></span>
+        <span class="dl-req"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 隱私保護 <b>視窗排除 + 動態浮水印 + 4 語系</b></span>
       </div>
     </section>
 
     <!-- 頁尾 ----------------------------------------------------------- -->
     <footer style="text-align:center; padding: 4rem 2rem 5rem; border-top: 1px solid rgba(255,255,255,0.06); color: #64748B; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace;">
       <p style="letter-spacing: 0.1em; color: #94A3B8;">AURA REC // 原生硬體加速桌面錄影與剪輯工作站</p>
-      <p style="margin-top: 0.6rem; font-size: 0.75rem; color: #475569;">macOS (Apple Silicon & Intel) · Windows 10 / 11 · 繁體中文 / English / 日本語 / 简体中文 · 100% 本地離線運行</p>
+      <p style="margin-top: 0.6rem; font-size: 0.75rem; color: #475569;">macOS (Apple Silicon & Intel) · Windows 10 / 11 · 繁體中文 / English / 日本語 / 简体中文 · 錄影內容僅在本機處理、不上傳</p>
     </footer>
 
   </div>
@@ -1497,9 +1497,9 @@
 
     const INDEX_I18N = {
       'zh-TW': {
-        heroSub: '把畫面與聲音，精準留下來。<br>原生桌面工作站 · 晶片硬體加速 · 獨立多音軌內錄 · F6 螢幕塗鴉聚光燈 · AI 離線智慧字幕 · PiP 人像去背 · 視窗隱私排除與防盜浮水印。<br>支援繁中 / EN / 日本語 / 簡中即時切換，零掉幀、不發燙、0.5 秒極速無損直出 MP4。',
+        heroSub: '把畫面與聲音，精準留下來。<br>原生桌面工作站 · 晶片硬體加速 · 獨立多音軌內錄 · F6 螢幕塗鴉聚光燈 · AI 離線智慧字幕 · PiP 人像去背 · 視窗隱私排除與可視浮水印。<br>支援繁中 / EN / 日本語 / 簡中即時切換，零掉幀、不發燙、0.5 秒極速無損直出 MP4。',
         showcaseHeadline: '幾分鐘內，製作出<em>電影級產品展示</em>。',
-        showcaseBody: '融合智慧推軌自動縮放、F6 即時塗鴉聚光燈、AI 離線語音字幕、PiP 人像景深虛化/去背、視窗隱私排除與防盜動態浮水印的全方位錄影剪輯工作站。',
+        showcaseBody: '融合智慧推軌自動縮放、F6 即時塗鴉聚光燈、AI 離線語音字幕、PiP 人像景深虛化/去背、視窗隱私排除與動態可視浮水印的全方位錄影剪輯工作站。',
         playDemoBtn: '播放智慧運鏡演示',
         capHeadline: '原生桌面版，<em>九大旗艦能力</em>。',
         dlHeadline: '原生桌面工作站，<em>立即啟用</em>。'
@@ -1507,7 +1507,7 @@
       'en': {
         heroSub: 'Capture every frame and sound with studio precision.<br>Native Desktop Studio · Hardware Accelerated · Multi-Track Audio · F6 Live Annotation & Spotlight · Offline AI Captions · PiP Cutout · Window Exclusion & Watermark.<br>Instant 4-language hot-swap (zh-TW / EN / JA / zh-CN), zero frame drops, and 0.5s lossless Smart Cut to MP4.',
         showcaseHeadline: 'Create <em>cinematic product demos</em> in minutes.',
-        showcaseBody: 'All-in-one screen recording & editing studio combining Smart Auto-Zoom, F6 Live Annotation & Spotlight, Offline AI Speech-to-Text Captions, PiP Portrait Blur/Cutout, OS Window Exclusion, and Anti-Piracy Watermarks.',
+        showcaseBody: 'All-in-one screen recording & editing studio combining Smart Auto-Zoom, F6 Live Annotation & Spotlight, Offline AI Speech-to-Text Captions, PiP Portrait Blur/Cutout, OS Window Exclusion, and Visible Watermarks.',
         playDemoBtn: 'Play Auto-Zoom Demo',
         capHeadline: 'Native Desktop Studio, <em>9 Flagship Capabilities</em>.',
         dlHeadline: 'Native Desktop Studio, <em>Ready to Launch</em>.'
