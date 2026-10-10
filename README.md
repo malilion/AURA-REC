@@ -2,8 +2,10 @@
 
 真正把畫面與聲音留下來的原生桌面錄影與剪輯工作站。
 
-- **桌面應用程式（主要推薦）**：支援 macOS（`AURA REC.app` / DMG / ZIP）與 Windows（`AURA-REC.exe` / ZIP）。具備晶片級硬體加速（Apple Silicon VideoToolbox / Windows Direct3D 11 WGC & NVENC）、電腦系統聲音與麥克風獨立多音軌內錄、動態視窗追蹤、全域快捷鍵（`F9` 錄製/停止、`F8` 暫停/繼續、`F7` 截圖、`F6` 螢幕即時塗鴉與聚光燈）、畫中畫（PiP）人像智慧去背與景深虛化、視窗隱私排除與防盜動態浮水印、AI 離線語音識別智慧字幕軌、0.5 秒極速智慧無損剪輯，以及繁中 / EN / 日本語 / 簡中 4 語系即時熱切換。
-- **瀏覽器工作站（免安裝體驗版）**：輕量單一檔案 `AURA-REC.html`。官網在 [malilion.github.io/Record](https://malilion.github.io/Record/)，可直接在線上或離線雙擊開啟，支援 WebRTC 錄製、純前端 WebCodecs MP4 霓虹外框匯出、`.auraproj` 專案預設集、畫中畫鏡頭景深虛化/去背與 4 語系切換。
+- 🌐 **官方網站與互動體驗展台 (GitHub Pages)**：[https://malilion.github.io/Record/](https://malilion.github.io/Record/)
+- ⚡ **免安裝線上網頁工作站 (Web Studio)**：[https://malilion.github.io/Record/download/AURA-REC.html](https://malilion.github.io/Record/download/AURA-REC.html)
+- 💻 **桌面應用程式（主要推薦）**：支援 macOS（`AURA REC.app` / DMG / ZIP）與 Windows（`AURA-REC.exe` / ZIP）。具備晶片級硬體加速（Apple Silicon VideoToolbox / Windows Direct3D 11 WGC & NVENC）、電腦系統聲音與麥克風獨立多音軌內錄、動態視窗追蹤、全域快捷鍵（`F9` 錄製/停止、`F8` 暫停/繼續、`F7` 截圖、`F6` 螢幕即時塗鴉與聚光燈）、畫中畫（PiP）人像智慧去背與景深虛化、視窗隱私排除與防盜動態浮水印、AI 離線語音識別智慧字幕軌、0.5 秒極速智慧無損剪輯，以及繁中 / EN / 日本語 / 簡中 4 語系即時熱切換。
+- 🧭 **瀏覽器工作站（免安裝體驗版）**：輕量單一檔案 `AURA-REC.html`。官網在 [malilion.github.io/Record](https://malilion.github.io/Record/)，可直接在線上或離線雙擊開啟，支援 WebRTC 錄製、純前端 WebCodecs MP4 霓虹外框匯出、`.auraproj` 專案預設集、畫中畫鏡頭景深虛化/去背與 4 語系切換。
 
 ---
 
@@ -96,7 +98,7 @@
 
 ##### macOS 程式碼簽名與 Apple 官方公證 (Notarization)
 
-專案內建一鍵自動化腳本 [`package_macos.sh`](file://package_macos.sh)、[`sign_and_notarize.sh`](file://sign_and_notarize.sh) 與 [`entitlements.plist`](file://entitlements.plist)：
+專案內建一鍵自動化腳本 [`package_macos.sh`](package_macos.sh)、[`sign_and_notarize.sh`](sign_and_notarize.sh) 與 [`entitlements.plist`](entitlements.plist)：
 
 1. **檢查本機簽名證書與工具**：
    ```bash
@@ -156,19 +158,19 @@
 
 ## 專案檔案結構
 
-- [`web_studio/index.html`](file://web_studio/index.html) — 官方宣傳與互動體驗展台網站（含 Recordly 互動舞台、PiP 去背預覽、8 大核心能力展示與 4 語系切換）。
-- [`web_studio/download/AURA-REC.html`](file://web_studio/download/AURA-REC.html) — 免安裝單一檔案瀏覽器錄影與剪輯工作站。
-- [`app.py`](file://app.py) — 桌面程式主錄製中心、畫中畫去背設定、多螢幕預覽與偏好設定。
-- [`recorder.py`](file://recorder.py) — 跨平台 FFmpeg 硬體加速錄影引擎、多音軌混音與 PiP 去背/虛化濾鏡鏈。
-- [`editor_window.py`](file://editor_window.py) — Recordly 風格專業影片剪輯工作站（舞台畫布、膠卷刷屏、波形圖、Auto Zoom、隱私遮罩、AI 字幕與浮水印匯出）。
-- [`video_editor.py`](file://video_editor.py) — 0.5 秒智慧無損裁切 (Smart Cut)、動態焦點偵測、濾鏡合成與雙遍高品質 GIF 匯出。
-- [`window_exclusion_watermark.py`](file://window_exclusion_watermark.py) — OS 原生視窗錄影穿透排除、敏感視窗自動偵測遮蔽與智慧防盜浮水印引擎。
-- [`speech_to_text.py`](file://speech_to_text.py) — AI 離線語音識別（Whisper CLI + 0 依賴 Smart VAD）與 SRT/VTT 智慧字幕軌管理。
-- [`screen_annotation.py`](file://screen_annotation.py) — 錄影中全螢幕即時塗鴉畫筆、箭頭、方框與動態聚光燈 (Spotlight) 覆蓋層。
-- [`input_overlay.py`](file://input_overlay.py) — 滑鼠點擊發光波紋漣漪 (Click Ripple) 與即時按鍵浮水印 (Keystroke HUD)。
-- [`i18n.py`](file://i18n.py) — 零相依性國際化多語系熱切換引擎（`zh-TW` / `en` / `ja` / `zh-CN`）。
-- [`auto_updater.py`](file://auto_updater.py) — GitHub Releases 自動檢查更新模組。
-- [`region_picker.py`](file://region_picker.py) — 自訂範圍框選器與桌面視窗幾何列舉。
-- [`platform_utils.py`](file://platform_utils.py) — 系統環境偵測、字型、High-DPI、GPU 硬體編碼器與診斷工具。
-- [`aura_widgets.py`](file://aura_widgets.py) — 極光漸層圓角按鈕、勾選框與雙色範圍滑桿元件。
-- [`package_macos.sh`](file://package_macos.sh) / [`sign_and_notarize.sh`](file://sign_and_notarize.sh) — macOS App Bundle 打包、Hardened Runtime 簽名與 Apple `notarytool` 公證腳本。
+- [`web_studio/index.html`](web_studio/index.html) — 官方宣傳與互動體驗展台網站（含 Recordly 互動舞台、PiP 去背預覽、9 大核心能力展示與 4 語系切換）。
+- [`web_studio/download/AURA-REC.html`](web_studio/download/AURA-REC.html) — 免安裝單一檔案瀏覽器錄影與剪輯工作站。
+- [`app.py`](app.py) — 桌面程式主錄製中心、畫中畫去背設定、多螢幕預覽與偏好設定。
+- [`recorder.py`](recorder.py) — 跨平台 FFmpeg 硬體加速錄影引擎、多音軌混音與 PiP 去背/虛化濾鏡鏈。
+- [`editor_window.py`](editor_window.py) — Recordly 風格專業影片剪輯工作站（舞台畫布、膠卷刷屏、波形圖、Auto Zoom、隱私遮罩、AI 字幕與浮水印匯出）。
+- [`video_editor.py`](video_editor.py) — 0.5 秒智慧無損裁切 (Smart Cut)、動態焦點偵測、濾鏡合成與雙遍高品質 GIF 匯出。
+- [`window_exclusion_watermark.py`](window_exclusion_watermark.py) — OS 原生視窗錄影穿透排除、敏感視窗自動偵測遮蔽與智慧防盜浮水印引擎。
+- [`speech_to_text.py`](speech_to_text.py) — AI 離線語音識別（Whisper CLI + 0 依賴 Smart VAD）與 SRT/VTT 智慧字幕軌管理。
+- [`screen_annotation.py`](screen_annotation.py) — 錄影中全螢幕即時塗鴉畫筆、箭頭、方框與動態聚光燈 (Spotlight) 覆蓋層。
+- [`input_overlay.py`](input_overlay.py) — 滑鼠點擊發光波紋漣漪 (Click Ripple) 與即時按鍵浮水印 (Keystroke HUD)。
+- [`i18n.py`](i18n.py) — 零相依性國際化多語系熱切換引擎（`zh-TW` / `en` / `ja` / `zh-CN`）。
+- [`auto_updater.py`](auto_updater.py) — GitHub Releases 自動檢查更新模組。
+- [`region_picker.py`](region_picker.py) — 自訂範圍框選器與桌面視窗幾何列舉。
+- [`platform_utils.py`](platform_utils.py) — 系統環境偵測、字型、High-DPI、GPU 硬體編碼器與診斷工具。
+- [`aura_widgets.py`](aura_widgets.py) — 極光漸層圓角按鈕、勾選框與雙色範圍滑桿元件。
+- [`package_macos.sh`](package_macos.sh) / [`sign_and_notarize.sh`](sign_and_notarize.sh) — macOS App Bundle 打包、Hardened Runtime 簽名與 Apple `notarytool` 公證腳本。
