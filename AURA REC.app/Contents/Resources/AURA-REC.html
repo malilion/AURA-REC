@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,800;1,400&family=Syne:wght@500;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.4/build/mp4-muxer.min.js"></script>
   <script>
     // 防護：Tailwind CDN 若未載入則略過設定，避免拋錯中斷
     if (window.tailwind) { tailwind.config = {
@@ -232,6 +233,19 @@
   </style>
 </head>
 <body class="bg-obsidian-950 relative bg-grain selection:bg-aura-cyan selection:text-black">
+  <!-- 全域拖曳載入影片覆蓋層 (Drag & Drop Overlay) -->
+  <div id="drag-drop-overlay" class="fixed inset-0 z-50 bg-obsidian-950/90 backdrop-blur-2xl border-4 border-dashed border-aura-cyan flex flex-col items-center justify-center pointer-events-none opacity-0 transition-opacity duration-200">
+    <div class="w-24 h-24 rounded-3xl bg-aura-cyan/10 border border-aura-cyan/30 flex items-center justify-center mb-6 shadow-[0_0_50px_rgba(0,240,255,0.3)] animate-pulse">
+      <i data-lucide="upload-cloud" class="w-12 h-12 text-aura-cyan"></i>
+    </div>
+    <h2 class="font-display font-extrabold text-3xl sm:text-4xl text-white tracking-wider mb-3">
+      釋放滑鼠立即載入影片
+    </h2>
+    <p class="text-sm font-mono text-slate-300 max-w-md text-center leading-relaxed">
+      支援 MP4、WebM、MOV 等各類螢幕錄影檔案 · 零上傳純本機高速運算
+    </p>
+  </div>
+
   <!-- ╔══════════════════════════════════════════════════════════════════╗
        ║  第二幕 · 真實可操作工作站 (ACT II — The Live Studio)             ║
        ╚══════════════════════════════════════════════════════════════════╝ -->
@@ -591,9 +605,14 @@
         </div>
 
         <div class="flex items-center gap-2.5">
-          <button id="btn-export-video" onclick="exportSelectedClip()" class="magnetic-btn flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-aura-emerald to-teal-500 text-black font-display font-bold text-xs tracking-wider shadow-lg shadow-aura-emerald/20 hover:scale-[1.02]">
-            <i data-lucide="download" class="w-3.5 h-3.5 text-black"></i>
-            匯出選取片段 (WebM)
+          <button id="btn-export-mockup-mp4" onclick="openMockupExportModal()" class="magnetic-btn flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-aura-cyan via-blue-500 to-aura-violet text-black font-display font-bold text-xs tracking-wider shadow-lg shadow-aura-cyan/30 hover:scale-[1.02]">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-black"></i>
+            ✨ 匯出霓虹外框 (MP4)
+          </button>
+
+          <button id="btn-export-video" onclick="exportSelectedClip()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-300 font-sans text-xs hover:border-aura-emerald/40 hover:text-white" title="不帶外框壁紙之原始畫面片段">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-aura-emerald"></i>
+            原始片段 (WebM)
           </button>
 
           <button id="btn-export-gif" onclick="exportAsGif()" class="magnetic-btn flex items-center gap-2 px-3.5 py-2 rounded-xl bg-obsidian-800 border border-white/10 text-slate-200 text-xs hover:border-aura-cyan/40 hover:text-white">
@@ -662,6 +681,186 @@
         <div class="flex items-center justify-between py-1.5">
           <span class="text-slate-300">取消倒數</span>
           <kbd class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-rose">Esc</kbd>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================== 霓虹外框 MP4 導出模態視窗 ======================== -->
+  <div id="modal-mockup-export" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 hidden" onclick="closeMockupExportModal()">
+    <div class="cyber-card rounded-2xl max-w-4xl w-full p-5 sm:p-6 border border-white/15 max-h-[92vh] flex flex-col overflow-hidden shadow-2xl" onclick="event.stopPropagation()">
+      <!-- 頂部標題列 -->
+      <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-4 shrink-0">
+        <div>
+          <h3 class="font-display font-bold text-lg sm:text-xl text-white flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-aura-cyan"></i>
+            ✨ 純前端霓虹視窗外框 MP4 匯出
+          </h3>
+          <p class="text-xs text-slate-400 font-sans mt-0.5">
+            免安裝軟體 · 瀏覽器本機即時渲染 · 霓虹桌布光暈與 macOS 視窗外框
+          </p>
+        </div>
+        <button onclick="closeMockupExportModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 內容區：雙欄佈局 (左側/上方縮圖預覽，右側/下方匯出參數) -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-5 overflow-y-auto pr-1 flex-1">
+        <!-- 左側：即時縮圖預覽 -->
+        <div class="md:col-span-6 flex flex-col gap-3">
+          <div class="text-xs font-mono text-slate-400 flex items-center justify-between">
+            <span class="flex items-center gap-1.5"><i data-lucide="eye" class="w-3.5 h-3.5 text-aura-cyan"></i> 即時預覽畫面</span>
+            <span id="mockup-export-dims-badge" class="px-2 py-0.5 rounded bg-obsidian-800 border border-white/10 text-aura-cyan text-[11px]">1920 × 1080</span>
+          </div>
+          <div class="relative w-full aspect-video bg-obsidian-950 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center shadow-inner group p-2">
+            <canvas id="mockup-export-preview-canvas" class="max-w-full max-h-full object-contain rounded"></canvas>
+            <div id="mockup-export-preview-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 font-mono text-xs gap-2 hidden">
+              <i data-lucide="film" class="w-6 h-6 text-slate-600"></i>
+              <span>載入中...</span>
+            </div>
+          </div>
+          <p class="text-[11px] font-sans text-slate-500 leading-relaxed">
+            💡 預覽畫面反映目前選取的畫幅比例、霓虹壁紙、環境光暈、標題列文字與留白間距。
+          </p>
+        </div>
+
+        <!-- 右側：設定控制面板 -->
+        <div class="md:col-span-6 flex flex-col gap-3.5 text-xs font-sans">
+          <!-- 畫幅比例 -->
+          <div class="space-y-1.5">
+            <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+              <i data-lucide="layout" class="w-3.5 h-3.5 text-aura-cyan"></i> 輸出比例 (Aspect Ratio)
+            </label>
+            <div class="grid grid-cols-3 gap-2">
+              <button type="button" onclick="setMockupExportRatio('16:9')" id="exp-ratio-16-9" class="exp-ratio-btn px-3 py-2 rounded-xl bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 font-bold font-mono text-center transition-all">
+                16:9 橫向
+              </button>
+              <button type="button" onclick="setMockupExportRatio('9:16')" id="exp-ratio-9-16" class="exp-ratio-btn px-3 py-2 rounded-xl bg-obsidian-850 text-slate-300 border border-white/10 hover:text-white font-mono text-center transition-all">
+                9:16 直式
+              </button>
+              <button type="button" onclick="setMockupExportRatio('1:1')" id="exp-ratio-1-1" class="exp-ratio-btn px-3 py-2 rounded-xl bg-obsidian-850 text-slate-300 border border-white/10 hover:text-white font-mono text-center transition-all">
+                1:1 方形
+              </button>
+            </div>
+          </div>
+
+          <!-- 解析度與幀率 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1.5">
+              <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                <i data-lucide="sliders" class="w-3.5 h-3.5 text-aura-emerald"></i> 解析度
+              </label>
+              <select id="mockup-export-resolution" onchange="updateMockupExportParams()" class="w-full bg-obsidian-850 border border-white/10 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono focus:border-aura-cyan/50 focus:outline-none">
+                <option value="1080p" selected>1080p FHD (精細高畫質)</option>
+                <option value="720p">720p HD (極速較小檔案)</option>
+              </select>
+            </div>
+            <div class="space-y-1.5">
+              <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+                <i data-lucide="activity" class="w-3.5 h-3.5 text-aura-violet"></i> 幀率 (FPS)
+              </label>
+              <select id="mockup-export-fps" onchange="updateMockupExportParams()" class="w-full bg-obsidian-850 border border-white/10 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono focus:border-aura-cyan/50 focus:outline-none">
+                <option value="30" selected>30 FPS (平穩標準)</option>
+                <option value="60">60 FPS (極致流暢運鏡)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 桌布主題 -->
+          <div class="space-y-1.5">
+            <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+              <i data-lucide="palette" class="w-3.5 h-3.5 text-aura-rose"></i> 霓虹桌布主題
+            </label>
+            <div class="grid grid-cols-5 gap-1.5">
+              <button type="button" onclick="setMockupExportWallpaper('aurora')" id="exp-wp-aurora" class="exp-wp-btn px-1.5 py-1.5 rounded-lg border border-aura-cyan/50 bg-white/15 text-white font-bold text-center text-[11px] truncate">極光</button>
+              <button type="button" onclick="setMockupExportWallpaper('sunset')" id="exp-wp-sunset" class="exp-wp-btn px-1.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-400 hover:text-white text-center text-[11px] truncate">薄暮</button>
+              <button type="button" onclick="setMockupExportWallpaper('ocean')" id="exp-wp-ocean" class="exp-wp-btn px-1.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-400 hover:text-white text-center text-[11px] truncate">深海</button>
+              <button type="button" onclick="setMockupExportWallpaper('obsidian')" id="exp-wp-obsidian" class="exp-wp-btn px-1.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-400 hover:text-white text-center text-[11px] truncate">黑曜</button>
+              <button type="button" onclick="setMockupExportWallpaper('cyber')" id="exp-wp-cyber" class="exp-wp-btn px-1.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-400 hover:text-white text-center text-[11px] truncate">賽博</button>
+            </div>
+          </div>
+
+          <!-- 視窗外框選項與留白 -->
+          <div class="space-y-2 pt-1 border-t border-white/5">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300 font-mono text-[11px] flex items-center gap-1.5">
+                <i data-lucide="credit-card" class="w-3.5 h-3.5 text-aura-cyan"></i> macOS 視窗外框與標題列
+              </span>
+              <input type="checkbox" id="mockup-export-opt-frame" checked onchange="updateMockupExportParams()" class="rounded bg-obsidian-900 border-white/20 text-aura-cyan focus:ring-0 cursor-pointer">
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300 font-mono text-[11px] flex items-center gap-1.5">
+                <i data-lucide="sun" class="w-3.5 h-3.5 text-aura-emerald"></i> 霓虹擴散環境光暈與立體陰影
+              </span>
+              <input type="checkbox" id="mockup-export-opt-glow" checked onchange="updateMockupExportParams()" class="rounded bg-obsidian-900 border-white/20 text-aura-emerald focus:ring-0 cursor-pointer">
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300 font-mono text-[11px] flex items-center gap-1.5">
+                <i data-lucide="maximize" class="w-3.5 h-3.5 text-aura-violet"></i> 視窗邊界留白
+              </span>
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="setMockupExportPadding('tight')" id="exp-pad-tight" class="exp-pad-btn px-2 py-0.5 rounded text-[10px] bg-obsidian-850 text-slate-400 border border-white/10">緊湊</button>
+                <button type="button" onclick="setMockupExportPadding('cozy')" id="exp-pad-cozy" class="exp-pad-btn px-2 py-0.5 rounded text-[10px] bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 font-bold">標準</button>
+                <button type="button" onclick="setMockupExportPadding('spacious')" id="exp-pad-spacious" class="exp-pad-btn px-2 py-0.5 rounded text-[10px] bg-obsidian-850 text-slate-400 border border-white/10">寬鬆</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 匯出時間範圍 -->
+          <div class="space-y-1.5 pt-1 border-t border-white/5">
+            <label class="font-mono text-slate-300 font-semibold flex items-center gap-1.5">
+              <i data-lucide="scissors" class="w-3.5 h-3.5 text-aura-cyan"></i> 導出範圍
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center gap-2 p-2 rounded-xl bg-obsidian-850 border border-white/10 cursor-pointer">
+                <input type="radio" name="mockup-export-range" value="selection" checked onchange="updateMockupExportParams()" class="text-aura-cyan focus:ring-0">
+                <span class="font-mono text-[11px] text-slate-200">選取範圍 (<span id="mockup-export-range-label">In - Out</span>)</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-xl bg-obsidian-850 border border-white/10 cursor-pointer">
+                <input type="radio" name="mockup-export-range" value="full" onchange="updateMockupExportParams()" class="text-aura-cyan focus:ring-0">
+                <span class="font-mono text-[11px] text-slate-200">整段影片 (Full)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 導出中狀態面板 (預設隱藏) -->
+      <div id="mockup-export-progress-panel" class="mt-4 pt-4 border-t border-white/10 space-y-3 hidden">
+        <div class="flex items-center justify-between text-xs font-mono">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-aura-cyan animate-ping"></span>
+            <span id="mockup-export-status-text" class="text-slate-200 font-bold">正在渲染合成視窗與編碼...</span>
+            <span id="mockup-export-engine-badge" class="px-2 py-0.5 rounded bg-aura-cyan/20 border border-aura-cyan/40 text-aura-cyan text-[10px]">WebCodecs Engine</span>
+          </div>
+          <span id="mockup-export-percent" class="text-aura-cyan font-bold">0%</span>
+        </div>
+        <div class="w-full h-2.5 bg-obsidian-900 rounded-full overflow-hidden border border-white/10 p-[1px]">
+          <div id="mockup-export-progress-bar" class="h-full bg-gradient-to-r from-aura-cyan via-blue-500 to-aura-violet rounded-full transition-all duration-100 shadow-[0_0_12px_rgba(0,240,255,0.8)]" style="width: 0%;"></div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] font-mono text-slate-400">
+          <span id="mockup-export-detail-status">影格 0 / 0 · 準備中</span>
+          <button type="button" onclick="cancelMockupExport()" class="px-3 py-1 rounded-lg bg-aura-rose/20 text-aura-rose border border-aura-rose/40 hover:bg-aura-rose/30 transition-colors">
+            取消導出
+          </button>
+        </div>
+      </div>
+
+      <!-- 底部動作按鈕列 (導出中隱藏) -->
+      <div id="mockup-export-actions" class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between shrink-0">
+        <div class="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
+          <i data-lucide="cpu" class="w-3.5 h-3.5 text-aura-cyan"></i>
+          <span id="mockup-export-detected-engine">自動偵測硬體加速：WebCodecs + mp4-muxer</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="closeMockupExportModal()" class="px-4 py-2 rounded-xl bg-obsidian-850 border border-white/10 text-slate-300 hover:text-white text-xs font-sans">
+            取消
+          </button>
+          <button type="button" id="btn-start-mockup-export-go" onclick="startMockupExport()" class="magnetic-btn flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-aura-cyan via-blue-500 to-aura-violet text-black font-display font-bold text-xs tracking-wider shadow-lg shadow-aura-cyan/30 hover:scale-[1.02]">
+            <i data-lucide="video" class="w-4 h-4 text-black"></i>
+            開始渲染導出 MP4
+          </button>
         </div>
       </div>
     </div>
@@ -2070,6 +2269,907 @@
       a.download = `AURA_Audio_${Date.now()}.webm`;
       a.click();
     }
+
+    // ==========================================
+    // 13.5 霓虹外框與視窗合成 MP4 匯出引擎 (Mockup Export Engine)
+    // ==========================================
+    const mockupExportState = {
+      ratio: '16:9',
+      resolution: '1080p',
+      fps: 30,
+      wallpaper: 'aurora',
+      showFrame: true,
+      showGlow: true,
+      padding: 'cozy',
+      range: 'selection',
+      isExporting: false,
+      cancelRequested: false
+    };
+
+    function openMockupExportModal() {
+      if (!activeVideoBlob) {
+        audioSynth.playClick();
+        alert('請先點擊錄製或直接將影片拖入工作台！');
+        return;
+      }
+      audioSynth.playClick();
+
+      // 同步工作台當前外觀設定
+      if (typeof studioConfig !== 'undefined') {
+        if (studioConfig.wallpaper) mockupExportState.wallpaper = studioConfig.wallpaper;
+        if (studioConfig.ratio) mockupExportState.ratio = studioConfig.ratio;
+        if (studioConfig.padding) mockupExportState.padding = studioConfig.padding;
+      }
+
+      // 更新時間標籤
+      const rangeLabel = document.getElementById('mockup-export-range-label');
+      if (rangeLabel) {
+        rangeLabel.innerText = `${formatSecondsToTime(inPoint)} - ${formatSecondsToTime(outPoint)}`;
+      }
+
+      // 同步 UI 按鈕與下拉
+      updateMockupExportUI();
+      detectEngineCapabilities();
+      updateMockupExportPreview();
+
+      const modal = document.getElementById('modal-mockup-export');
+      if (modal) modal.classList.remove('hidden');
+      safeLucide();
+    }
+
+    function closeMockupExportModal() {
+      if (mockupExportState.isExporting) {
+        if (!confirm('導出正在進行中，確定要中途取消並關閉嗎？')) return;
+        cancelMockupExport();
+      }
+      audioSynth.playClick();
+      const modal = document.getElementById('modal-mockup-export');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function detectEngineCapabilities() {
+      const engineBadge = document.getElementById('mockup-export-detected-engine');
+      const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined';
+      if (engineBadge) {
+        if (hasWebCodecs) {
+          engineBadge.innerHTML = `<i data-lucide="zap" class="w-3.5 h-3.5 text-aura-cyan inline mr-1"></i>WebCodecs + mp4-muxer (超速非同步影格封裝)`;
+        } else {
+          engineBadge.innerHTML = `<i data-lucide="cpu" class="w-3.5 h-3.5 text-aura-emerald inline mr-1"></i>MediaRecorder 硬體串流 (自動回退雙核心)`;
+        }
+      }
+      safeLucide();
+    }
+
+    function setMockupExportRatio(r) {
+      mockupExportState.ratio = r;
+      audioSynth.playClick();
+      updateMockupExportUI();
+      updateMockupExportPreview();
+    }
+
+    function setMockupExportWallpaper(w) {
+      mockupExportState.wallpaper = w;
+      audioSynth.playClick();
+      updateMockupExportUI();
+      updateMockupExportPreview();
+    }
+
+    function setMockupExportPadding(p) {
+      mockupExportState.padding = p;
+      audioSynth.playClick();
+      updateMockupExportUI();
+      updateMockupExportPreview();
+    }
+
+    function updateMockupExportParams() {
+      const resEl = document.getElementById('mockup-export-resolution');
+      if (resEl) mockupExportState.resolution = resEl.value;
+
+      const fpsEl = document.getElementById('mockup-export-fps');
+      if (fpsEl) mockupExportState.fps = parseInt(fpsEl.value, 10) || 30;
+
+      const frameEl = document.getElementById('mockup-export-opt-frame');
+      if (frameEl) mockupExportState.showFrame = frameEl.checked;
+
+      const glowEl = document.getElementById('mockup-export-opt-glow');
+      if (glowEl) mockupExportState.showGlow = glowEl.checked;
+
+      const rangeEls = document.getElementsByName('mockup-export-range');
+      for (const el of rangeEls) {
+        if (el.checked) mockupExportState.range = el.value;
+      }
+
+      updateMockupExportPreview();
+    }
+
+    function updateMockupExportUI() {
+      // 比例按鈕
+      ['16:9', '9:16', '1:1'].forEach(r => {
+        const id = 'exp-ratio-' + r.replace(':', '-');
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        if (mockupExportState.ratio === r) {
+          btn.className = 'exp-ratio-btn px-3 py-2 rounded-xl bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 font-bold font-mono text-center transition-all';
+        } else {
+          btn.className = 'exp-ratio-btn px-3 py-2 rounded-xl bg-obsidian-850 text-slate-300 border border-white/10 hover:text-white font-mono text-center transition-all';
+        }
+      });
+
+      // 桌布按鈕
+      ['aurora', 'sunset', 'ocean', 'obsidian', 'cyber'].forEach(w => {
+        const btn = document.getElementById('exp-wp-' + w);
+        if (!btn) return;
+        if (mockupExportState.wallpaper === w) {
+          btn.className = 'exp-wp-btn px-1.5 py-1.5 rounded-lg border border-aura-cyan/50 bg-white/15 text-white font-bold text-center text-[11px] truncate';
+        } else {
+          btn.className = 'exp-wp-btn px-1.5 py-1.5 rounded-lg border border-white/10 bg-obsidian-850 text-slate-400 hover:text-white text-center text-[11px] truncate';
+        }
+      });
+
+      // 留白按鈕
+      ['tight', 'cozy', 'spacious'].forEach(p => {
+        const btn = document.getElementById('exp-pad-' + p);
+        if (!btn) return;
+        if (mockupExportState.padding === p) {
+          btn.className = 'exp-pad-btn px-2 py-0.5 rounded text-[10px] bg-aura-cyan/20 text-aura-cyan border border-aura-cyan/40 font-bold';
+        } else {
+          btn.className = 'exp-pad-btn px-2 py-0.5 rounded text-[10px] bg-obsidian-850 text-slate-400 border border-white/10';
+        }
+      });
+    }
+
+    function getExportDimensions(ratio, res) {
+      if (res === '720p') {
+        if (ratio === '9:16') return { width: 720, height: 1280 };
+        if (ratio === '1:1') return { width: 720, height: 720 };
+        return { width: 1280, height: 720 };
+      }
+      // 1080p FHD default
+      if (ratio === '9:16') return { width: 1080, height: 1920 };
+      if (ratio === '1:1') return { width: 1080, height: 1080 };
+      return { width: 1920, height: 1080 };
+    }
+
+    function updateMockupExportPreview() {
+      const previewCanvas = document.getElementById('mockup-export-preview-canvas');
+      const dimsBadge = document.getElementById('mockup-export-dims-badge');
+      if (!previewCanvas) return;
+
+      const dims = getExportDimensions(mockupExportState.ratio, mockupExportState.resolution);
+      if (dimsBadge) {
+        dimsBadge.innerText = `${dims.width} × ${dims.height} (${mockupExportState.ratio})`;
+      }
+
+      // 預覽使用適應寬度維持流暢度
+      let prevW = 640;
+      let prevH = 360;
+      if (mockupExportState.ratio === '9:16') {
+        prevW = 270;
+        prevH = 480;
+      } else if (mockupExportState.ratio === '1:1') {
+        prevW = 380;
+        prevH = 380;
+      }
+      previewCanvas.width = prevW;
+      previewCanvas.height = prevH;
+
+      const pCtx = previewCanvas.getContext('2d');
+      renderMockupFrame(previewCanvas, pCtx, stageVideo, {
+        wallpaper: mockupExportState.wallpaper,
+        showFrame: mockupExportState.showFrame,
+        showGlow: mockupExportState.showGlow,
+        padding: mockupExportState.padding,
+        ratio: mockupExportState.ratio,
+        filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none'
+      });
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, radius);
+        return;
+      }
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + width - r, y);
+      ctx.arcTo(x + width, y, x + width, y + r, r);
+      ctx.lineTo(x + width, y + height - r);
+      ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+      ctx.lineTo(x + r, y + height);
+      ctx.arcTo(x, y + height, x, y + height - r, r);
+      ctx.lineTo(x, y + r);
+      ctx.arcTo(x, y, x + r, y, r);
+      ctx.closePath();
+    }
+
+    function drawThemeWallpaper(ctx, width, height, theme) {
+      if (theme === 'sunset') {
+        const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+        bgGrad.addColorStop(0, '#1a0b22');
+        bgGrad.addColorStop(0.5, '#2b112c');
+        bgGrad.addColorStop(1, '#15091a');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const r1 = ctx.createRadialGradient(width * 0.2, height * 0.3, 0, width * 0.2, height * 0.3, width * 0.5);
+        r1.addColorStop(0, 'rgba(255, 42, 109, 0.4)');
+        r1.addColorStop(1, 'rgba(255, 42, 109, 0)');
+        ctx.fillStyle = r1;
+        ctx.fillRect(0, 0, width, height);
+
+        const r2 = ctx.createRadialGradient(width * 0.8, height * 0.7, 0, width * 0.8, height * 0.7, width * 0.5);
+        r2.addColorStop(0, 'rgba(255, 184, 0, 0.35)');
+        r2.addColorStop(1, 'rgba(255, 184, 0, 0)');
+        ctx.fillStyle = r2;
+        ctx.fillRect(0, 0, width, height);
+
+        const r3 = ctx.createRadialGradient(width * 0.5, height * 0.1, 0, width * 0.5, height * 0.1, width * 0.5);
+        r3.addColorStop(0, 'rgba(138, 43, 226, 0.35)');
+        r3.addColorStop(1, 'rgba(138, 43, 226, 0)');
+        ctx.fillStyle = r3;
+        ctx.fillRect(0, 0, width, height);
+      } else if (theme === 'ocean') {
+        const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+        bgGrad.addColorStop(0, '#030d22');
+        bgGrad.addColorStop(0.5, '#071f43');
+        bgGrad.addColorStop(1, '#041226');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const r1 = ctx.createRadialGradient(width * 0.2, height * 0.2, 0, width * 0.2, height * 0.2, width * 0.5);
+        r1.addColorStop(0, 'rgba(0, 150, 255, 0.4)');
+        r1.addColorStop(1, 'rgba(0, 150, 255, 0)');
+        ctx.fillStyle = r1;
+        ctx.fillRect(0, 0, width, height);
+
+        const r2 = ctx.createRadialGradient(width * 0.8, height * 0.8, 0, width * 0.8, height * 0.8, width * 0.5);
+        r2.addColorStop(0, 'rgba(0, 240, 255, 0.32)');
+        r2.addColorStop(1, 'rgba(0, 240, 255, 0)');
+        ctx.fillStyle = r2;
+        ctx.fillRect(0, 0, width, height);
+      } else if (theme === 'obsidian') {
+        const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+        bgGrad.addColorStop(0, '#090b0e');
+        bgGrad.addColorStop(0.5, '#12161f');
+        bgGrad.addColorStop(1, '#090b0e');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const r1 = ctx.createRadialGradient(width * 0.5, 0, 0, width * 0.5, 0, width * 0.6);
+        r1.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+        r1.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = r1;
+        ctx.fillRect(0, 0, width, height);
+      } else if (theme === 'cyber') {
+        const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+        bgGrad.addColorStop(0, '#130621');
+        bgGrad.addColorStop(0.5, '#1c0833');
+        bgGrad.addColorStop(1, '#091326');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const r1 = ctx.createRadialGradient(width * 0.1, height * 0.2, 0, width * 0.1, height * 0.2, width * 0.45);
+        r1.addColorStop(0, 'rgba(255, 0, 128, 0.4)');
+        r1.addColorStop(1, 'rgba(255, 0, 128, 0)');
+        ctx.fillStyle = r1;
+        ctx.fillRect(0, 0, width, height);
+
+        const r2 = ctx.createRadialGradient(width * 0.9, height * 0.8, 0, width * 0.9, height * 0.8, width * 0.45);
+        r2.addColorStop(0, 'rgba(0, 240, 255, 0.4)');
+        r2.addColorStop(1, 'rgba(0, 240, 255, 0)');
+        ctx.fillStyle = r2;
+        ctx.fillRect(0, 0, width, height);
+      } else {
+        // aurora default
+        const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+        bgGrad.addColorStop(0, '#070e1b');
+        bgGrad.addColorStop(0.5, '#0d1728');
+        bgGrad.addColorStop(1, '#08101f');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const r1 = ctx.createRadialGradient(width * 0.2, height * 0.2, 0, width * 0.2, height * 0.2, width * 0.45);
+        r1.addColorStop(0, 'rgba(0, 240, 255, 0.35)');
+        r1.addColorStop(1, 'rgba(0, 240, 255, 0)');
+        ctx.fillStyle = r1;
+        ctx.fillRect(0, 0, width, height);
+
+        const r2 = ctx.createRadialGradient(width * 0.8, height * 0.8, 0, width * 0.8, height * 0.8, width * 0.45);
+        r2.addColorStop(0, 'rgba(0, 255, 157, 0.28)');
+        r2.addColorStop(1, 'rgba(0, 255, 157, 0)');
+        ctx.fillStyle = r2;
+        ctx.fillRect(0, 0, width, height);
+
+        const r3 = ctx.createRadialGradient(width * 0.5, height * 0.5, 0, width * 0.5, height * 0.5, width * 0.5);
+        r3.addColorStop(0, 'rgba(138, 43, 226, 0.3)');
+        r3.addColorStop(1, 'rgba(138, 43, 226, 0)');
+        ctx.fillStyle = r3;
+        ctx.fillRect(0, 0, width, height);
+      }
+    }
+
+    function renderMockupFrame(canvas, ctx, videoEl, opts) {
+      const W = canvas.width;
+      const H = canvas.height;
+      const theme = opts.wallpaper || 'aurora';
+      const showFrame = opts.showFrame !== false;
+      const showGlow = opts.showGlow !== false;
+      const padRatio = opts.padding === 'tight' ? 0.04 : (opts.padding === 'spacious' ? 0.11 : 0.075);
+
+      // 1. 壁紙漸層
+      drawThemeWallpaper(ctx, W, H, theme);
+
+      // 2. 幾何尺寸計算
+      const availW = W * (1 - padRatio * 2);
+      const availH = H * (1 - padRatio * 2);
+      const headerH = showFrame ? Math.max(26, Math.round(H * 0.042)) : 0;
+
+      const vW = (videoEl && videoEl.videoWidth) ? videoEl.videoWidth : 16;
+      const vH = (videoEl && videoEl.videoHeight) ? videoEl.videoHeight : 9;
+      const vAspect = vW / vH;
+
+      let cw = availW;
+      let ch = cw / vAspect;
+      if (ch + headerH > availH) {
+        ch = availH - headerH;
+        cw = ch * vAspect;
+      }
+      if (cw > availW) {
+        cw = availW;
+        ch = cw / vAspect;
+      }
+
+      const winW = Math.round(cw);
+      const winH = Math.round(ch + headerH);
+      const winX = Math.round((W - winW) / 2);
+      const winY = Math.round((H - winH) / 2);
+      const winRadius = Math.max(10, Math.round(winW * 0.016));
+
+      // 3. 環境光暈與深邃陰影
+      if (showGlow) {
+        const glowMap = {
+          aurora: 'rgba(0, 240, 255, 0.35)',
+          sunset: 'rgba(255, 42, 109, 0.4)',
+          ocean: 'rgba(0, 150, 255, 0.4)',
+          obsidian: 'rgba(255, 255, 255, 0.12)',
+          cyber: 'rgba(255, 0, 128, 0.4)'
+        };
+        const glowColor = glowMap[theme] || 'rgba(0, 240, 255, 0.35)';
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+        ctx.shadowBlur = Math.round(winW * 0.04);
+        ctx.shadowOffsetY = Math.round(winW * 0.018);
+        ctx.fillStyle = '#06080d';
+        roundRect(ctx, winX, winY, winW, winH, winRadius);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = Math.round(winW * 0.035);
+        ctx.strokeStyle = glowColor;
+        ctx.lineWidth = 2;
+        roundRect(ctx, winX, winY, winW, winH, winRadius);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 4. 視窗裁剪區域
+      ctx.save();
+      roundRect(ctx, winX, winY, winW, winH, winRadius);
+      ctx.clip();
+      ctx.fillStyle = '#05070a';
+      ctx.fillRect(winX, winY, winW, winH);
+
+      // 5. macOS 質感標題列
+      if (showFrame && headerH > 0) {
+        const hGrad = ctx.createLinearGradient(winX, winY, winX, winY + headerH);
+        hGrad.addColorStop(0, '#161a24');
+        hGrad.addColorStop(1, '#0e1117');
+        ctx.fillStyle = hGrad;
+        ctx.fillRect(winX, winY, winW, headerH);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillRect(winX, winY + headerH - 1, winW, 1);
+
+        const dotR = Math.max(3.5, Math.round(headerH * 0.17));
+        const dotSpacing = Math.round(dotR * 2.4);
+        const dotStartX = winX + Math.round(headerH * 0.55);
+        const dotY = winY + headerH / 2;
+
+        // 紅黃綠三色 macOS 視窗按鈕
+        ctx.beginPath();
+        ctx.arc(dotStartX, dotY, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = '#FF5F56';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(dotStartX + dotSpacing, dotY, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFBD2E';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(dotStartX + dotSpacing * 2, dotY, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = '#27C93F';
+        ctx.fill();
+
+        // 標題列文字
+        ctx.fillStyle = '#94a3b8';
+        const titleFontSize = Math.max(10, Math.round(headerH * 0.36));
+        ctx.font = `600 ${titleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const titleEl = document.getElementById('window-title-text');
+        const titleText = (titleEl ? titleEl.innerText : 'AURA REC • 4K 60FPS').trim();
+        ctx.fillText(titleText, winX + winW / 2, winY + headerH / 2);
+
+        // 比例膠囊
+        const badgeText = opts.ratio || '16:9';
+        ctx.font = `500 ${Math.max(9, titleFontSize - 2)}px monospace`;
+        const badgeW = ctx.measureText(badgeText).width + 12;
+        const badgeH = headerH * 0.55;
+        const badgeX = winX + winW - badgeW - Math.round(headerH * 0.45);
+        const badgeY = winY + (headerH - badgeH) / 2;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+        roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+        ctx.fill();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + badgeH / 2);
+      }
+
+      // 6. 影片影格與濾鏡繪製
+      const vidX = winX;
+      const vidY = winY + headerH;
+      const vidW = winW;
+      const vidH = winH - headerH;
+
+      if (videoEl && (videoEl.readyState >= 2 || videoEl.videoWidth > 0)) {
+        ctx.save();
+        if (opts.filter === 'cyberpunk') {
+          ctx.filter = 'saturate(160%) contrast(115%) hue-rotate(15deg)';
+        } else if (opts.filter === 'noir') {
+          ctx.filter = 'grayscale(100%) contrast(140%) brightness(95%)';
+        } else if (opts.filter === 'warm') {
+          ctx.filter = 'sepia(35%) saturate(120%) contrast(105%)';
+        } else {
+          ctx.filter = 'none';
+        }
+        try {
+          ctx.drawImage(videoEl, vidX, vidY, vidW, vidH);
+        } catch (e) {}
+        ctx.restore();
+
+        // 合成塗鴉標註層
+        const annCanvas = document.getElementById('annotation-canvas');
+        if (annCanvas && annCanvas.width > 0 && annCanvas.height > 0) {
+          try {
+            ctx.drawImage(annCanvas, vidX, vidY, vidW, vidH);
+          } catch (e) {}
+        }
+      } else {
+        ctx.fillStyle = '#080a10';
+        ctx.fillRect(vidX, vidY, vidW, vidH);
+      }
+
+      ctx.restore(); // 結束視窗裁剪
+
+      // 7. 外邊框描邊
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, winX, winY, winW, winH, winRadius);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    async function startMockupExport() {
+      if (!activeVideoBlob) {
+        alert('請先載入或錄製影片！');
+        return;
+      }
+      if (mockupExportState.isExporting) return;
+
+      audioSynth.playClick();
+      updateMockupExportParams();
+
+      mockupExportState.isExporting = true;
+      mockupExportState.cancelRequested = false;
+
+      // 切換 UI 至導出中狀態
+      const actions = document.getElementById('mockup-export-actions');
+      const progressPanel = document.getElementById('mockup-export-progress-panel');
+      if (actions) actions.classList.add('hidden');
+      if (progressPanel) progressPanel.classList.remove('hidden');
+
+      const dims = getExportDimensions(mockupExportState.ratio, mockupExportState.resolution);
+      const startSec = (mockupExportState.range === 'full') ? 0 : inPoint;
+      const endSec = (mockupExportState.range === 'full') ? videoDuration : outPoint;
+
+      const exportOpts = {
+        width: dims.width,
+        height: dims.height,
+        fps: mockupExportState.fps,
+        startSec: Math.max(0, startSec),
+        endSec: Math.min(videoDuration, Math.max(startSec + 0.1, endSec)),
+        wallpaper: mockupExportState.wallpaper,
+        showFrame: mockupExportState.showFrame,
+        showGlow: mockupExportState.showGlow,
+        padding: mockupExportState.padding,
+        ratio: mockupExportState.ratio,
+        filter: (typeof activeFilter !== 'undefined') ? activeFilter : 'none'
+      };
+
+      const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined';
+      let exportSuccess = false;
+
+      if (hasWebCodecs) {
+        try {
+          updateExportEngineBadge('WebCodecs Engine (超速影格封裝)');
+          await exportMockupWithWebCodecs(exportOpts);
+          exportSuccess = true;
+        } catch (err) {
+          console.warn('WebCodecs export failed or unsupported, falling back to MediaRecorder:', err);
+          if (mockupExportState.cancelRequested) {
+            resetMockupExportProgressUI();
+            return;
+          }
+          updateExportEngineBadge('MediaRecorder 回退模式');
+          try {
+            await exportMockupWithMediaRecorder(exportOpts);
+            exportSuccess = true;
+          } catch (mErr) {
+            alert('導出失敗：' + (mErr.message || mErr));
+          }
+        }
+      } else {
+        updateExportEngineBadge('MediaRecorder 即時串流');
+        try {
+          await exportMockupWithMediaRecorder(exportOpts);
+          exportSuccess = true;
+        } catch (mErr) {
+          alert('導出失敗：' + (mErr.message || mErr));
+        }
+      }
+
+      if (exportSuccess && !mockupExportState.cancelRequested) {
+        audioSynth.playChime();
+        setTimeout(() => {
+          resetMockupExportProgressUI();
+          closeMockupExportModal();
+        }, 600);
+      } else {
+        resetMockupExportProgressUI();
+      }
+    }
+
+    function cancelMockupExport() {
+      mockupExportState.cancelRequested = true;
+      mockupExportState.isExporting = false;
+      resetMockupExportProgressUI();
+    }
+
+    function resetMockupExportProgressUI() {
+      mockupExportState.isExporting = false;
+      const actions = document.getElementById('mockup-export-actions');
+      const progressPanel = document.getElementById('mockup-export-progress-panel');
+      if (actions) actions.classList.remove('hidden');
+      if (progressPanel) progressPanel.classList.add('hidden');
+
+      const bar = document.getElementById('mockup-export-progress-bar');
+      const pct = document.getElementById('mockup-export-percent');
+      const detail = document.getElementById('mockup-export-detail-status');
+      if (bar) bar.style.width = '0%';
+      if (pct) pct.innerText = '0%';
+      if (detail) detail.innerText = '準備中...';
+    }
+
+    function updateExportProgress(percent, frame, totalFrames, remainingSec) {
+      const bar = document.getElementById('mockup-export-progress-bar');
+      const pct = document.getElementById('mockup-export-percent');
+      const detail = document.getElementById('mockup-export-detail-status');
+
+      if (bar) bar.style.width = `${percent}%`;
+      if (pct) pct.innerText = `${percent}%`;
+      if (detail) {
+        const remText = remainingSec > 0 ? ` · 剩餘約 ${Math.ceil(remainingSec)} 秒` : '';
+        detail.innerText = `影格 ${frame} / ${totalFrames} (${percent}%)${remText}`;
+      }
+    }
+
+    function updateExportEngineBadge(name) {
+      const b = document.getElementById('mockup-export-engine-badge');
+      if (b) b.innerText = name;
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 500);
+    }
+
+    // ==========================================
+    // Engine A: WebCodecs + mp4-muxer 超速影格編碼
+    // ==========================================
+    async function exportMockupWithWebCodecs(opts) {
+      const { width, height, fps, startSec, endSec } = opts;
+      const duration = Math.max(0.1, endSec - startSec);
+      const totalFrames = Math.max(1, Math.round(duration * fps));
+      const frameInterval = 1 / fps;
+
+      // 建立離屏畫布
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = width;
+      offCanvas.height = height;
+      const offCtx = offCanvas.getContext('2d', { alpha: false, desynchronized: true });
+
+      // 建立不可見的影片尋軌元件
+      const vid = document.createElement('video');
+      vid.preload = 'auto';
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.src = activeVideoUrl;
+
+      await new Promise((res, rej) => {
+        vid.onloadedmetadata = () => res();
+        vid.onerror = () => rej(new Error('無法載入影片資料'));
+        setTimeout(() => rej(new Error('載入影片逾時')), 10000);
+      });
+
+      // 初始化 mp4-muxer
+      const muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: {
+          codec: 'avc',
+          width: width,
+          height: height
+        },
+        fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset'
+      });
+
+      // 檢查支援的 H.264 Codec
+      let chosenCodec = 'avc1.4d002a';
+      const codecsToTest = ['avc1.4d002a', 'avc1.640028', 'avc1.42e01f'];
+      for (const c of codecsToTest) {
+        try {
+          const support = await VideoEncoder.isConfigSupported({
+            codec: c,
+            width: width,
+            height: height,
+            bitrate: 8000000,
+            framerate: fps
+          });
+          if (support.supported) {
+            chosenCodec = c;
+            break;
+          }
+        } catch (e) {}
+      }
+
+      const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (e) => console.error('VideoEncoder error:', e)
+      });
+
+      await videoEncoder.configure({
+        codec: chosenCodec,
+        width: width,
+        height: height,
+        bitrate: 8000000,
+        framerate: fps
+      });
+
+      const startTime = performance.now();
+
+      // 逐影格精準尋軌與編碼
+      for (let i = 0; i < totalFrames; i++) {
+        if (mockupExportState.cancelRequested) {
+          videoEncoder.close();
+          throw new Error('使用者取消導出');
+        }
+
+        const seekTime = Math.min(vid.duration || endSec, startSec + (i * frameInterval));
+        await new Promise((resolve) => {
+          let timeout = null;
+          const onSeeked = () => {
+            clearTimeout(timeout);
+            vid.removeEventListener('seeked', onSeeked);
+            resolve();
+          };
+          timeout = setTimeout(() => {
+            vid.removeEventListener('seeked', onSeeked);
+            resolve();
+          }, 1000);
+          vid.addEventListener('seeked', onSeeked);
+          vid.currentTime = seekTime;
+        });
+
+        // 渲染外框與桌布至畫布
+        renderMockupFrame(offCanvas, offCtx, vid, opts);
+
+        // 建立 VideoFrame 並送入編碼器
+        const timestampMicros = Math.round(i * (1000000 / fps));
+        const videoFrame = new VideoFrame(offCanvas, { timestamp: timestampMicros });
+        const isKeyFrame = (i % (fps * 2) === 0);
+        videoEncoder.encode(videoFrame, { keyFrame: isKeyFrame });
+        videoFrame.close();
+
+        // 計算進度與預估時間
+        const pct = Math.round(((i + 1) / totalFrames) * 100);
+        const elapsed = (performance.now() - startTime) / 1000;
+        const avgFrameTime = elapsed / (i + 1);
+        const remSec = (totalFrames - (i + 1)) * avgFrameTime;
+        updateExportProgress(pct, i + 1, totalFrames, remSec);
+
+        // 讓出事件循環更新 UI
+        if (i % 3 === 0) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      await videoEncoder.flush();
+      videoEncoder.close();
+      muxer.finalize();
+
+      const mp4Buffer = muxer.target.buffer;
+      const mp4Blob = new Blob([mp4Buffer], { type: 'video/mp4' });
+      downloadBlob(mp4Blob, `AURA-MOCKUP-${Date.now()}.mp4`);
+    }
+
+    // ==========================================
+    // Engine B: MediaRecorder 硬體串流回退引擎
+    // ==========================================
+    async function exportMockupWithMediaRecorder(opts) {
+      const { width, height, fps, startSec, endSec } = opts;
+      const duration = Math.max(0.1, endSec - startSec);
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = width;
+      offCanvas.height = height;
+      const offCtx = offCanvas.getContext('2d');
+
+      const stream = offCanvas.captureStream(fps);
+
+      // 若有音訊軌，嘗試混入
+      try {
+        const cap = stageVideo.captureStream || stageVideo.mozCaptureStream;
+        if (cap) {
+          const aStream = cap.call(stageVideo);
+          aStream.getAudioTracks().forEach(t => stream.addTrack(t));
+        }
+      } catch (e) {}
+
+      let mime = 'video/mp4';
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) {
+        mime = 'video/mp4;codecs=avc1';
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mime = 'video/mp4';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mime = 'video/webm;codecs=vp9';
+      } else {
+        mime = 'video/webm';
+      }
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 8000000
+      });
+
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      const stoppedPromise = new Promise((res) => { recorder.onstop = () => res(); });
+
+      // 定位至起始時間
+      await new Promise((res) => {
+        const onSeek = () => {
+          stageVideo.removeEventListener('seeked', onSeek);
+          res();
+        };
+        stageVideo.addEventListener('seeked', onSeek);
+        stageVideo.currentTime = startSec;
+      });
+
+      recorder.start(100);
+      await stageVideo.play();
+
+      const startTime = performance.now();
+      await new Promise((res, rej) => {
+        const renderLoop = () => {
+          if (mockupExportState.cancelRequested) {
+            stageVideo.pause();
+            if (recorder.state !== 'inactive') recorder.stop();
+            rej(new Error('使用者取消導出'));
+            return;
+          }
+
+          renderMockupFrame(offCanvas, offCtx, stageVideo, opts);
+
+          const cur = stageVideo.currentTime;
+          const elapsedSec = cur - startSec;
+          const pct = Math.min(100, Math.round((elapsedSec / duration) * 100));
+          const remSec = Math.max(0, duration - elapsedSec);
+          updateExportProgress(pct, Math.round(elapsedSec * fps), Math.round(duration * fps), remSec);
+
+          if (stageVideo.ended || cur >= endSec - 0.03) {
+            stageVideo.pause();
+            res();
+            return;
+          }
+          requestAnimationFrame(renderLoop);
+        };
+        requestAnimationFrame(renderLoop);
+      });
+
+      if (recorder.state !== 'inactive') recorder.stop();
+      await stoppedPromise;
+
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const resultBlob = new Blob(chunks, { type: mime });
+      downloadBlob(resultBlob, `AURA-MOCKUP-${Date.now()}.${ext}`);
+    }
+
+    // ==========================================
+    // 全域拖曳載入影片 (Drag & Drop Handler)
+    // ==========================================
+    function initDragAndDrop() {
+      const overlay = document.getElementById('drag-drop-overlay');
+      if (!overlay) return;
+
+      let dragCounter = 0;
+
+      window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+        overlay.classList.add('opacity-100');
+      });
+
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          overlay.classList.remove('opacity-100');
+          overlay.classList.add('opacity-0', 'pointer-events-none');
+        }
+      });
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        overlay.classList.remove('opacity-100');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length > 0) {
+          const file = files[0];
+          if (file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(file.name)) {
+            audioSynth.playChime();
+            loadVideoToWorkspace(file);
+          } else {
+            alert('請拖入影片檔案 (MP4, WebM, MOV 等)！');
+          }
+        }
+      });
+    }
+    initDragAndDrop();
 
     // ==========================================
     // 14. 全域鍵盤快捷鍵 (Hotkeys Listener)
