@@ -75,7 +75,12 @@ AURA REC 把「錄」和「剪」放在同一個工具：錄下螢幕、麥克�
    - macOS：`brew install ffmpeg`
    - Windows：`winget install Gyan.FFmpeg`
 3. 第一次開啟：
-   - **macOS**：目前尚未通過 Apple 公證。在 `AURA REC` 上按右鍵 → 「開啟」 → 再按「開啟」。接著到「系統設定 → 隱私權與安全性」允許 **螢幕錄製** 與 **麥克風**，授權後重新開啟程式。
+   - **macOS**：目前尚未通過 Apple 公證，系統會顯示「Apple 無法驗證『AURA REC』是否為惡意軟體」，**請按「完成」（不要丟到垃圾桶）**，然後二選一：
+     - 到「系統設定 → 隱私權與安全性」，往下找到 AURA REC 的提示，按 **「強制打開」**，輸入密碼後再開一次。
+     - 或在終端機執行（路徑依實際位置調整）：`xattr -dr com.apple.quarantine "/Applications/AURA REC.app"`
+
+     （macOS 15 以前也可以在 App 上按右鍵 → 「開啟」。）
+     接著到「系統設定 → 隱私權與安全性」允許 **螢幕錄製** 與 **麥克風**，授權後重新開啟程式。
    - **Windows**：若跳出 SmartScreen，按「其他資訊 → 仍要執行」。
 4. 想驗證檔案完整性，可對照 Release 內的 `SHA256SUMS.txt`。
 
