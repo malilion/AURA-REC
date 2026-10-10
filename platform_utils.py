@@ -572,13 +572,25 @@ def find_executable(name, extra_mac_paths=None, extra_win_paths=None):
     """
     跨平台智慧搜尋執行檔 (ffmpeg, ffprobe, ffplay)
     """
-    # 1. 優先搜尋系統 PATH
+    ext = ".exe" if IS_WINDOWS else ""
+
+    # 0. 打包後的 App：優先使用隨附的版本，行為一致，也不受 Finder 精簡 PATH 影響
+    if getattr(sys, "frozen", False):
+        bundled_dirs = []
+        if hasattr(sys, "_MEIPASS"):
+            bundled_dirs += [Path(sys._MEIPASS) / "bin", Path(sys._MEIPASS)]
+        bundled_dirs += [Path(sys.executable).resolve().parent / "bin", Path(sys.executable).resolve().parent]
+        for d in bundled_dirs:
+            cand = d / f"{name}{ext}"
+            if cand.is_file() and os.access(str(cand), os.X_OK if not IS_WINDOWS else os.F_OK):
+                return str(cand)
+
+    # 1. 搜尋系統 PATH
     found = shutil.which(name)
     if found:
         return found
 
     # 2. 搜尋當前專案與套件內嵌路徑
-    ext = ".exe" if IS_WINDOWS else ""
     local_dir = Path(__file__).resolve().parent
     candidates = [
         local_dir / f"{name}{ext}",

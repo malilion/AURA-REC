@@ -54,9 +54,11 @@ cd tools/tailwind && npm install && npm run build
 
 `package_macos.sh` 預設用 PyInstaller 產生自帶 Python 與 Tk 8.6 的獨立 `.app`（輸出在 `dist/bundle/`，再封成 zip / dmg），使用者不需安裝 Python。需要一個 Tk 8.6+ 的 Python（python.org 或 conda 版；系統與 Xcode 內附的 Python 是 Tk 8.5 不行），可用 `PYTHON_BIN=/path/to/python3 ./package_macos.sh` 指定。設 `AURA_PACKAGE_MODE=launcher` 則回到需自備 Python 的輕量啟動器版。目前只產出 arm64（Apple Silicon）。
 
+同時會內附靜態編譯的 `ffmpeg` / `ffprobe`（GPL，含 x264、LAME）：`tools/build_ffmpeg_macos.sh` 從固定版本與校驗碼的原始碼編譯（約 4 分鐘，結果快取在 `build/`），並產生 `AURA-REC-ffmpeg-source.tar.gz`（對應原始碼，隨 Release 附上）。編譯需要 `pkgconf`（`brew install pkgconf`）。`AURA_BUNDLE_FFMPEG=0` 可略過內附。授權與原始碼聲明見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+
 ### 發行流程
 
-推送 `v*` tag 後，CI（`build_desktop.yml`）會在 macOS 與 Windows 上建置並發佈 GitHub Release，附 `SHA256SUMS.txt`。發行包不隨附 FFmpeg（GPL）。
+推送 `v*` tag 後，CI（`build_desktop.yml`）會在 macOS 與 Windows 上建置並發佈 GitHub Release，附 `SHA256SUMS.txt`。macOS 發行包內附 GPL 版 FFmpeg 與對應原始碼；Windows 發行包不隨附 FFmpeg。
 
 ---
 

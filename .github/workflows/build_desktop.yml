@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg
-        run: brew install ffmpeg
+      - name: Build tools for bundled FFmpeg
+        run: brew install pkgconf
 
       - name: Package macOS App & DMG
         run: |
@@ -45,6 +45,7 @@ jobs:
           path: |
             dist/AURA-REC-macOS.dmg
             dist/AURA-REC-macOS.zip
+            dist/AURA-REC-ffmpeg-source.tar.gz
           if-no-files-found: warn
 
   build-windows:

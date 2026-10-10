@@ -65,3 +65,4 @@ AURA REC.app/Contents/Resources/fonts/
 *.zip
 *.dmg
 *.exe
+build/
