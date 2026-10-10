@@ -4,7 +4,7 @@
 ; ==============================================================================
 
 #define MyAppName "AURA REC"
-#define MyAppVersion "2.5.2"
+#define MyAppVersion "2.5.3"
 #define MyAppPublisher "AURA REC Team"
 #define MyAppURL "https://malilion.github.io/Record/"
 #define MyAppExeName "AURA-REC.exe"
