@@ -39,6 +39,10 @@ REM --- 3. 檢查 FFmpeg ---
 echo.
 echo [3/5] 檢查 FFmpeg 工具...
 set "LOCAL_FFMPEG="
+if defined AURA_NO_FFMPEG_BUNDLE (
+    echo      AURA_NO_FFMPEG_BUNDLE 已設定：不隨附 FFmpeg ^(GPL^)，使用者請自行安裝：winget install Gyan.FFmpeg
+    goto :ffmpeg_done
+)
 if exist "%~dp0ffmpeg.exe" (
     set "LOCAL_FFMPEG=%~dp0ffmpeg.exe"
     echo      找到專案目錄下的 ffmpeg.exe
@@ -53,6 +57,7 @@ if exist "%~dp0ffmpeg.exe" (
     )
 )
 
+:ffmpeg_done
 REM --- 4. 編譯單一 EXE ---
 echo.
 echo [4/5] 正在編譯 AURA-REC.exe（約需 1-2 分鐘）...
