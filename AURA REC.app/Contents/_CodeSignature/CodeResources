@@ -10,15 +10,19 @@
 		</data>
 		<key>Resources/README.md</key>
 		<data>
-		HV2JAu+fnxTDY8vh13HqE6qliN4=
+		GSi11lEmB9MdQ8zLDaJ1aoXabnA=
 		</data>
 		<key>Resources/app.py</key>
 		<data>
-		ostHBXj98k2Il4VOHeck0xkQy68=
+		z40MYHSB6opWLWU91NnIZNzmYqg=
 		</data>
 		<key>Resources/aura_widgets.py</key>
 		<data>
 		PMqs9/mW7dx4Me8/2BPIan5hON0=
+		</data>
+		<key>Resources/auto_updater.py</key>
+		<data>
+		8Azb7UAjF/d8Sk8jBdODMCH30bI=
 		</data>
 		<key>Resources/bin/ffmpeg</key>
 		<data>
@@ -82,14 +86,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			s1NkiB+qejWqyPTGL017GlHGiHUWKMDNEEfzBixz7KI=
+			FAj5KIQT66A9V7TI/sfJexpPnFcbQfAsyTm3ExlyUWQ=
 			</data>
 		</dict>
 		<key>Resources/app.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			la9kLrxBCRyGd907vx9vSQ3qeEcbcORjUqrEDFZfUpA=
+			xL67P9AceUIlGucGiT05etAQ4q16OkM8WnQcjFOlxyk=
 			</data>
 		</dict>
 		<key>Resources/aura_widgets.py</key>
@@ -97,6 +101,13 @@
 			<key>hash2</key>
 			<data>
 			5D6F1tmPUFX5uLc37gsy3xc20bTC/2/RONxSxB8WRLo=
+			</data>
+		</dict>
+		<key>Resources/auto_updater.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			vJS0m3fCWT02a7JIouLs1GlAkeAj0IfimGqS4F0lMsw=
 			</data>
 		</dict>
 		<key>Resources/bin/ffmpeg</key>

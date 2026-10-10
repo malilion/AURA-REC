@@ -31,6 +31,7 @@ from recorder import LOW_DISK_BYTES, ScreenRecorder, format_bytes, free_disk_byt
 from editor_window import VideoEditorWindow
 from aura_widgets import AuraButton, AuraCheck
 from input_overlay import InputOverlayManager
+from auto_updater import AutoUpdater
 from region_picker import (
     bar_origin,
     box_to_points,
@@ -303,6 +304,7 @@ class LiteRecorderApp:
         self.pip_border_var = tk.StringVar(value=str(self._saved.get("pip_border", "極光霓虹藍 (#00f0ff)")))
         self.click_ripple_var = tk.BooleanVar(value=self._flag("click_ripple", True))
         self.keystroke_hud_var = tk.BooleanVar(value=self._flag("keystroke_hud", True))
+        self.check_updates_var = tk.BooleanVar(value=self._flag("check_updates_on_startup", True))
         self._camera_bubble_win = None
         self._input_overlay_mgr = None
 
@@ -316,6 +318,7 @@ class LiteRecorderApp:
 
         # 初始化 UI
         self._init_styles()
+        self.updater = AutoUpdater(self.root, APP_VERSION, UI, self.fonts)
         self._build_main_ui()
         self._bind_shortcuts()
 
@@ -326,6 +329,7 @@ class LiteRecorderApp:
         # 註冊關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._apply_saved_window()
+        self.root.after(2500, self._startup_update_check)
 
         # 啟動計時更新迴圈
         self._timer_tick()
@@ -397,6 +401,7 @@ class LiteRecorderApp:
         )
         file_menu.add_separator()
         file_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
+        file_menu.add_command(label="檢查更新…", command=self._check_for_updates)
         file_menu.add_command(
             label="偏好設定…",
             command=self._show_preferences,
@@ -411,6 +416,7 @@ class LiteRecorderApp:
         help_menu.add_command(label="系統聲音錄製指南…", command=self._show_system_audio_guide)
         help_menu.add_command(label="FFmpeg 與硬體加速檢視…", command=self._show_diagnostics)
         help_menu.add_separator()
+        help_menu.add_command(label="檢查更新…", command=self._check_for_updates)
         help_menu.add_command(label="關於 AURA REC", command=self._show_about)
         menubar.add_cascade(label="說明", menu=help_menu)
         self.menubar = menubar
@@ -1293,6 +1299,7 @@ class LiteRecorderApp:
             "pip_border": self.pip_border_var.get() if hasattr(self, "pip_border_var") else "",
             "click_ripple": bool(self.click_ripple_var.get()) if hasattr(self, "click_ripple_var") else True,
             "keystroke_hud": bool(self.keystroke_hud_var.get()) if hasattr(self, "keystroke_hud_var") else True,
+            "check_updates_on_startup": bool(self.check_updates_var.get()) if hasattr(self, "check_updates_var") else True,
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
@@ -2620,6 +2627,21 @@ class LiteRecorderApp:
         copy_btn.pack(side=tk.LEFT)
         AuraButton(btn_row, text="關閉", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT, padx=(8, 0))
 
+    def _check_for_updates(self):
+        """主動檢查軟體更新"""
+        self.timer_hint.config(text="正在連線至 GitHub 檢查最新版本…")
+
+        def on_done(res):
+            if not self.recorder.is_recording:
+                self.timer_hint.config(text=self._idle_hint())
+
+        self.updater.check_now(is_manual=True, on_finish=on_done)
+
+    def _startup_update_check(self):
+        """啟動時靜默檢查更新 (僅在有新版本時彈窗提示)"""
+        if hasattr(self, "check_updates_var") and self.check_updates_var.get() and not self.recorder.is_recording:
+            self.updater.check_now(is_manual=False)
+
     def _show_about(self):
         """開啟關於 AURA REC 對話框"""
         win = tk.Toplevel(self.root)
@@ -2662,6 +2684,7 @@ class LiteRecorderApp:
         btn_row = tk.Frame(center, bg=UI["card"])
         btn_row.pack(fill=tk.X, pady=(4, 0))
         self._quiet_button(btn_row, "快捷鍵說明", self._show_shortcuts).pack(side=tk.LEFT)
+        self._quiet_button(btn_row, "檢查更新…", lambda: (win.destroy(), self._check_for_updates())).pack(side=tk.LEFT, padx=(8, 0))
         AuraButton(btn_row, text="確定", style="Primary.TButton", command=win.destroy).pack(side=tk.RIGHT)
 
     def _show_preferences(self):
@@ -2738,6 +2761,7 @@ class LiteRecorderApp:
         AuraCheck(opt_box, text="即時按鍵浮水印 (Keystroke HUD)", variable=self.keystroke_hud_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用晶片 GPU 硬體加速", variable=self.hardware_accel_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
         AuraCheck(opt_box, text="啟用錄影與截圖音效提示", variable=self.sound_alert_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
+        AuraCheck(opt_box, text="啟動時自動檢查新版本", variable=self.check_updates_var, command=self._save_capture_settings).pack(anchor="w", pady=2)
 
         def save_and_close():
             val = ent_prefix.get().strip() or "螢幕錄影"
