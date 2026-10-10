@@ -293,6 +293,8 @@ class LiteRecorderApp:
         self.countdown_var = tk.BooleanVar(value=self._flag("countdown", True))
         self.hardware_accel_var = tk.BooleanVar(value=self._flag("hardware_accel", True))
         self.capture_cursor_var = tk.BooleanVar(value=self._flag("capture_cursor", True))
+        self.multitrack_var = tk.BooleanVar(value=self._flag("multitrack", True))
+        self.sys_audio_var = tk.StringVar(value=str(self._saved.get("sys_audio_device", "")))
         self.auto_copy_screenshot_var = tk.BooleanVar(value=self._flag("auto_copy_screenshot", True))
         self.sound_alert_var = tk.BooleanVar(value=self._flag("sound_alerts", True))
         self.pip_enabled_var = tk.BooleanVar(value=self._flag("pip_enabled", False))
@@ -528,14 +530,19 @@ class LiteRecorderApp:
         self.video_preview_btn.pack(side=tk.LEFT, padx=(0, 2))
         self.video_identify_btn = self._quiet_button(video_action_frame, "識別", self._flash_screen_identify)
         self.video_identify_btn.pack(side=tk.LEFT)
-        self.audio_combo = labeled_combo(1, 0, "音效", span=2)
+        self.audio_combo = labeled_combo(1, 0, "麥克風", span=2)
         audio_action_frame = tk.Frame(form, bg=UI["card"])
         audio_action_frame.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=3)
         self.audio_test_btn = self._quiet_button(audio_action_frame, "測試", self._toggle_audio_test)
         self.audio_test_btn.pack(side=tk.LEFT, padx=(0, 2))
         self.audio_guide_btn = self._quiet_button(audio_action_frame, "指南", self._show_system_audio_guide)
         self.audio_guide_btn.pack(side=tk.LEFT)
-        self.res_combo = labeled_combo(2, 0, "解析度")
+        self.sys_audio_combo = labeled_combo(2, 0, "系統音", span=2)
+        sys_audio_action_frame = tk.Frame(form, bg=UI["card"])
+        sys_audio_action_frame.grid(row=2, column=3, sticky="e", padx=(4, 0), pady=3)
+        self.sys_audio_guide_btn = self._quiet_button(sys_audio_action_frame, "指南", self._show_system_audio_guide)
+        self.sys_audio_guide_btn.pack(side=tk.LEFT)
+        self.res_combo = labeled_combo(3, 0, "解析度")
         self.res_combo["values"] = [
             "原生（較吃資源）",
             "2K（長邊 2560）",
@@ -543,20 +550,20 @@ class LiteRecorderApp:
             "720p（長邊 1280）",
         ]
         self.res_combo.current(self._saved_index("res_index", self.capture_advice["res_index"], 3))
-        self.fps_combo = labeled_combo(2, 2, "幀率")
+        self.fps_combo = labeled_combo(3, 2, "幀率")
         self.fps_combo["values"] = ["30 FPS", "60 FPS（較吃資源）", "15 FPS（較省）"]
         self.fps_combo.current(self._saved_index("fps_index", self.capture_advice["fps_index"], 2))
-        self.quality_combo = labeled_combo(3, 0, "畫質")
+        self.quality_combo = labeled_combo(4, 0, "畫質")
         self.quality_combo["values"] = ["標準", "較省", "較清晰"]
         self.quality_combo.current(self._saved_index("quality_index", 0, 2))
-        self.format_combo = labeled_combo(3, 2, "格式")
+        self.format_combo = labeled_combo(4, 2, "格式")
         self.format_combo["values"] = ["MP4", "MOV"]
         self.format_combo.current(self._saved_index("format_index", 0, 1))
-        self.area_combo = labeled_combo(4, 0, "範圍")
-        self.limit_combo = labeled_combo(4, 2, "時限")
+        self.area_combo = labeled_combo(5, 0, "範圍")
+        self.limit_combo = labeled_combo(5, 2, "時限")
         self.limit_combo["values"] = ["不限制", "1 分鐘", "5 分鐘", "10 分鐘", "30 分鐘", "60 分鐘"]
         self.limit_combo.current(self._saved_index("limit_index", 0, 5))
-        self.segment_combo = labeled_combo(5, 0, "分段")
+        self.segment_combo = labeled_combo(6, 0, "分段")
         self.segment_combo["values"] = ["不分段", "每 5 分鐘", "每 10 分鐘", "每 30 分鐘"]
         self.segment_combo.current(self._saved_index("segment_index", 0, 3))
         tk.Label(
@@ -566,10 +573,10 @@ class LiteRecorderApp:
             fg=UI["muted"],
             bg=UI["card"],
             anchor="w",
-        ).grid(row=5, column=2, columnspan=2, sticky="w", padx=(8, 0))
+        ).grid(row=6, column=2, columnspan=2, sticky="w", padx=(8, 0))
 
         area_row = tk.Frame(form, bg=UI["card"])
-        area_row.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(0, 2))
+        area_row.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(0, 2))
         self.area_label = tk.Label(
             area_row, text="", font=self.fonts["badge"], fg=UI["muted"], bg=UI["card"], anchor="w"
         )
@@ -587,6 +594,7 @@ class LiteRecorderApp:
         checks.columnconfigure(1, weight=1)
         for index, (text, variable) in enumerate((
             (accel_text, self.hardware_accel_var),
+            ("獨立多音軌 (Multi-track)", self.multitrack_var),
             ("開始前倒數 3 秒", self.countdown_var),
             ("錄影時縮成小視窗", self.auto_mini_var),
             ("錄下游標", self.capture_cursor_var),
@@ -722,7 +730,7 @@ class LiteRecorderApp:
         self.lbl_preview_device.pack(fill=tk.X, padx=10, pady=(0, 6))
 
         for combo in (
-            self.audio_combo, self.res_combo, self.fps_combo,
+            self.audio_combo, self.sys_audio_combo, self.res_combo, self.fps_combo,
             self.quality_combo, self.format_combo, self.limit_combo, self.segment_combo,
         ):
             combo.bind("<<ComboboxSelected>>", lambda _e: self._save_capture_settings())
@@ -861,6 +869,9 @@ class LiteRecorderApp:
         self.audio_combo["values"] = ["正在偵測裝置…"]
         self.audio_combo.current(0)
         self.audio_combo.config(state=tk.DISABLED)
+        self.sys_audio_combo["values"] = ["正在偵測裝置…"]
+        self.sys_audio_combo.current(0)
+        self.sys_audio_combo.config(state=tk.DISABLED)
         self.record_btn.config(state=tk.DISABLED)
 
         def work():
@@ -882,6 +893,8 @@ class LiteRecorderApp:
             self.video_combo.current(0)
             self.audio_combo["values"] = ["找不到 FFmpeg"]
             self.audio_combo.current(0)
+            self.sys_audio_combo["values"] = ["找不到 FFmpeg"]
+            self.sys_audio_combo.current(0)
             install = "brew install ffmpeg" if IS_MAC else "winget install Gyan.FFmpeg"
             self.timer_hint.config(text=f"找不到 FFmpeg。請先執行 {install}")
             self.record_btn.config(state=tk.DISABLED)
@@ -942,6 +955,24 @@ class LiteRecorderApp:
                     break
         self.audio_combo.current(audio_at)
         self.audio_combo.config(state=tk.DISABLED if busy else "readonly")
+
+        # 填入系統音選單
+        self.sys_audio_combo["values"] = a_names
+        sys_at = 0
+        saved_sys = self._saved.get("sys_audio_device")
+        if isinstance(saved_sys, str) and saved_sys:
+            for idx, item in enumerate(a_names):
+                if item == saved_sys or (saved_sys.startswith("[") and item.split("]")[0] == saved_sys.split("]")[0]):
+                    sys_at = idx
+                    break
+        elif len(a_names) > 1:
+            for idx, item in enumerate(a_names):
+                low_item = item.lower()
+                if any(k in low_item for k in ("blackhole", "stereo mix", "立體聲混音", "teams audio", "loopback", "cable", "soundflower")):
+                    sys_at = idx
+                    break
+        self.sys_audio_combo.current(sys_at)
+        self.sys_audio_combo.config(state=tk.DISABLED if busy else "readonly")
 
         # 填入 PiP 鏡頭選單
         cam_names = []
@@ -1299,12 +1330,16 @@ class LiteRecorderApp:
             "pip_border": self.pip_border_var.get() if hasattr(self, "pip_border_var") else "",
             "click_ripple": bool(self.click_ripple_var.get()) if hasattr(self, "click_ripple_var") else True,
             "keystroke_hud": bool(self.keystroke_hud_var.get()) if hasattr(self, "keystroke_hud_var") else True,
+            "multitrack": bool(self.multitrack_var.get()) if hasattr(self, "multitrack_var") else True,
             "check_updates_on_startup": bool(self.check_updates_var.get()) if hasattr(self, "check_updates_var") else True,
         }
         if video and "偵測" not in video and "找不到" not in video:
             payload["video_device"] = video
         if audio and "偵測" not in audio and "找不到" not in audio:
             payload["audio_device"] = audio
+        sys_audio = self.sys_audio_combo.get() if hasattr(self, "sys_audio_combo") else ""
+        if sys_audio and "偵測" not in sys_audio and "找不到" not in sys_audio:
+            payload["sys_audio_device"] = sys_audio
         save_settings(payload)
         self._saved.update(payload)
         if not self.recorder.is_recording and not self.countdown_active:
@@ -1431,6 +1466,11 @@ class LiteRecorderApp:
         if a_cur > 0 and self.audio_devices:
             a_idx = self.audio_devices[a_cur - 1]["index"]
 
+        sys_a_idx = None
+        sys_cur = self.sys_audio_combo.current() if hasattr(self, "sys_audio_combo") else 0
+        if sys_cur > 0 and self.audio_devices:
+            sys_a_idx = self.audio_devices[sys_cur - 1]["index"]
+
         res_map = {0: "native", 1: "2K", 2: "1080p", 3: "720p"}
         resolution = res_map.get(self.res_combo.current(), "native")
 
@@ -1489,6 +1529,8 @@ class LiteRecorderApp:
         ok, msg = self.recorder.start_recording(
             video_idx=v_idx,
             audio_idx=a_idx,
+            sys_audio_idx=sys_a_idx,
+            multitrack=self.multitrack_var.get() if hasattr(self, "multitrack_var") else True,
             fps=fps,
             resolution=resolution,
             use_hardware_accel=use_accel,
@@ -1629,11 +1671,14 @@ class LiteRecorderApp:
 
     def _set_capture_locked(self, locked):
         state = tk.DISABLED if locked else "readonly"
-        for combo in (
+        combos = [
             self.video_combo, self.audio_combo, self.res_combo, self.fps_combo,
             self.area_combo, self.quality_combo, self.format_combo, self.limit_combo,
             self.segment_combo,
-        ):
+        ]
+        if hasattr(self, "sys_audio_combo"):
+            combos.append(self.sys_audio_combo)
+        for combo in combos:
             combo.config(state=state)
         for combo_name in (
             "pip_camera_combo", "pip_shape_combo", "pip_pos_combo",
@@ -1741,7 +1786,8 @@ class LiteRecorderApp:
         resolution = res_map.get(self.res_combo.current(), "1080p")
         quality_scale = {1: 0.7, 2: 1.35}.get(self.quality_combo.current(), 1.0)
         video_k = max(280, int(capture_bitrate_k(resolution, machine_profile()) * quality_scale))
-        audio_k = 96 if self.audio_combo.current() > 0 else 0
+        audio_count = (1 if self.audio_combo.current() > 0 else 0) + (1 if hasattr(self, "sys_audio_combo") and self.sys_audio_combo.current() > 0 else 0)
+        audio_k = 96 * audio_count
         return video_k, audio_k
 
     def _size_estimate_text(self):
@@ -1848,7 +1894,7 @@ class LiteRecorderApp:
                 self._draw_vu_idle()
                 self._draw_mini_vu_idle()
             else:
-                has_audio = (self.audio_combo.current() > 0)
+                has_audio = (self.audio_combo.current() > 0) or (hasattr(self, "sys_audio_combo") and self.sys_audio_combo.current() > 0)
                 if has_audio:
                     self._draw_vu_active(self.vu_tick_count)
                 else:

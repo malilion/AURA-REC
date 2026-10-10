@@ -163,6 +163,8 @@ class ScreenRecorder:
         self,
         video_idx=None,
         audio_idx=None,
+        sys_audio_idx=None,
+        multitrack=True,
         fps=30,
         resolution="native",
         use_hardware_accel=True,
@@ -174,7 +176,7 @@ class ScreenRecorder:
         segment_sec=None,
         pip_config=None,
     ):
-        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。"""
+        """組出給文書電腦用的 FFmpeg 指令。不啟動錄影。支援麥克風與系統音效獨立多音軌 (Multi-track) 錄製。"""
         profile = profile or machine_profile()
         cmd = [
             self.ffmpeg_bin,
@@ -184,7 +186,12 @@ class ScreenRecorder:
         if profile == "light":
             cmd.extend(["-filter_threads", "1"])
 
-        has_audio = audio_idx is not None and str(audio_idx).strip() != "" and str(audio_idx).lower() != "none"
+        has_mic = audio_idx is not None and str(audio_idx).strip() != "" and str(audio_idx).lower() != "none"
+        has_sys = sys_audio_idx is not None and str(sys_audio_idx).strip() != "" and str(sys_audio_idx).lower() != "none"
+        if has_mic and has_sys and str(audio_idx).strip() == str(sys_audio_idx).strip():
+            has_sys = False
+        has_dual = has_mic and has_sys
+        has_any_audio = has_mic or has_sys
         pip_enabled = bool(pip_config and pip_config.get("enabled"))
 
         if pip_enabled:
@@ -195,11 +202,11 @@ class ScreenRecorder:
             border_rgb = pip_config.get("border_color", (0, 240, 255))
             margin = int(pip_config.get("margin", 32))
 
-            # 1. 主畫面與相機輸入
+            # 1. 主畫面、相機與音訊輸入
             if IS_MAC:
                 if video_idx is None:
                     video_idx = "0"
-                input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
+                input_spec = f"{video_idx}:{audio_idx}" if has_mic else f"{video_idx}:none"
                 cmd.extend([
                     "-f", "avfoundation",
                     "-capture_cursor", "1" if capture_cursor else "0",
@@ -209,6 +216,12 @@ class ScreenRecorder:
                     "-framerate", str(fps),
                     "-i", f"{pip_camera_idx}:none",
                 ])
+                if has_sys:
+                    cmd.extend([
+                        "-f", "avfoundation",
+                        "-framerate", str(fps),
+                        "-i", f":{sys_audio_idx}",
+                    ])
             elif IS_WINDOWS:
                 if video_idx is None or video_idx == "desktop":
                     cmd.extend([
@@ -228,8 +241,10 @@ class ScreenRecorder:
                     "-framerate", str(fps),
                     "-i", f"video={pip_camera_idx}",
                 ])
-                if has_audio:
+                if has_mic:
                     cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
+                if has_sys:
+                    cmd.extend(["-f", "dshow", "-i", f"audio={sys_audio_idx}"])
             else:
                 cam_dev = pip_camera_idx if pip_camera_idx.startswith("/dev") else f"/dev/video{pip_camera_idx}"
                 cmd.extend([
@@ -241,8 +256,10 @@ class ScreenRecorder:
                     "-framerate", str(fps),
                     "-i", str(cam_dev),
                 ])
-                if has_audio:
+                if has_mic:
                     cmd.extend(["-f", "pulse", "-i", "default"])
+                if has_sys:
+                    cmd.extend(["-f", "pulse", "-i", str(sys_audio_idx)])
 
             # 2. 濾鏡圖 (filter_complex)
             filter_parts = []
@@ -307,23 +324,59 @@ class ScreenRecorder:
             overlay_coords = pos_map.get(pip_pos, f"W-w-{margin}:H-h-{margin}")
             filter_parts.append(f"[{base_label}][cam]overlay={overlay_coords}:format=auto[outv]")
 
-            cmd.extend(["-filter_complex", ";".join(filter_parts)])
-            cmd.extend(["-map", "[outv]"])
-            if has_audio:
-                audio_source = "0:a" if IS_MAC else ("2:a" if IS_WINDOWS else "2:a")
-                cmd.extend(["-map", audio_source])
+            if has_dual:
+                mic_label = "0:a" if IS_MAC else "2:a"
+                sys_label = "2:a" if IS_MAC else "3:a"
+                if multitrack:
+                    cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                    cmd.extend(["-map", "[outv]", "-map", mic_label, "-map", sys_label])
+                    cmd.extend([
+                        "-metadata:s:a:0", "handler_name=Microphone",
+                        "-metadata:s:a:0", "title=Microphone (麥克風)",
+                        "-metadata:s:a:1", "handler_name=System Audio",
+                        "-metadata:s:a:1", "title=System Audio (系統音效)",
+                    ])
+                else:
+                    filter_parts.append(f"[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]")
+                    cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                    cmd.extend(["-map", "[outv]", "-map", "[outa]"])
+            elif has_mic:
+                mic_label = "0:a" if IS_MAC else "2:a"
+                cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                cmd.extend(["-map", "[outv]", "-map", mic_label])
+                cmd.extend([
+                    "-metadata:s:a:0", "handler_name=Microphone",
+                    "-metadata:s:a:0", "title=Microphone (麥克風)",
+                ])
+            elif has_sys:
+                sys_label = "2:a" if IS_MAC else "2:a"
+                cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                cmd.extend(["-map", "[outv]", "-map", sys_label])
+                cmd.extend([
+                    "-metadata:s:a:0", "handler_name=System Audio",
+                    "-metadata:s:a:0", "title=System Audio (系統音效)",
+                ])
+            else:
+                cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                cmd.extend(["-map", "[outv]"])
 
         else:
             if IS_MAC:
                 if video_idx is None:
                     video_idx = "0"
-                input_spec = f"{video_idx}:{audio_idx}" if has_audio else f"{video_idx}:none"
+                input_spec = f"{video_idx}:{audio_idx}" if has_mic else f"{video_idx}:none"
                 cmd.extend([
                     "-f", "avfoundation",
                     "-capture_cursor", "1" if capture_cursor else "0",
                     "-framerate", str(fps),
                     "-i", input_spec,
                 ])
+                if has_sys:
+                    cmd.extend([
+                        "-f", "avfoundation",
+                        "-framerate", str(fps),
+                        "-i", f":{sys_audio_idx}",
+                    ])
             elif IS_WINDOWS:
                 if video_idx is None or video_idx == "desktop":
                     cmd.extend([
@@ -338,8 +391,10 @@ class ScreenRecorder:
                         "-framerate", str(fps),
                         "-i", f"video={video_idx}",
                     ])
-                if has_audio:
+                if has_mic:
                     cmd.extend(["-f", "dshow", "-i", f"audio={audio_idx}"])
+                if has_sys:
+                    cmd.extend(["-f", "dshow", "-i", f"audio={sys_audio_idx}"])
             else:
                 cmd.extend([
                     "-f", "x11grab",
@@ -347,8 +402,10 @@ class ScreenRecorder:
                     "-draw_mouse", "1" if capture_cursor else "0",
                     "-i", ":0.0",
                 ])
-                if has_audio:
+                if has_mic:
                     cmd.extend(["-f", "pulse", "-i", "default"])
+                if has_sys:
+                    cmd.extend(["-f", "pulse", "-i", str(sys_audio_idx)])
 
             filters = []
             if region:
@@ -361,15 +418,61 @@ class ScreenRecorder:
             scale = scale_filter(resolution)
             if scale:
                 filters.append(scale)
-            if filters:
-                cmd.extend(["-vf", ",".join(filters)])
+
+            if has_dual:
+                mic_label = "0:a" if IS_MAC else "1:a"
+                sys_label = "1:a" if IS_MAC else "2:a"
+                if multitrack:
+                    if filters:
+                        cmd.extend(["-vf", ",".join(filters)])
+                    cmd.extend(["-map", "0:v", "-map", mic_label, "-map", sys_label])
+                    cmd.extend([
+                        "-metadata:s:a:0", "handler_name=Microphone",
+                        "-metadata:s:a:0", "title=Microphone (麥克風)",
+                        "-metadata:s:a:1", "handler_name=System Audio",
+                        "-metadata:s:a:1", "title=System Audio (系統音效)",
+                    ])
+                else:
+                    if filters:
+                        cmd.extend([
+                            "-filter_complex",
+                            f"[0:v]{','.join(filters)}[outv];[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
+                            "-map", "[outv]", "-map", "[outa]"
+                        ])
+                    else:
+                        cmd.extend([
+                            "-filter_complex",
+                            f"[{mic_label}][{sys_label}]amix=inputs=2:duration=longest[outa]",
+                            "-map", "0:v", "-map", "[outa]"
+                        ])
+            elif has_mic:
+                if filters:
+                    cmd.extend(["-vf", ",".join(filters)])
+                mic_label = "0:a" if IS_MAC else "1:a"
+                cmd.extend(["-map", "0:v", "-map", mic_label])
+                cmd.extend([
+                    "-metadata:s:a:0", "handler_name=Microphone",
+                    "-metadata:s:a:0", "title=Microphone (麥克風)",
+                ])
+            elif has_sys:
+                if filters:
+                    cmd.extend(["-vf", ",".join(filters)])
+                sys_label = "1:a" if IS_MAC else "1:a"
+                cmd.extend(["-map", "0:v", "-map", sys_label])
+                cmd.extend([
+                    "-metadata:s:a:0", "handler_name=System Audio",
+                    "-metadata:s:a:0", "title=System Audio (系統音效)",
+                ])
+            else:
+                if filters:
+                    cmd.extend(["-vf", ",".join(filters)])
 
         quality_scale = {"economy": 0.7, "high": 1.35}.get(quality, 1.0)
         bitrate = max(280, int(capture_bitrate_k(resolution, profile) * quality_scale))
         cmd.extend(video_encode_args(
             self.ffmpeg_bin, use_hardware_accel, bitrate, profile, quality=quality
         ))
-        if has_audio:
+        if has_any_audio:
             bitrate_a = "192k" if quality == "high" else ("128k" if quality == "standard" else "96k")
             cmd.extend(["-c:a", "aac", "-b:a", bitrate_a])
         del segment_sec
@@ -380,6 +483,8 @@ class ScreenRecorder:
         self,
         video_idx=None,
         audio_idx=None,
+        sys_audio_idx=None,
+        multitrack=True,
         fps=30,
         resolution="native",
         use_hardware_accel=True,
@@ -394,7 +499,7 @@ class ScreenRecorder:
         pip_config=None,
     ):
         """
-        跨平台啟動錄影程序
+        跨平台啟動錄影程序 (支援麥克風與系統音效獨立多音軌)
         """
         if self.is_recording:
             return False, "錄影已在進行中"
@@ -434,6 +539,8 @@ class ScreenRecorder:
         self._capture_kwargs = {
             "video_idx": video_idx,
             "audio_idx": audio_idx,
+            "sys_audio_idx": sys_audio_idx,
+            "multitrack": multitrack,
             "fps": fps,
             "resolution": resolution,
             "use_hardware_accel": use_hardware_accel,
