@@ -901,10 +901,12 @@ class SubtitleDialog:
 
                 self.win.after(0, finish)
             except Exception as e:
+                err_msg = str(e)  # Python 3 會在 except 結束後刪除 e，閉包需先保存
+
                 def err():
                     self._is_generating = False
                     self.btn_generate.config(text="✨ 開始產生字幕", state=tk.NORMAL)
-                    self.lbl_gen_status.config(text=f"❌ 錯誤: {e}")
+                    self.lbl_gen_status.config(text=f"❌ 錯誤: {err_msg}")
                 self.win.after(0, err)
 
         threading.Thread(target=work, daemon=True).start()
