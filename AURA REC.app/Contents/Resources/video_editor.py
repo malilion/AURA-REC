@@ -251,7 +251,7 @@ class VideoEditor:
         cmd = [
             self.ffprobe_bin,
             "-v", "error",
-            "-show_entries", "format=duration,size,bit_rate:stream=width,height,codec_name,codec_type,r_frame_rate",
+            "-show_entries", "format=duration,size,bit_rate:stream=width,height,codec_name,codec_type,r_frame_rate,index:stream_tags=handler_name,title,name",
             "-of", "json",
             file_path
         ]
@@ -271,6 +271,7 @@ class VideoEditor:
             has_audio = False
             video_codec = "h264"
             fps = 30.0
+            audio_tracks = []
 
             for s in data.get("streams", []):
                 if s.get("codec_type") == "video" and width == 0:
@@ -285,6 +286,13 @@ class VideoEditor:
                         fps = 30.0
                 elif s.get("codec_type") == "audio":
                     has_audio = True
+                    tags = s.get("tags", {})
+                    t_name = tags.get("handler_name") or tags.get("title") or tags.get("name") or f"軌道 {len(audio_tracks) + 1}"
+                    audio_tracks.append({
+                        "index": s.get("index"),
+                        "codec": s.get("codec_name", "aac"),
+                        "title": t_name,
+                    })
 
             return {
                 "file_path": file_path,
@@ -294,6 +302,8 @@ class VideoEditor:
                 "width": width,
                 "height": height,
                 "has_audio": has_audio,
+                "audio_tracks": audio_tracks,
+                "audio_track_count": len(audio_tracks),
                 "video_codec": video_codec,
                 "fps": fps,
             }
@@ -548,6 +558,7 @@ class VideoEditor:
             "-ss", f"{start_sec:.3f}",
             "-i", str(input_file),
             "-t", f"{duration:.3f}",
+            "-map", "0",
             "-c", "copy",
             "-avoid_negative_ts", "1",
             "-movflags", "+faststart",
@@ -632,6 +643,8 @@ class VideoEditor:
                 "-ss", f"{start_sec:.3f}",
                 "-t", f"{duration:.3f}",
                 "-i", input_file,
+                "-map", "0:v",
+                "-map", "0:a?",
                 *enc_v_args,
                 *enc_a_args,
                 "-movflags", "+faststart",
@@ -659,6 +672,8 @@ class VideoEditor:
                     "-ss", f"{start_sec:.3f}",
                     "-t", f"{head_dur:.3f}",
                     "-i", input_file,
+                    "-map", "0:v",
+                    "-map", "0:a?",
                     *enc_v_args,
                     *enc_a_args,
                     head_path,
@@ -682,6 +697,8 @@ class VideoEditor:
                     "-ss", f"{prev_kf_end:.3f}",
                     "-t", f"{tail_dur:.3f}",
                     "-i", input_file,
+                    "-map", "0:v",
+                    "-map", "0:a?",
                     *enc_v_args,
                     *enc_a_args,
                     tail_path,
@@ -701,6 +718,7 @@ class VideoEditor:
                     "-ss", f"{body_start:.3f}",
                     "-t", f"{body_dur:.3f}",
                     "-i", input_file,
+                    "-map", "0",
                     "-c", "copy",
                     "-avoid_negative_ts", "1",
                     body_path,
@@ -731,6 +749,7 @@ class VideoEditor:
                 "-f", "concat",
                 "-safe", "0",
                 "-i", concat_txt,
+                "-map", "0",
                 "-c", "copy",
                 "-movflags", "+faststart",
                 output_file,
@@ -831,14 +850,18 @@ class VideoEditor:
             graph = vertical_fit_graph(canvas_w, canvas_h)
             if vf_list:
                 pre_chain = ",".join(vf_list)
-                graph = f"[0:v]{pre_chain}[pre];[pre]{graph}"
-            cmd.extend(["-filter_complex", graph])
+                graph = f"[0:v]{pre_chain}[pre];[pre]{graph}[outv]"
+            else:
+                graph = f"[0:v]{graph}[outv]"
+            cmd.extend(["-filter_complex", graph, "-map", "[outv]"])
         else:
             crop = aspect_crop_filter(aspect_ratio, anchor)
             if crop:
                 vf_list.append(crop)
             if vf_list:
                 cmd.extend(["-vf", ",".join(vf_list)])
+            cmd.extend(["-map", "0:v"])
+
         export_rate = {"light": 1800, "balanced": 2800, "high": 4500}.get(profile, 2800)
         cmd.extend(["-threads", str(encode_threads(profile))])
         cmd.extend(video_encode_args(self.ffmpeg_bin, use_hardware_accel, export_rate, profile))
@@ -847,6 +870,7 @@ class VideoEditor:
         if mute_audio:
             cmd.append("-an")
         else:
+            cmd.extend(["-map", "0:a?"])
             af_list = []
             if speed != 1.0:
                 # atempo 支援 0.5 到 2.0

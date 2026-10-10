@@ -742,7 +742,14 @@ class VideoEditorWindow:
         self.end_sec = self.total_duration
 
         self.lbl_filename.config(text=info["file_name"])
-        audio = "有音訊" if info["has_audio"] else "無音訊"
+        track_count = info.get("audio_track_count", 1 if info["has_audio"] else 0)
+        if track_count > 1:
+            titles = [t.get("title", f"Track {i+1}") for i, t in enumerate(info.get("audio_tracks", []))]
+            audio = f"獨立多音軌 ({track_count} 軌: {' / '.join(titles)})"
+        elif info["has_audio"]:
+            audio = "單音軌 (主音效)"
+        else:
+            audio = "無音訊"
         meta_str = (
             f"{info['width']}×{info['height']}  ·  {sec_to_time_str(self.total_duration)}"
             f"  ·  {info['size_mb']} MB  ·  {audio}"
