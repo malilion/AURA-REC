@@ -18,12 +18,14 @@ macOS 版 `AURA REC.app`、Windows 版安裝程式與免安裝 zip 都內附 `ff
 
 ### 對應原始碼（Corresponding Source）
 
-每個 [GitHub Release](https://github.com/malilion/Record/releases) 都附有 `AURA-REC-ffmpeg-source.tar.gz`（macOS）與 `AURA-REC-ffmpeg-win-source.tar.gz`（Windows），內含編譯這些執行檔所用的 FFmpeg、x264、LAME、zlib 等原始碼與建置腳本。你也可以自行從上游取得：
+自 v2.5.2 起，每個 [GitHub Release](https://github.com/malilion/Record/releases) 都附有 `AURA-REC-ffmpeg-source.tar.gz`（macOS）與 `AURA-REC-ffmpeg-win-source.tar.gz`（Windows），內含編譯這些執行檔所用的 FFmpeg、x264、LAME、zlib 等原始碼與建置腳本。你也可以自行從上游取得：
 
 - FFmpeg 7.1.1：<https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz>
 - x264：<https://code.videolan.org/videolan/x264>（commit `b35605ace3ddf7c1a5d67a2eb553f034aef41d55`）
 - LAME 3.100：<https://sourceforge.net/projects/lame/files/lame/3.100/>
 - 建置方式：[`tools/build_ffmpeg_macos.sh`](tools/build_ffmpeg_macos.sh)、[`tools/build_ffmpeg_windows.sh`](tools/build_ffmpeg_windows.sh)
+
+v2.5.1 的 Release 頁面未附上述原始碼壓縮檔；如需 v2.5.1 所附 FFmpeg 的對應原始碼，請在 Issues 提出，我們會提供。
 
 如需其他形式的原始碼，請在 <https://github.com/malilion/Record/issues> 提出，我們會在發行日起三年內提供。
 
