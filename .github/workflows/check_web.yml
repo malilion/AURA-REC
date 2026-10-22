@@ -19,6 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          check-latest: true
       - name: Rebuild Tailwind CSS and CSP hashes
         working-directory: tools/tailwind
         run: |
