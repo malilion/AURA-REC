@@ -1,6 +1,10 @@
 {
   "name": "aura-rec-tailwind",
   "private": true,
-  "scripts": { "build": "node build.js" },
-  "devDependencies": { "tailwindcss": "4.3.3" }
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
 }
