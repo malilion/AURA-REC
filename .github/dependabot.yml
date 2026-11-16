@@ -21,3 +21,14 @@ updates:
         update-types:
           - minor
           - patch
+  # Security updates only (limit 0 = no routine version PRs). tools/tailwind
+  # drives the v3 CLI (tailwindcss bin, JS config); Tailwind 4 moved the CLI to
+  # @tailwindcss/cli and dropped that setup, so a major bump breaks the build.
+  - package-ecosystem: npm
+    directory: /tools/tailwind
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
